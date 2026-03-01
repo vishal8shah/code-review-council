@@ -11,6 +11,8 @@ Stage 3:    Report Generation
 from __future__ import annotations
 
 import asyncio
+import importlib
+import logging
 from pathlib import Path
 
 from . import chair as chair_module
@@ -18,7 +20,7 @@ from . import diff_preprocessor, gate_zero, review_pack as rp_module
 from .config import CouncilConfig, ReviewerConfig
 from .diff_parser import get_git_diff, parse_diff
 from .reviewers.architecture import ArchitectReviewer
-from .reviewers.base import BaseReviewer
+from .reviewers.base import BaseReviewer, _integrity_verdict
 from .reviewers.docs import DocsReviewer
 from .reviewers.qa import QAReviewer
 from .reviewers.secops import SecOpsReviewer
@@ -29,6 +31,8 @@ from .schemas import (
     ReviewerOutput,
     ReviewPack,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CouncilResult:
@@ -55,15 +59,57 @@ REVIEWER_CLASSES: dict[str, type[BaseReviewer]] = {
 }
 
 
-def _instantiate_reviewers(configs: list[ReviewerConfig]) -> list[BaseReviewer]:
+def _load_class_path(class_path: str) -> type[BaseReviewer] | None:
+    """Load a reviewer class from a 'module.path:ClassName' string."""
+    try:
+        module_path, class_name = class_path.rsplit(":", 1)
+        module = importlib.import_module(module_path)
+        cls = getattr(module, class_name)
+        if not (isinstance(cls, type) and issubclass(cls, BaseReviewer)):
+            logger.warning(
+                "class_path %s resolved to %s which is not a BaseReviewer subclass — using BaseReviewer",
+                class_path, cls,
+            )
+            return None
+        return cls
+    except Exception as e:
+        logger.warning("Failed to load class_path %s: %s — using BaseReviewer", class_path, e)
+        return None
+
+
+def _instantiate_reviewers(
+    configs: list[ReviewerConfig],
+    on_integrity_issue: str = "fail",
+    repo_root: Path | None = None,
+) -> list[BaseReviewer]:
     """Create reviewer instances from config."""
     reviewers: list[BaseReviewer] = []
     for rc in configs:
-        cls = REVIEWER_CLASSES.get(rc.id, BaseReviewer)
+        # Resolve class: class_path > builtin > BaseReviewer
+        cls: type[BaseReviewer] | None = None
+        if rc.class_path:
+            cls = _load_class_path(rc.class_path)
+        if cls is None:
+            cls = REVIEWER_CLASSES.get(rc.id, BaseReviewer)
+
+        # Resolve prompt path relative to repo_root
+        prompt_path: str | None = None
+        if rc.prompt and repo_root:
+            resolved = (repo_root / rc.prompt).resolve()
+            if resolved.is_relative_to(repo_root.resolve()):
+                prompt_path = str(resolved)
+            else:
+                logger.warning(
+                    "Prompt path %s escapes repo root — ignoring", rc.prompt
+                )
+        elif rc.prompt:
+            prompt_path = rc.prompt
+
         reviewers.append(cls(
             reviewer_id=rc.id,
             model=rc.model,
-            prompt_path=rc.prompt if rc.prompt else None,
+            prompt_path=prompt_path,
+            on_integrity_issue=on_integrity_issue,
         ))
     return reviewers
 
@@ -90,6 +136,8 @@ async def run_council(
     if config is None:
         from .config import load_config
         config = load_config(repo_root)
+
+    integrity_policy = config.enforcement.on_integrity_issue
 
     # Get diff
     if diff_text is None:
@@ -134,7 +182,11 @@ async def run_council(
 
     # Stage 1: Fan-out to all reviewers in parallel
     active_reviewers = config.active_reviewers
-    reviewer_instances = _instantiate_reviewers(active_reviewers)
+    reviewer_instances = _instantiate_reviewers(
+        active_reviewers,
+        on_integrity_issue=integrity_policy,
+        repo_root=repo_root,
+    )
 
     if not reviewer_instances:
         return CouncilResult(
@@ -160,13 +212,16 @@ async def run_council(
 
     for reviewer, result in zip(reviewer_instances, results):
         if isinstance(result, Exception):
+            # asyncio.gather exception — error above BaseReviewer.review()
             failed_reviewers.append(reviewer.reviewer_id)
-            integrity_issues.append(f"{reviewer.reviewer_id}: exception — {type(result).__name__}")
+            integrity_issues.append(
+                f"{reviewer.reviewer_id}: reviewer_task_exception — {type(result).__name__}: {result}"
+            )
             reviewer_outputs.append(
                 ReviewerOutput(
                     reviewer_id=reviewer.reviewer_id,
                     model=reviewer.model,
-                    verdict="PASS",
+                    verdict=_integrity_verdict(integrity_policy),
                     findings=[],
                     confidence=0.0,
                     reasoning="",
@@ -179,6 +234,15 @@ async def run_council(
             # Check for reviewer-level integrity issues (parse errors, dropped findings)
             if result.error:
                 integrity_issues.append(f"{result.reviewer_id}: {result.error}")
+            # Path E: FAIL with no findings and no error — internally inconsistent
+            if (
+                result.verdict == "FAIL"
+                and len(result.findings) == 0
+                and result.error is None
+            ):
+                integrity_issues.append(
+                    f"{result.reviewer_id}: FAIL with no findings (schema/integrity)"
+                )
 
     degraded = len(integrity_issues) > 0
 

@@ -29,6 +29,7 @@ class EnforcementConfig(BaseModel):
     mode: Literal["ci", "local", "both"] = "ci"
     ci_block_on: Literal["FAIL", "PASS_WITH_WARNINGS"] = "FAIL"
     local_mode: Literal["advisory", "gate"] = "advisory"
+    on_integrity_issue: Literal["fail", "warn", "ignore"] = "fail"
 
 
 class PreprocessorPriorities(BaseModel):
@@ -80,6 +81,7 @@ class ReviewerConfig(BaseModel):
     prompt: str = ""  # path to prompt file, relative to repo root
     enabled: bool = True
     focus: list[str] = []
+    class_path: str | None = None  # e.g. "mypackage.reviewers:ComplianceReviewer"
 
 
 class ReportersConfig(BaseModel):

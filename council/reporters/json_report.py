@@ -22,7 +22,9 @@ def write_json_report(
         "summary": verdict.summary,
         "rationale": verdict.rationale,
         "reviewer_agreement_score": verdict.reviewer_agreement_score,
+        "degraded_reasons": verdict.degraded_reasons,
         "accepted_blockers": [f.model_dump() for f in verdict.accepted_blockers],
+        "warnings": [f.model_dump() for f in verdict.warnings],
         "dismissed_findings": [f.model_dump() for f in verdict.dismissed_findings],
     }
 

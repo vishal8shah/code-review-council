@@ -3,7 +3,7 @@ name = "code-review-council"
 version = "0.1.0"
 description = "Multi-agent LLM code review gate for AI-generated code"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "typer>=0.12.0",
     "rich>=13.0.0",

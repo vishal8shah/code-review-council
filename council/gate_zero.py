@@ -272,6 +272,46 @@ def check_linters(
     return findings
 
 
+# Patterns that suggest LLM prompt injection attempts in diff content
+_INJECTION_PATTERNS: list[tuple[str, re.Pattern]] = [
+    ("ignore instructions", re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.IGNORECASE)),
+    ("role override", re.compile(r"you\s+are\s+now\s+a", re.IGNORECASE)),
+    ("system prompt", re.compile(r"^[+]\s*(?:#|//|/\*|\*)\s*system\s*:", re.IGNORECASE | re.MULTILINE)),
+    ("return pass override", re.compile(r"return\s+(?:verdict|result)\s*[:=]\s*[\"']?PASS", re.IGNORECASE)),
+]
+
+
+def check_prompt_injection(diff_context: DiffContext) -> list[GateZeroFinding]:
+    """Detect likely prompt injection patterns in diff content."""
+    findings: list[GateZeroFinding] = []
+    for diff_file in diff_context.files:
+        if diff_file.change_type == "deleted":
+            continue
+        for hunk in diff_file.hunks:
+            target_line = hunk.target_start
+            for line in hunk.content.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    for name, pattern in _INJECTION_PATTERNS:
+                        if pattern.search(line):
+                            findings.append(GateZeroFinding(
+                                check="prompt_injection",
+                                severity="HIGH",
+                                category="security",
+                                file=diff_file.path,
+                                line_start=target_line,
+                                message=f"Possible LLM prompt injection pattern detected: {name}",
+                                suggestion="Review this line for adversarial instructions targeting the code review system",
+                            ))
+                    target_line += 1
+                elif line.startswith("-") and not line.startswith("---"):
+                    pass
+                elif line.startswith("@@"):
+                    pass
+                else:
+                    target_line += 1
+    return findings
+
+
 def check(diff_context: DiffContext, config: CouncilConfig, repo_root: Path | None = None) -> GateZeroResult:
     """Run all Gate Zero checks. Returns immediately — no LLM cost."""
     start = time.monotonic()
@@ -285,6 +325,7 @@ def check(diff_context: DiffContext, config: CouncilConfig, repo_root: Path | No
     findings.extend(check_file_size(diff_context, gc))
     findings.extend(check_language_specific(diff_context, gc))
     findings.extend(check_linters(diff_context, gc, repo_root=repo_root))
+    findings.extend(check_prompt_injection(diff_context))
 
     duration_ms = int((time.monotonic() - start) * 1000)
 

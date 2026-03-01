@@ -59,7 +59,15 @@ def get_git_diff(
     if staged:
         cmd.append("--cached")
     elif branch:
-        cmd.extend([f"{branch}...HEAD"])
+        # Try local branch first; fall back to origin/ remote tracking ref.
+        # In GitHub Actions, checkout creates origin/<branch> but not a local <branch>.
+        local_check = subprocess.run(
+            ["git", "rev-parse", "--verify", branch],
+            cwd=repo_root or Path.cwd(),
+            capture_output=True,
+        )
+        ref = branch if local_check.returncode == 0 else f"origin/{branch}"
+        cmd.extend([f"{ref}...HEAD"])
 
     result = subprocess.run(
         cmd,

@@ -2222,6 +2222,60 @@ class TestOwnerMarkdownReport:
         assert "Missing auth check" in content   # finding still present
         assert "Technical Appendix" not in content  # no owner sections
 
+    def test_owner_markdown_no_issues_message_only_for_safe_to_merge(self, tmp_path):
+        """'No issues require your attention.' appears only for SAFE_TO_MERGE with no findings."""
+        from council.reporters.markdown import write_markdown_report
+        from council.schemas import OwnerPresentation
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.95,
+            summary="All clear.", rationale="No issues.",
+        )
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Safe to merge.",
+            merge_recommendation="SAFE_TO_MERGE",
+            risk_level="low",
+            confidence_label="High confidence",
+            short_summary="No issues found.",
+            findings=[],
+        )
+        out = tmp_path / "review.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "No issues require your attention." in content
+        # Safety: no fallback warning should appear on a clean pass
+        assert "could not be generated" not in content
+
+    def test_owner_markdown_no_no_issues_message_for_fail_recommendation(self, tmp_path):
+        """'No issues require your attention.' must NOT appear for FIX_BEFORE_MERGE verdicts."""
+        from council.reporters.markdown import write_markdown_report
+        from council.schemas import OwnerPresentation
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Critical issue.", rationale="Confirmed.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    description="SQL injection", suggestion="Parameterize",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                )
+            ],
+        )
+        # owner_presentation with empty findings — the trust-breaking case
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Critical issue found.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="critical",
+            confidence_label="High confidence",
+            short_summary="Security issue.",
+            findings=[],
+        )
+        out = tmp_path / "review.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "No issues require your attention." not in content
+        # Must show the fallback warning instead
+        assert "technical appendix" in content.lower() or "could not be generated" in content.lower()
+
 
 class TestFallbackWordingQuality:
     """Deterministic fallback helper produces category-specific, non-generic text."""

@@ -73,10 +73,22 @@ def _write_owner_markdown(
         lines.append("")
         for f in op.findings:
             _write_owner_finding(lines, f)
-    else:
+    elif op.merge_recommendation == "SAFE_TO_MERGE" and not (
+        verdict.accepted_blockers or verdict.warnings
+    ):
         lines.append("## Issues")
         lines.append("")
         lines.append("No issues require your attention.")
+        lines.append("")
+    else:
+        # Empty owner findings but a non-safe recommendation or existing technical
+        # findings — mirror the HTML safety guard rather than saying "all clear".
+        lines.append("## Issues")
+        lines.append("")
+        lines.append(
+            "> ⚠️ Detailed owner issue cards could not be generated for this report. "
+            "Please review the technical appendix below for the full list of accepted findings."
+        )
         lines.append("")
 
     # Technical appendix

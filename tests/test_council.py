@@ -683,7 +683,6 @@ class TestChair:
         assert verdict.confidence >= 0.9
 
     @pytest.mark.asyncio
-    @pytest.mark.asyncio
     async def test_chair_degraded_pass(self):
         """No findings but degraded → PASS_WITH_WARNINGS (not silent PASS)."""
         rp = ReviewPack(diff_text="+ code")
@@ -1682,4 +1681,251 @@ class TestPromptExternalization:
         """Generated .council.toml includes on_integrity_issue setting."""
         from council.cli import _DEFAULT_CONFIG
         assert "on_integrity_issue" in _DEFAULT_CONFIG
+
+
+# ---------------------------------------------------------------------------
+# Round 4: Owner/Presentation Layer Tests
+# ---------------------------------------------------------------------------
+
+
+class TestOwnerSummary:
+    """Verify owner_summary deterministic helper in chair.py."""
+
+    def test_pass_verdict_trusted(self):
+        """PASS + not degraded → trust_signal 'trusted'."""
+        from council.chair import owner_summary
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.95,
+            summary="All clear.", rationale="No issues.",
+        )
+        summary = owner_summary(verdict)
+        assert summary["trust_signal"] == "trusted"
+        assert summary["label"] == "All Clear"
+        assert summary["blocker_count"] == 0
+
+    def test_fail_verdict_untrusted(self):
+        """FAIL → trust_signal 'untrusted'."""
+        from council.chair import owner_summary
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Issues found.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="a.py",
+                    description="SQL injection", chair_action="accepted",
+                    chair_reasoning="confirmed",
+                )
+            ],
+        )
+        summary = owner_summary(verdict)
+        assert summary["trust_signal"] == "untrusted"
+        assert summary["label"] == "Action Required"
+        assert summary["blocker_count"] == 1
+        assert len(summary["top_risks"]) == 1
+
+    def test_degraded_verdict_caution(self):
+        """PASS_WITH_WARNINGS + degraded → trust_signal 'caution'."""
+        from council.chair import owner_summary
+        verdict = ChairVerdict(
+            verdict="PASS_WITH_WARNINGS", confidence=0.7,
+            degraded=True,
+            degraded_reasons=["qa: Timeout"],
+            summary="Degraded run.",
+        )
+        summary = owner_summary(verdict)
+        assert summary["trust_signal"] == "caution"
+        assert summary["degraded"] is True
+
+    def test_reviewer_health_populated(self):
+        """Reviewer health shows ok/error status."""
+        from council.chair import owner_summary
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.9, summary="OK",
+        )
+        outputs = [
+            ReviewerOutput(reviewer_id="secops", model="m", verdict="PASS", confidence=0.9),
+            ReviewerOutput(reviewer_id="qa", model="m", verdict="PASS", confidence=0.0, error="Timeout"),
+        ]
+        summary = owner_summary(verdict, outputs)
+        assert len(summary["reviewer_health"]) == 2
+        assert summary["reviewer_health"][0]["status"] == "ok"
+        assert summary["reviewer_health"][1]["status"] == "error"
+
+
+class TestMarkdownAudience:
+    """Verify markdown reporter audience support and trust fix."""
+
+    def test_developer_markdown_includes_findings(self, tmp_path):
+        """Developer markdown includes technical detail."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Issue found.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    description="SQL injection", chair_action="accepted",
+                    chair_reasoning="Confirmed",
+                )
+            ],
+            rationale="Confirmed vulnerability.",
+        )
+        out = tmp_path / "dev.md"
+        write_markdown_report(verdict, out, audience="developer")
+        content = out.read_text()
+        assert "FAIL" in content
+        assert "SQL injection" in content
+        assert "Confirmed" in content
+
+    def test_owner_markdown_has_trust_signal(self, tmp_path):
+        """Owner markdown includes trust signal and headline."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.95,
+            summary="All clear.",
+        )
+        out = tmp_path / "owner.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "trusted" in content.lower()
+        assert "All Clear" in content
+
+    def test_owner_markdown_empty_state_trust_fix(self, tmp_path):
+        """Owner markdown shows explicit trust line when no findings."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.95,
+            summary="All clear.", rationale="No issues.",
+        )
+        out = tmp_path / "owner-empty.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "All reviewers passed" in content
+        assert "trusted" in content
+
+    def test_developer_markdown_empty_state_trust_fix(self, tmp_path):
+        """Developer markdown shows clean review line when no findings."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.95,
+            summary="All clear.",
+        )
+        out = tmp_path / "dev-empty.md"
+        write_markdown_report(verdict, out, audience="developer")
+        content = out.read_text()
+        assert "Clean review" in content
+
+
+class TestHTMLReporter:
+    """Verify HTML reporter generates valid owner-audience output."""
+
+    def test_html_report_basic(self, tmp_path):
+        """HTML report includes verdict label and trust color."""
+        from council.reporters.html import write_html_report
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.95,
+            summary="All clear.", rationale="No issues.",
+        )
+        out = tmp_path / "report.html"
+        write_html_report(verdict, out)
+        content = out.read_text()
+        assert "<!DOCTYPE html>" in content
+        assert "All Clear" in content
+        assert "#22c55e" in content  # green for trusted
+
+    def test_html_report_fail(self, tmp_path):
+        """HTML report for FAIL includes risks."""
+        from council.reporters.html import write_html_report
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Issue found.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    description="SQL injection", chair_action="accepted",
+                    chair_reasoning="confirmed",
+                )
+            ],
+        )
+        out = tmp_path / "fail.html"
+        write_html_report(verdict, out)
+        content = out.read_text()
+        assert "Action Required" in content
+        assert "#ef4444" in content  # red for untrusted
+        assert "Top Risks" in content
+        assert "SQL injection" in content
+
+    def test_html_report_degraded(self, tmp_path):
+        """HTML report includes integrity issues when degraded."""
+        from council.reporters.html import write_html_report
+        verdict = ChairVerdict(
+            verdict="PASS_WITH_WARNINGS", confidence=0.7,
+            degraded=True,
+            degraded_reasons=["qa: Timeout", "docs: Invalid JSON"],
+            summary="Degraded run.",
+        )
+        out = tmp_path / "degraded.html"
+        write_html_report(verdict, out)
+        content = out.read_text()
+        assert "Integrity Issues" in content
+        assert "qa: Timeout" in content
+
+
+class TestTerminalAudience:
+    """Verify terminal reporter supports audience parameter."""
+
+    def test_print_verdict_accepts_audience(self):
+        """print_verdict accepts audience kwarg without error."""
+        from council.reporters.terminal import print_verdict
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.95,
+            summary="All clear.",
+        )
+        # Should not raise
+        print_verdict(verdict, audience="developer")
+        print_verdict(verdict, audience="owner")
+
+
+class TestCLIAudienceFlags:
+    """Verify CLI has the audience and output-html flags."""
+
+    def test_cli_has_audience_option(self):
+        """review command accepts --audience."""
+        import inspect
+        from council.cli import review
+        sig = inspect.signature(review)
+        assert "audience" in sig.parameters
+
+    def test_cli_has_output_html_option(self):
+        """review command accepts --output-html."""
+        import inspect
+        from council.cli import review
+        sig = inspect.signature(review)
+        assert "output_html" in sig.parameters
+
+    def test_cli_has_github_pr_option(self):
+        """review command accepts --github-pr."""
+        import inspect
+        from council.cli import review
+        sig = inspect.signature(review)
+        assert "github_pr" in sig.parameters
+
+    def test_workflow_template_valid_yaml(self):
+        """Generated workflow template is valid YAML with no duplicate keys."""
+        import yaml
+        from council.cli import _DEFAULT_WORKFLOW
+        parsed = yaml.safe_load(_DEFAULT_WORKFLOW)
+        assert parsed is not None
+        assert "jobs" in parsed
+        steps = parsed["jobs"]["council-review"]["steps"]
+        # Ensure no duplicate 'uses' or 'run' in any step
+        for step in steps:
+            assert isinstance(step, dict)
+
+    def test_pyproject_requires_312(self):
+        """pyproject.toml requires Python 3.12+."""
+        content = Path("/home/user/code-review-council/pyproject.toml").read_text()
+        assert '>=3.12' in content
+        # No tomli dependency
+        assert 'tomli' not in content
 

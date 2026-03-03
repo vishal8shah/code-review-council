@@ -2,12 +2,16 @@
 
 The Chair receives all reviewer findings and makes evidence-based
 adjudication decisions. Each finding is explicitly accepted or dismissed.
+
+Owner presentation helpers generate non-technical summaries for project
+owners who need a trust signal without reading individual findings.
 """
 
 from __future__ import annotations
 
 import json
 import secrets
+from typing import Literal
 
 import litellm
 
@@ -321,3 +325,78 @@ async def synthesize(
             reviewer_agreement_score=0.0,
             rationale=f"Chair LLM call failed. Failing closed for safety. Error: {e}",
         )
+
+
+# ---------------------------------------------------------------------------
+# Owner presentation helpers
+# ---------------------------------------------------------------------------
+
+_OWNER_VERDICT_LABEL = {
+    "PASS": "All Clear",
+    "PASS_WITH_WARNINGS": "Minor Concerns",
+    "FAIL": "Action Required",
+}
+
+
+def owner_summary(
+    verdict: ChairVerdict,
+    reviewer_outputs: list[ReviewerOutput] | None = None,
+) -> dict:
+    """Build a deterministic owner-friendly summary from the verdict.
+
+    Returns a dict with keys usable by HTML, markdown, and terminal presenters:
+      - label: human-readable verdict label
+      - trust_signal: "trusted" | "caution" | "untrusted"
+      - headline: one-line plain-English headline
+      - top_risks: list of short risk descriptions (max 5)
+      - reviewer_health: list of {id, status} dicts
+      - degraded: bool
+    """
+    label = _OWNER_VERDICT_LABEL.get(verdict.verdict, verdict.verdict)
+
+    if verdict.verdict == "PASS" and not verdict.degraded:
+        trust = "trusted"
+    elif verdict.verdict == "FAIL":
+        trust = "untrusted"
+    else:
+        trust = "caution"
+
+    # Build headline
+    blocker_count = len(verdict.accepted_blockers)
+    warning_count = len(verdict.warnings)
+    if blocker_count:
+        headline = f"{blocker_count} blocking issue{'s' if blocker_count != 1 else ''} found that need attention."
+    elif warning_count:
+        headline = f"No blockers, but {warning_count} item{'s' if warning_count != 1 else ''} worth reviewing."
+    elif verdict.degraded:
+        headline = "Review completed with reduced confidence due to integrity issues."
+    else:
+        headline = "All reviewers passed with no issues found."
+
+    # Top risks — short descriptions for owner consumption
+    top_risks: list[str] = []
+    for f in verdict.accepted_blockers[:3]:
+        top_risks.append(f"[{f.severity}] {f.description[:120]}")
+    for f in verdict.warnings[:max(0, 5 - len(top_risks))]:
+        top_risks.append(f"[{f.severity}] {f.description[:120]}")
+
+    # Reviewer health
+    reviewer_health: list[dict[str, str]] = []
+    if reviewer_outputs:
+        for r in reviewer_outputs:
+            if r.error:
+                reviewer_health.append({"id": r.reviewer_id, "status": "error"})
+            else:
+                reviewer_health.append({"id": r.reviewer_id, "status": "ok"})
+
+    return {
+        "label": label,
+        "trust_signal": trust,
+        "headline": headline,
+        "top_risks": top_risks,
+        "reviewer_health": reviewer_health,
+        "degraded": verdict.degraded,
+        "confidence": verdict.confidence,
+        "blocker_count": blocker_count,
+        "warning_count": warning_count,
+    }

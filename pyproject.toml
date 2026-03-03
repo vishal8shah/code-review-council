@@ -3,7 +3,7 @@ name = "code-review-council"
 version = "0.1.0"
 description = "Multi-agent LLM code review gate for AI-generated code"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "typer>=0.12.0",
     "rich>=13.0.0",
@@ -11,7 +11,6 @@ dependencies = [
     "litellm>=1.50.0",
     "unidiff>=0.7.0",
     "tiktoken>=0.7.0",
-    "tomli>=2.0.0;python_version<'3.11'",
 ]
 
 [project.scripts]

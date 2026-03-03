@@ -2,11 +2,13 @@
 
 Multi-agent LLM code review system — an automated quality gate for AI-generated ("vibe-coded") code.
 
+**Requires Python 3.12+.** See [GETTING_STARTED.md](GETTING_STARTED.md) for a full walkthrough.
+
 ## How It Works
 
 Changes pass through a pipeline:
 
-1. **Gate Zero** — Fast, deterministic static checks (docstrings, types, secrets, lint). Zero LLM cost.
+1. **Gate Zero** — Fast, deterministic static checks (docstrings, types, secrets, lint, prompt-injection detection). Zero LLM cost.
 2. **Diff Preprocessor** — Filters lockfiles, generated code, enforces token budgets.
 3. **ReviewPack Assembly** — Builds structured context (symbols, test map, policies) for reviewers.
 4. **Reviewer Panel** — Parallel LLM reviewers (SecOps, QA, Architect, Docs) analyze the ReviewPack.
@@ -15,6 +17,10 @@ Changes pass through a pipeline:
 Two enforcement modes:
 - **Local CLI** (`council review`) — Advisory only, never blocks push.
 - **CI** (`council review --ci`) — Hard gate, blocks merge on FAIL.
+
+Two audience modes:
+- **Developer** (default) — Full technical detail with all findings.
+- **Owner** (`--audience owner`) — Executive summary with trust signal, top risks, and reviewer health.
 
 ## Install
 
@@ -45,6 +51,12 @@ council review --staged
 
 # CI mode (exits 1 on FAIL)
 council review --ci --branch main --output-json council-report.json
+
+# Owner audience with HTML report
+council review --audience owner --output-html report.html
+
+# Post results to GitHub PR
+council review --ci --github-pr --branch main
 ```
 
 ## Configuration
@@ -83,7 +95,7 @@ See the solution design document for full configuration reference.
 - **Language support**: Gate Zero analyzers (docstrings, type hints) are implemented for Python only. TypeScript/JavaScript analyzers are disabled by default pending implementation. The diff preprocessor, reviewer panel, and Chair work with any language.
 - **Test coverage map**: Only detects test files present in the current diff, not the full repo. The QA reviewer is informed this is a weak signal.
 - **Large file handling**: Files exceeding the token budget are truncated, not split at logical boundaries. Truncated files are labeled in the ReviewPack.
-- **PR annotations**: Inline GitHub PR comments are not yet implemented. Use the markdown report or JSON output for CI integration.
+- **GitHub PR reporter**: Posts a sticky summary comment and emits workflow annotations. Inline file-level comments are not yet implemented.
 
 ## License
 

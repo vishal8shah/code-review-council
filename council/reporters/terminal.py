@@ -1,9 +1,17 @@
-"""Rich terminal reporter — pretty console output."""
+"""Rich terminal reporter — pretty console output.
+
+Supports two audience modes:
+  - developer (default): full pipeline detail with all findings
+  - owner: executive summary with trust signal, top risks, reviewer health
+"""
 
 from __future__ import annotations
 
+from typing import Literal
+
 from rich.console import Console
 
+from ..chair import owner_summary
 from ..schemas import ChairFinding, ChairVerdict, GateZeroResult, ReviewerOutput, ReviewPack
 
 console = Console()
@@ -98,21 +106,69 @@ def print_finding(f: ChairFinding) -> None:
         )
 
 
+def print_owner_summary(
+    verdict: ChairVerdict,
+    reviewer_outputs: list[ReviewerOutput] | None = None,
+) -> None:
+    """Print an owner-audience executive summary to the terminal."""
+    summary = owner_summary(verdict, reviewer_outputs)
+    trust = summary["trust_signal"]
+    trust_styles = {"trusted": "bold green", "caution": "bold yellow", "untrusted": "bold red"}
+    trust_icons = {"trusted": "\u2705", "caution": "\u26a0\ufe0f", "untrusted": "\u274c"}
+    t_style = trust_styles.get(trust, "")
+    t_icon = trust_icons.get(trust, "?")
+
+    console.print()
+    console.print("[bold]\U0001f3db\ufe0f  Code Review Council \u2014 Owner Summary[/]")
+    console.print()
+    console.rule(style=t_style.replace("bold ", ""))
+    console.print(f"  {t_icon} {summary['label']}  (trust: {trust})", style=t_style)
+    console.rule(style=t_style.replace("bold ", ""))
+    console.print(f"\n  {summary['headline']}")
+    console.print(f"  Confidence: {summary['confidence']:.0%}", style="dim")
+
+    if summary["degraded"]:
+        console.print("\n  Integrity Issues:", style="yellow")
+        for reason in verdict.degraded_reasons:
+            console.print(f"    \u2022 {reason}", style="yellow dim")
+
+    if summary["top_risks"]:
+        console.print("\n  Top Risks:", style="bold")
+        for i, risk in enumerate(summary["top_risks"], 1):
+            console.print(f"    {i}. {risk}")
+
+    if summary["reviewer_health"]:
+        console.print("\n  Reviewers:", style="dim")
+        for rh in summary["reviewer_health"]:
+            icon = "\u2705" if rh["status"] == "ok" else "\u26a0\ufe0f"
+            console.print(f"    {icon} {rh['id']}: {rh['status']}", style="dim")
+
+    console.print()
+
+
 def print_verdict(
     verdict: ChairVerdict,
     review_pack: ReviewPack | None = None,
     reviewer_outputs: list[ReviewerOutput] | None = None,
     gate_result: GateZeroResult | None = None,
     ci_mode: bool = False,
+    audience: Literal["developer", "owner"] = "developer",
 ) -> None:
-    """Print the full council report to terminal."""
+    """Print the full council report to terminal.
+
+    When audience is "owner", the owner summary is printed first (leading),
+    followed by the standard developer output for completeness.
+    """
+    if audience == "owner":
+        print_owner_summary(verdict, reviewer_outputs)
+
     style, icon = VERDICT_STYLES.get(verdict.verdict, ("", "?"))
     files_count = len(review_pack.changed_files) if review_pack else 0
     lines_count = review_pack.total_lines_changed if review_pack else 0
 
     console.print()
     console.print(
-        f"[bold]🏛️  Code Review Council[/] — {files_count} files, {lines_count} lines changed"
+        f"[bold]\U0001f3db\ufe0f  Code Review Council[/] \u2014 {files_count} files, {lines_count} lines changed"
     )
 
     if gate_result:
@@ -129,9 +185,9 @@ def print_verdict(
     console.rule(style=style.replace("bold ", ""))
     console.print(f"  VERDICT: {icon} {verdict.verdict}{mode_note}", style=style)
     if verdict.degraded:
-        console.print("  ⚠️  Degraded run — integrity issues detected:", style="yellow")
+        console.print("  \u26a0\ufe0f  Degraded run \u2014 integrity issues detected:", style="yellow")
         for reason in verdict.degraded_reasons:
-            console.print(f"    • {reason}", style="yellow dim")
+            console.print(f"    \u2022 {reason}", style="yellow dim")
     console.rule(style=style.replace("bold ", ""))
 
     for f in verdict.accepted_blockers:

@@ -1,25 +1,27 @@
 """CLI entry point for the Code Review Council.
 
 Usage:
-    council review              # Advisory mode (local)
+    council review              # Advisory mode (local, developer audience)
     council review --ci         # CI mode (blocks on FAIL)
     council review --staged     # Review staged changes only
     council review --branch main  # Diff against a branch
+    council review --audience owner --output-html report.html  # Owner report
+    council review --github-pr  # Post results to GitHub PR
     council init                # Initialize .council.toml in repo
 """
 
 from __future__ import annotations
 
 import asyncio
-import sys
 from pathlib import Path
+from typing import Literal
 
 import typer
 from rich.console import Console
 
 app = typer.Typer(
     name="council",
-    help="🏛️ Code Review Council — Multi-agent LLM code review gate",
+    help="\U0001f3db\ufe0f Code Review Council \u2014 Multi-agent LLM code review gate",
     no_args_is_help=True,
 )
 console = Console()
@@ -30,8 +32,13 @@ def review(
     ci: bool = typer.Option(False, "--ci", help="CI mode: exit 1 on FAIL, force JSON output"),
     staged: bool = typer.Option(False, "--staged", help="Review staged changes only"),
     branch: str = typer.Option(None, "--branch", "-b", help="Diff against this branch"),
+    audience: str = typer.Option(
+        "developer", "--audience", "-a",
+        help="Report audience: 'developer' (full technical detail) or 'owner' (executive summary with trust signal)",
+    ),
     output_json: str = typer.Option(None, "--output-json", help="Write JSON report to this path"),
     output_md: str = typer.Option(None, "--output-md", help="Write markdown report to this path"),
+    output_html: str = typer.Option(None, "--output-html", help="Write HTML report to this path (owner audience recommended)"),
     github_pr: bool = typer.Option(False, "--github-pr", help="Post results as a GitHub PR comment + annotations"),
     repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),
 ) -> None:
@@ -42,10 +49,15 @@ def review(
     root = Path(repo_root) if repo_root else Path.cwd()
     config = load_config(root)
 
+    # Resolve audience (validate input)
+    resolved_audience: Literal["developer", "owner"] = (
+        "owner" if audience.lower() == "owner" else "developer"
+    )
+
     # Safety: warn if --ci without explicit diff target (could review empty diff)
     if ci and not staged and not branch:
         console.print(
-            "  [yellow]⚠ Warning: --ci mode without --branch or --staged. "
+            "  [yellow]\u26a0 Warning: --ci mode without --branch or --staged. "
             "This may produce an empty diff in CI checkouts. "
             "Use --branch main (or your base branch) for PR reviews.[/]"
         )
@@ -71,6 +83,7 @@ def review(
         reviewer_outputs=result.reviewer_outputs,
         gate_result=result.gate_result,
         ci_mode=ci,
+        audience=resolved_audience,
     )
 
     # Markdown report
@@ -84,8 +97,20 @@ def review(
             output_path=md_path,
             review_pack=result.review_pack,
             reviewer_outputs=result.reviewer_outputs,
+            audience=resolved_audience,
         )
         console.print(f"  Review saved to: {md_path}", style="dim")
+
+    # HTML report (owner-audience, generated when --output-html is set)
+    if output_html:
+        from .reporters.html import write_html_report
+        write_html_report(
+            verdict=verdict,
+            output_path=output_html,
+            review_pack=result.review_pack,
+            reviewer_outputs=result.reviewer_outputs,
+        )
+        console.print(f"  HTML report saved to: {output_html}", style="dim")
 
     # JSON report (always in CI mode, or if explicitly requested)
     json_path = output_json
@@ -254,7 +279,7 @@ enabled = true
 terminal = true
 markdown = true
 json_report = "ci"
-github_pr = false  # not yet implemented — enable when reporter is added
+github_pr = false
 
 [cost]
 warn_threshold_usd = 1.00
@@ -295,6 +320,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
+
+      - name: Fetch base branch for diff
+        run: git fetch origin ${{ github.base_ref }}
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:

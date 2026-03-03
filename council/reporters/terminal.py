@@ -21,6 +21,18 @@ SEVERITY_STYLES = {
     "LOW": "dim",
 }
 
+_URGENCY_ICONS = {
+    "fix_before_merge": "🚫",
+    "fix_soon": "⚠️",
+    "nice_to_have": "💡",
+}
+
+_REC_STYLES = {
+    "SAFE_TO_MERGE": ("bold green", "✅"),
+    "MERGE_WITH_CAUTION": ("bold yellow", "⚠️"),
+    "FIX_BEFORE_MERGE": ("bold red", "🚫"),
+}
+
 
 def print_gate_zero(gate_result: GateZeroResult) -> None:
     """Print Gate Zero results."""
@@ -98,6 +110,34 @@ def print_finding(f: ChairFinding) -> None:
         )
 
 
+def _print_owner_summary(verdict: ChairVerdict) -> None:
+    """Print the owner-audience summary block. Called before technical detail."""
+    op = verdict.owner_presentation
+    if op is None:
+        return
+
+    rec_style, rec_icon = _REC_STYLES.get(op.merge_recommendation, ("bold", "?"))
+    rec_label = op.merge_recommendation.replace("_", " ")
+
+    console.print()
+    console.rule(style="cyan")
+    console.print("  [bold cyan]Owner Summary[/]")
+    console.print(
+        f"  [{rec_style}]{rec_icon} {rec_label}[/]"
+        f"  •  Risk: {op.risk_level.upper()}  •  {op.confidence_label}"
+    )
+    console.print(f"\n  {op.short_summary}", style="italic")
+    if op.degraded_warning:
+        console.print(f"\n  ⚠️  {op.degraded_warning}", style="yellow")
+    if op.findings:
+        console.print(f"\n  [bold]Issues ({len(op.findings)}):[/]")
+        for f in op.findings:
+            icon = _URGENCY_ICONS.get(f.urgency, "•")
+            urgency_label = f.urgency.replace("_", " ").upper()
+            console.print(f"    {icon}  [{urgency_label}] {f.title}")
+    console.rule(style="cyan")
+
+
 def print_verdict(
     verdict: ChairVerdict,
     review_pack: ReviewPack | None = None,
@@ -115,6 +155,10 @@ def print_verdict(
     console.print(
         f"[bold]🏛️  Code Review Council[/] — {files_count} files, {lines_count} lines changed"
     )
+
+    # Owner audience: lead with the plain-English summary, then show technical detail below.
+    if audience == "owner" and verdict.owner_presentation is not None:
+        _print_owner_summary(verdict)
 
     if gate_result:
         print_gate_zero(gate_result)
@@ -135,37 +179,32 @@ def print_verdict(
             console.print(f"    • {reason}", style="yellow dim")
     console.rule(style=style.replace("bold ", ""))
 
-    for f in verdict.accepted_blockers:
-        print_finding(f)
+    if audience == "owner":
+        # Skip the raw ChairFinding list for the owner — they have the plain-English
+        # summary above.  A short note points to richer output formats.
+        n_issues = len(verdict.accepted_blockers) + len(verdict.warnings)
+        if n_issues:
+            console.print(
+                f"\n  ({n_issues} technical finding(s) — use --output-html for full detail)",
+                style="dim",
+            )
+        if verdict.summary:
+            console.print(f"\n  {verdict.summary}", style="dim italic")
+    else:
+        # Developer audience: print full finding list.
+        for f in verdict.accepted_blockers:
+            print_finding(f)
 
-    for f in verdict.warnings:
-        print_finding(f)
+        for f in verdict.warnings:
+            print_finding(f)
 
-    if verdict.dismissed_findings:
-        console.print(
-            f"\n  ({len(verdict.dismissed_findings)} findings dismissed by Chair)", style="dim"
-        )
+        if verdict.dismissed_findings:
+            console.print(
+                f"\n  ({len(verdict.dismissed_findings)} findings dismissed by Chair)",
+                style="dim",
+            )
 
-    if verdict.summary:
-        console.print(f"\n  {verdict.summary}", style="dim italic")
-
-    # Owner audience: print a plain-English summary if present
-    if audience == "owner" and verdict.owner_presentation is not None:
-        op = verdict.owner_presentation
-        console.print()
-        console.rule(style="cyan")
-        console.print(f"  [bold cyan]Owner Summary[/]")
-        console.print(f"  Recommendation: [bold]{op.merge_recommendation}[/]")
-        console.print(f"  Risk: {op.risk_level}  |  {op.confidence_label}")
-        console.print(f"\n  {op.short_summary}", style="italic")
-        if op.degraded_warning:
-            console.print(f"\n  ⚠️  {op.degraded_warning}", style="yellow")
-        if op.findings:
-            console.print(f"\n  [bold]Issues ({len(op.findings)}):[/]")
-            for f in op.findings:
-                console.print(f"\n  [{f.urgency.upper()}] {f.title}", style="bold")
-                console.print(f"  {f.plain_explanation}")
-                console.print(f"  Why it matters: {f.why_it_matters}", style="dim")
-        console.rule(style="cyan")
+        if verdict.summary:
+            console.print(f"\n  {verdict.summary}", style="dim italic")
 
     console.print()

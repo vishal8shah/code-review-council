@@ -4,9 +4,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..schemas import ChairFinding, ChairVerdict, ReviewerOutput, ReviewPack
+from ..schemas import ChairFinding, ChairVerdict, OwnerFindingView, ReviewerOutput, ReviewPack
 
 VERDICT_ICONS = {"PASS": "✅", "PASS_WITH_WARNINGS": "⚠️", "FAIL": "❌"}
+
+_URGENCY_ICONS = {
+    "fix_before_merge": "🚫",
+    "fix_soon": "⚠️",
+    "nice_to_have": "💡",
+}
+
+_MERGE_REC_LABELS = {
+    "SAFE_TO_MERGE": "✅ SAFE TO MERGE",
+    "MERGE_WITH_CAUTION": "⚠️ MERGE WITH CAUTION",
+    "FIX_BEFORE_MERGE": "🚫 FIX BEFORE MERGE",
+}
 
 
 def write_markdown_report(
@@ -14,8 +26,151 @@ def write_markdown_report(
     output_path: str | Path = ".council-review.md",
     review_pack: ReviewPack | None = None,
     reviewer_outputs: list[ReviewerOutput] | None = None,
+    audience: str = "developer",
 ) -> None:
-    """Write the council review as a markdown file."""
+    """Write the council review as a markdown file.
+
+    When audience is 'owner' and verdict.owner_presentation is set, writes a
+    plain-English owner report followed by a technical appendix.  Falls back to
+    the standard developer layout if owner_presentation is not available.
+    """
+    if audience == "owner" and verdict.owner_presentation is not None:
+        _write_owner_markdown(verdict, output_path, review_pack, reviewer_outputs)
+    else:
+        _write_developer_markdown(verdict, output_path, review_pack, reviewer_outputs)
+
+
+def _write_owner_markdown(
+    verdict: ChairVerdict,
+    output_path: str | Path,
+    review_pack: ReviewPack | None,
+    reviewer_outputs: list[ReviewerOutput] | None,
+) -> None:
+    """Write an owner-audience markdown report."""
+    op = verdict.owner_presentation  # guaranteed non-None by caller
+    assert op is not None  # for type checkers
+
+    icon = VERDICT_ICONS.get(verdict.verdict, "?")
+    lines: list[str] = []
+
+    lines.append(f"# Code Review Council — {icon} {verdict.verdict} (Owner Report)")
+    lines.append("")
+    lines.append(f"## {_MERGE_REC_LABELS.get(op.merge_recommendation, op.merge_recommendation)}")
+    lines.append("")
+    lines.append(
+        f"**Risk**: {op.risk_level.upper()} &nbsp;|&nbsp; {op.confidence_label}"
+    )
+    lines.append("")
+    lines.append(op.short_summary)
+    lines.append("")
+
+    if op.degraded_warning:
+        lines.append(f"> ⚠️ **Note**: {op.degraded_warning}")
+        lines.append("")
+
+    if op.findings:
+        lines.append("## Issues")
+        lines.append("")
+        for f in op.findings:
+            _write_owner_finding(lines, f)
+    else:
+        lines.append("## Issues")
+        lines.append("")
+        lines.append("No issues require your attention.")
+        lines.append("")
+
+    # Technical appendix
+    has_tech = bool(verdict.accepted_blockers or verdict.warnings or verdict.dismissed_findings)
+    if has_tech or verdict.rationale or reviewer_outputs or review_pack:
+        lines.append("---")
+        lines.append("")
+        lines.append("## Technical Appendix")
+        lines.append("")
+        lines.append(
+            "> The following sections are for developer reference. "
+            "The review engine is identical for both audiences."
+        )
+        lines.append("")
+
+        if review_pack:
+            lines.append("### Review Metadata")
+            lines.append(f"- **Files changed**: {len(review_pack.changed_files)}")
+            lines.append(f"- **Lines changed**: {review_pack.total_lines_changed}")
+            lines.append(f"- **Languages**: {', '.join(review_pack.languages_detected)}")
+            if review_pack.files_skipped:
+                lines.append(f"- **Skipped**: {', '.join(review_pack.files_skipped[:5])}")
+            lines.append("")
+
+        if reviewer_outputs:
+            lines.append("### Reviewer Panel")
+            lines.append("| Reviewer | Model | Verdict | Findings | Error |")
+            lines.append("|----------|-------|---------|----------|-------|")
+            for r in reviewer_outputs:
+                err = r.error[:40] if r.error else ""
+                lines.append(
+                    f"| {r.reviewer_id} | {r.model} | {r.verdict} | {len(r.findings)} | {err} |"
+                )
+            lines.append("")
+
+        if verdict.accepted_blockers:
+            lines.append("### Accepted Blockers")
+            for f in verdict.accepted_blockers:
+                _write_finding(lines, f)
+
+        if verdict.warnings:
+            lines.append("### Warnings (Non-Blocking)")
+            for f in verdict.warnings:
+                _write_finding(lines, f)
+
+        if verdict.dismissed_findings:
+            lines.append("### Dismissed Findings")
+            for f in verdict.dismissed_findings:
+                _write_finding(lines, f)
+
+        if verdict.rationale:
+            lines.append("### Chair Rationale")
+            lines.append(verdict.rationale)
+            lines.append("")
+
+    lines.append("")
+    lines.append(
+        "*Generated by Code Review Council — owner audience — "
+        "same underlying findings as the developer report.*"
+    )
+
+    Path(output_path).write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_owner_finding(lines: list[str], f: OwnerFindingView) -> None:
+    """Append an owner-audience finding card to markdown output."""
+    icon = _URGENCY_ICONS.get(f.urgency, "•")
+    urgency_label = f.urgency.replace("_", " ").title()
+    lines.append(f"### {icon} {f.title}")
+    lines.append(f"**{f.severity_label}** — {urgency_label}")
+    lines.append("")
+    lines.append(f"**What is wrong**: {f.plain_explanation}")
+    lines.append("")
+    lines.append(f"**Why it matters**: {f.why_it_matters}")
+    lines.append("")
+    lines.append("**Fix prompt**:")
+    lines.append("```")
+    lines.append(f.fix_prompt)
+    lines.append("```")
+    lines.append("")
+    lines.append(f"**After fixing**: {f.test_after_fix}")
+    if f.involve_engineer:
+        lines.append("")
+        lines.append(f"> 👷 **Engineer needed**: {f.involve_engineer}")
+    lines.append("")
+
+
+def _write_developer_markdown(
+    verdict: ChairVerdict,
+    output_path: str | Path,
+    review_pack: ReviewPack | None,
+    reviewer_outputs: list[ReviewerOutput] | None,
+) -> None:
+    """Write the standard developer-audience markdown report."""
     icon = VERDICT_ICONS.get(verdict.verdict, "?")
     lines: list[str] = []
 
@@ -77,7 +232,7 @@ def write_markdown_report(
 
 
 def _write_finding(lines: list[str], f: ChairFinding) -> None:
-    """Append a finding to the markdown output."""
+    """Append a technical finding to the markdown output."""
     loc = f.file
     if f.line_start:
         loc += f":{f.line_start}"

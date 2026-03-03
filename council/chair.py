@@ -352,12 +352,21 @@ urgency must be one of: fix_before_merge, fix_soon, nice_to_have"""
 
 
 _WHY_IT_MATTERS = {
-    "security": "This could expose user data, account access, or other sensitive behavior.",
-    "testing": "This could let a broken change slip through without being caught before merge.",
-    "architecture": "This could make the change brittle, harder to maintain, or more likely to fail in edge cases.",
-    "documentation": "This could slow future changes or increase confusion for the next person touching this code.",
-    "performance": "This could create slower behavior or higher infrastructure cost under real usage.",
-    "style": "This could create product risk if merged without review.",
+    "security": "This could expose user data, account access, or other sensitive behavior to attackers.",
+    "testing": "Without tests, a broken change can slip through undetected and reach production.",
+    "architecture": "This could make the codebase brittle, harder to maintain, or more likely to fail under real usage.",
+    "documentation": "Missing or inaccurate documentation slows future work and increases the chance of misuse.",
+    "performance": "This could cause slower responses or higher infrastructure costs at scale.",
+    "style": "Inconsistent style makes the code harder to read and maintain over time.",
+}
+
+_TEST_AFTER_FIX = {
+    "security": "Re-run the affected auth or data flows and confirm the vulnerability is no longer reproducible.",
+    "testing": "Run the test suite and confirm all new tests pass cleanly in CI.",
+    "architecture": "Review the affected code paths manually and confirm edge cases are handled correctly.",
+    "documentation": "Read through the updated docs or README and confirm they accurately describe the change.",
+    "performance": "Run a quick load test or profiling pass on the affected endpoint or function.",
+    "style": "Re-run the project's lint checks and confirm all style warnings are resolved.",
 }
 
 _SEVERITY_LABELS = {
@@ -414,6 +423,10 @@ def _build_fallback_owner_finding(f: ChairFinding) -> OwnerFindingView:
             "Have a developer review the fix before merging."
         )
 
+    test_after_fix = _TEST_AFTER_FIX.get(
+        category, "Re-run the affected flow and verify the issue no longer occurs."
+    )
+
     return OwnerFindingView(
         title=title,
         severity_label=_SEVERITY_LABELS.get(severity, severity.capitalize()),
@@ -421,7 +434,7 @@ def _build_fallback_owner_finding(f: ChairFinding) -> OwnerFindingView:
         plain_explanation=f.description,
         why_it_matters=why_it_matters,
         fix_prompt=fix_prompt,
-        test_after_fix="Re-run the affected flow and verify the issue no longer occurs.",
+        test_after_fix=test_after_fix,
         involve_engineer=involve_engineer,
     )
 
@@ -462,20 +475,38 @@ def _build_fallback_owner_presentation(verdict: ChairVerdict) -> OwnerPresentati
             f"This change has {n_blockers} issue{'s' if n_blockers != 1 else ''} "
             "that must be fixed before merging."
         )
+        # Build a more specific short_summary when we have blocker details.
+        if verdict.accepted_blockers:
+            top = verdict.accepted_blockers[0]
+            short_summary = (
+                f"{headline} The most serious issue is a "
+                f"{top.severity.lower()} {top.category} problem in {top.file}."
+            )
+        else:
+            short_summary = verdict.summary or headline
     elif verdict.verdict == "PASS_WITH_WARNINGS":
         headline = (
             f"This change can be merged, but has {n_warnings} "
             f"warning{'s' if n_warnings != 1 else ''} to address."
         )
+        if verdict.warnings:
+            top = verdict.warnings[0]
+            short_summary = (
+                f"{headline} The most notable warning is a "
+                f"{top.category} issue in {top.file}."
+            )
+        else:
+            short_summary = verdict.summary or headline
     else:
         headline = "This change looks safe to merge."
+        short_summary = verdict.summary or headline
 
     return OwnerPresentation(
         headline=headline,
         merge_recommendation=merge_rec,  # type: ignore[arg-type]
         risk_level=risk,  # type: ignore[arg-type]
         confidence_label=confidence_label,
-        short_summary=verdict.summary or headline,
+        short_summary=short_summary,
         findings=findings,
         degraded_warning=(
             "Owner-friendly explanation generation was incomplete, so this report uses a "

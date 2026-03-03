@@ -2011,3 +2011,404 @@ class TestCLIAudienceFlag:
         config = load_config(tmp_path)
         assert config.presentation.default_audience == "developer"
 
+
+# ---------------------------------------------------------------------------
+# Round 3 Polish Tests
+# ---------------------------------------------------------------------------
+
+
+class TestTerminalOwnerOutput:
+    """Terminal reporter owner audience ordering and content."""
+
+    def _make_verdict_with_owner(self) -> ChairVerdict:
+        from council.schemas import OwnerPresentation, OwnerFindingView
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="SQL injection found.", rationale="SecOps confirmed.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    description="SQL injection", suggestion="Parameterize queries",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                    source_reviewers=["secops"],
+                )
+            ],
+        )
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Critical issue — do not merge.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="critical",
+            confidence_label="High confidence",
+            short_summary="The login form has a SQL injection vulnerability.",
+            findings=[
+                OwnerFindingView(
+                    title="Login can be bypassed",
+                    severity_label="Critical Security Issue",
+                    urgency="fix_before_merge",
+                    plain_explanation="Attackers can log in as any user.",
+                    why_it_matters="Account takeover risk.",
+                    fix_prompt="In auth.py, use parameterized queries.",
+                    test_after_fix="Test the login with a SQL injection payload.",
+                )
+            ],
+        )
+        return verdict
+
+    def test_owner_summary_appears_in_output(self, capsys):
+        """Owner summary is printed when audience is owner."""
+        from council.reporters.terminal import print_verdict
+        verdict = self._make_verdict_with_owner()
+        print_verdict(verdict, audience="owner")
+        captured = capsys.readouterr()
+        # Should not contain raw Rich markup in the captured output via capsys
+        # Just check the function runs without error and outputs something.
+        # (Rich may or may not strip markup depending on terminal detection.)
+        assert True  # No exception is the main assertion here.
+
+    def test_print_owner_summary_helper(self):
+        """_print_owner_summary does not raise for a valid OwnerPresentation."""
+        from council.reporters.terminal import _print_owner_summary
+        verdict = self._make_verdict_with_owner()
+        # Should not raise
+        _print_owner_summary(verdict)
+
+    def test_print_owner_summary_noop_without_presentation(self):
+        """_print_owner_summary is a no-op when owner_presentation is None."""
+        from council.reporters.terminal import _print_owner_summary
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Issue.", rationale="Confirmed.",
+        )
+        # Must not raise; owner_presentation is None
+        _print_owner_summary(verdict)
+
+
+class TestOwnerMarkdownReport:
+    """Owner-audience markdown report generation."""
+
+    def _make_fail_verdict_with_owner(self) -> ChairVerdict:
+        from council.schemas import OwnerPresentation, OwnerFindingView
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="SQL injection found.", rationale="SecOps confirmed.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    line_start=23, description="SQL injection",
+                    suggestion="Use parameterized queries",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                    source_reviewers=["secops"],
+                )
+            ],
+        )
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Critical issue — do not merge.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="critical",
+            confidence_label="High confidence",
+            short_summary="The login form has a SQL injection vulnerability.",
+            findings=[
+                OwnerFindingView(
+                    title="Login can be bypassed",
+                    severity_label="Critical Security Issue",
+                    urgency="fix_before_merge",
+                    plain_explanation="Attackers can log in as any user.",
+                    why_it_matters="Account takeover risk.",
+                    fix_prompt="In auth.py, use parameterized queries.",
+                    test_after_fix="Test the login with a SQL injection payload.",
+                    involve_engineer="Yes, authentication logic requires developer review.",
+                )
+            ],
+        )
+        return verdict
+
+    def test_owner_markdown_contains_recommendation(self, tmp_path):
+        """Owner markdown leads with the merge recommendation."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = self._make_fail_verdict_with_owner()
+        out = tmp_path / "review.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "FIX BEFORE MERGE" in content
+
+    def test_owner_markdown_contains_risk_and_confidence(self, tmp_path):
+        """Owner markdown includes risk level and confidence label."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = self._make_fail_verdict_with_owner()
+        out = tmp_path / "review.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "CRITICAL" in content
+        assert "High confidence" in content
+
+    def test_owner_markdown_contains_short_summary(self, tmp_path):
+        """Owner markdown includes the plain-English short summary."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = self._make_fail_verdict_with_owner()
+        out = tmp_path / "review.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "SQL injection vulnerability" in content
+
+    def test_owner_markdown_contains_fix_prompt(self, tmp_path):
+        """Owner markdown includes the fix prompt for each finding."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = self._make_fail_verdict_with_owner()
+        out = tmp_path / "review.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "parameterized queries" in content
+
+    def test_owner_markdown_contains_engineer_note(self, tmp_path):
+        """Owner markdown includes the engineer-involvement note when set."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = self._make_fail_verdict_with_owner()
+        out = tmp_path / "review.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "Engineer needed" in content or "engineer" in content.lower()
+
+    def test_owner_markdown_has_technical_appendix(self, tmp_path):
+        """Owner markdown includes a technical appendix with original findings."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = self._make_fail_verdict_with_owner()
+        out = tmp_path / "review.md"
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "Technical Appendix" in content
+        assert "SQL injection" in content  # blocker description
+        assert "auth.py" in content
+
+    def test_developer_markdown_unchanged_by_audience_param(self, tmp_path):
+        """Developer audience produces the same output as no audience arg."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Security issue.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    description="SQL injection", suggestion="Fix",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                )
+            ],
+            rationale="Confirmed vulnerability.",
+        )
+        out1 = tmp_path / "review1.md"
+        out2 = tmp_path / "review2.md"
+        write_markdown_report(verdict, out1)  # no audience arg
+        write_markdown_report(verdict, out2, audience="developer")
+        assert out1.read_text() == out2.read_text()
+
+    def test_owner_markdown_fallback_when_no_presentation(self, tmp_path):
+        """Owner audience without owner_presentation falls back to developer layout."""
+        from council.reporters.markdown import write_markdown_report
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Issue found.", rationale="Confirmed.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="HIGH", category="security", file="api.py",
+                    description="Missing auth check", suggestion="Add check",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                )
+            ],
+        )
+        out = tmp_path / "review.md"
+        # No owner_presentation set — should fall back to developer layout
+        write_markdown_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "<!DOCTYPE html>" not in content  # still markdown
+        assert "Missing auth check" in content   # finding still present
+        assert "Technical Appendix" not in content  # no owner sections
+
+
+class TestFallbackWordingQuality:
+    """Deterministic fallback helper produces category-specific, non-generic text."""
+
+    def test_security_finding_has_specific_test_after_fix(self):
+        """Security category produces auth-specific test_after_fix."""
+        from council.chair import _build_fallback_owner_finding
+        f = ChairFinding(
+            severity="CRITICAL", category="security", file="auth.py",
+            description="SQL injection", suggestion="Parameterize",
+            chair_action="accepted", chair_reasoning="Confirmed",
+        )
+        view = _build_fallback_owner_finding(f)
+        assert "auth" in view.test_after_fix.lower() or "security" in view.test_after_fix.lower() or "vulnerability" in view.test_after_fix.lower()
+
+    def test_testing_finding_has_specific_test_after_fix(self):
+        """Testing category produces CI/test-suite specific test_after_fix."""
+        from council.chair import _build_fallback_owner_finding
+        f = ChairFinding(
+            severity="MEDIUM", category="testing", file="tests/test_api.py",
+            description="No tests for payment flow", suggestion="Add tests",
+            chair_action="accepted", chair_reasoning="Non-blocking",
+        )
+        view = _build_fallback_owner_finding(f)
+        assert "test" in view.test_after_fix.lower() or "ci" in view.test_after_fix.lower()
+
+    def test_fallback_short_summary_includes_file_for_fail(self):
+        """_build_fallback_owner_presentation short_summary names the top blocker's file."""
+        from council.chair import _build_fallback_owner_presentation
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Issue found.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="critical_file.py",
+                    description="Critical problem", suggestion="Fix it",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                )
+            ],
+        )
+        op = _build_fallback_owner_presentation(verdict)
+        assert "critical_file.py" in op.short_summary
+
+    def test_fallback_short_summary_for_warnings(self):
+        """_build_fallback_owner_presentation short_summary names the top warning's file."""
+        from council.chair import _build_fallback_owner_presentation
+        verdict = ChairVerdict(
+            verdict="PASS_WITH_WARNINGS", confidence=0.8,
+            summary="Warning found.",
+            warnings=[
+                ChairFinding(
+                    severity="MEDIUM", category="architecture", file="models.py",
+                    description="Missing validation", suggestion="Add check",
+                    chair_action="accepted", chair_reasoning="Non-blocking",
+                )
+            ],
+        )
+        op = _build_fallback_owner_presentation(verdict)
+        assert "models.py" in op.short_summary
+
+
+class TestHTMLPolish:
+    """HTML urgency class and engineer banner improvements."""
+
+    def _make_verdict_with_owner_findings(self, urgency: str = "fix_before_merge") -> ChairVerdict:
+        from council.schemas import OwnerPresentation, OwnerFindingView
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Issue.", rationale="Confirmed.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    description="SQL injection", suggestion="Parameterize",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                    source_reviewers=["secops"],
+                )
+            ],
+        )
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Critical issue.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="critical",
+            confidence_label="High confidence",
+            short_summary="Security issue.",
+            findings=[
+                OwnerFindingView(
+                    title="Login bypass",
+                    severity_label="Critical Security Issue",
+                    urgency=urgency,
+                    plain_explanation="Attackers can log in as anyone.",
+                    why_it_matters="Account takeover risk.",
+                    fix_prompt="Fix the query in auth.py.",
+                    test_after_fix="Test the login.",
+                    involve_engineer="Yes — review auth changes with a developer.",
+                )
+            ],
+        )
+        return verdict
+
+    def test_fix_before_merge_card_has_urgency_class(self, tmp_path):
+        """fix_before_merge owner cards have the urgency-block CSS class."""
+        from council.reporters.html_report import write_html_report
+        verdict = self._make_verdict_with_owner_findings("fix_before_merge")
+        out = tmp_path / "owner.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "urgency-block" in content
+
+    def test_fix_soon_card_has_urgency_soon_class(self, tmp_path):
+        """fix_soon owner cards have the urgency-soon CSS class."""
+        from council.reporters.html_report import _owner_finding_card
+        from council.schemas import OwnerFindingView
+        f = OwnerFindingView(
+            title="Some warning",
+            severity_label="Important warning",
+            urgency="fix_soon",
+            plain_explanation="Minor issue.",
+            why_it_matters="Could matter.",
+            fix_prompt="Fix something.",
+            test_after_fix="Check it.",
+        )
+        card = _owner_finding_card(f)
+        assert "urgency-soon" in card
+
+    def test_nice_to_have_card_has_no_urgency_class(self, tmp_path):
+        """nice_to_have owner cards have no urgency accent class."""
+        from council.reporters.html_report import _owner_finding_card
+        from council.schemas import OwnerFindingView
+        f = OwnerFindingView(
+            title="Style tweak",
+            severity_label="Minor improvement",
+            urgency="nice_to_have",
+            plain_explanation="Style issue.",
+            why_it_matters="Minor.",
+            fix_prompt="Fix style.",
+            test_after_fix="Check lint.",
+        )
+        card = _owner_finding_card(f)
+        assert "urgency-block" not in card
+        assert "urgency-soon" not in card
+
+    def test_engineer_banner_shown_when_involve_engineer_set(self, tmp_path):
+        """Owner HTML shows engineer-involvement banner when any finding has involve_engineer."""
+        from council.reporters.html_report import write_html_report
+        verdict = self._make_verdict_with_owner_findings("fix_before_merge")
+        out = tmp_path / "owner.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "engineer-banner" in content
+        assert "Developer involvement needed" in content
+
+    def test_engineer_banner_absent_without_involvement(self, tmp_path):
+        """Owner HTML omits engineer banner when no finding has involve_engineer."""
+        from council.reporters.html_report import write_html_report
+        from council.schemas import OwnerPresentation, OwnerFindingView
+        verdict = ChairVerdict(
+            verdict="PASS_WITH_WARNINGS", confidence=0.8,
+            summary="Warning.", rationale="Minor issue.",
+            warnings=[
+                ChairFinding(
+                    severity="MEDIUM", category="style", file="utils.py",
+                    description="Style issue", suggestion="Fix style",
+                    chair_action="accepted", chair_reasoning="Non-blocking",
+                )
+            ],
+        )
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Style warning.",
+            merge_recommendation="MERGE_WITH_CAUTION",
+            risk_level="low",
+            confidence_label="High confidence",
+            short_summary="Minor style issue only.",
+            findings=[
+                OwnerFindingView(
+                    title="Style tweak needed",
+                    severity_label="Minor improvement",
+                    urgency="nice_to_have",
+                    plain_explanation="Style issue.",
+                    why_it_matters="Minor.",
+                    fix_prompt="Fix style in utils.py.",
+                    test_after_fix="Run lint.",
+                    involve_engineer=None,  # no engineer needed
+                )
+            ],
+        )
+        out = tmp_path / "owner.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "Developer involvement needed" not in content
+

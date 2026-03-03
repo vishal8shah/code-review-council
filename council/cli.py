@@ -31,7 +31,7 @@ def review(
     staged: bool = typer.Option(False, "--staged", help="Review staged changes only"),
     branch: str = typer.Option(None, "--branch", "-b", help="Diff against this branch"),
     output_json: str = typer.Option(None, "--output-json", help="Write JSON report to this path"),
-    output_md: str = typer.Option(None, "--output-md", help="Write markdown report to this path"),
+    output_md: str = typer.Option(None, "--output-md", help="Write markdown report to this path (respects --audience)"),
     output_html: str = typer.Option(None, "--output-html", help="Write HTML report to this path"),
     audience: str = typer.Option(
         None,
@@ -110,6 +110,7 @@ def review(
             output_path=md_path,
             review_pack=result.review_pack,
             reviewer_outputs=result.reviewer_outputs,
+            audience=resolved_audience,
         )
         console.print(f"  Review saved to: {md_path}", style="dim")
 

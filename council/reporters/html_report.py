@@ -249,6 +249,26 @@ _CSS = """
     margin-bottom: 16px;
   }
 
+  /* Engineer-involvement banner */
+  .engineer-banner {
+    background: #f0f9ff;
+    border: 1px solid #7dd3fc;
+    border-left: 4px solid #0369a1;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #0c4a6e;
+    margin-bottom: 20px;
+  }
+
+  /* Urgency left-border accent on fix_before_merge cards */
+  .finding-card.urgency-block {
+    border-left: 4px solid #dc2626;
+  }
+  .finding-card.urgency-soon {
+    border-left: 4px solid #ca8a04;
+  }
+
   /* Footer */
   .footer {
     margin-top: 48px;
@@ -306,6 +326,14 @@ def _owner_finding_card(f: OwnerFindingView) -> str:
     icon, label, bg, fg = URGENCY_LABELS.get(
         f.urgency, ("💡", f.urgency, "#f3f4f6", "#374151")
     )
+    # Apply a left-border accent class for high-urgency findings so they
+    # stand out visually at a glance.
+    urgency_class = ""
+    if f.urgency == "fix_before_merge":
+        urgency_class = " urgency-block"
+    elif f.urgency == "fix_soon":
+        urgency_class = " urgency-soon"
+
     involve_html = ""
     if f.involve_engineer:
         involve_html = (
@@ -318,7 +346,7 @@ def _owner_finding_card(f: OwnerFindingView) -> str:
     # fix_prompt contains quotes or angle brackets.
     prompt_attr = html.escape(f.fix_prompt, quote=True)
     return f"""
-<div class="finding-card">
+<div class="finding-card{urgency_class}">
   <div class="finding-card-header" style="background:{bg}">
     <span style="font-size:20px">{icon}</span>
     <span class="finding-card-title" style="color:{fg}">{_e(f.title)}</span>
@@ -425,10 +453,25 @@ def _owner_report_html(
     # AND there are genuinely no technical findings.  Any other combination would
     # be contradictory and misleading.
     has_tech_findings = bool(verdict.accepted_blockers or verdict.warnings)
+
+    # Engineer involvement banner: shown above the issue list when any finding
+    # requires a developer's review before merging.
+    has_engineer_involvement = op.findings and any(f.involve_engineer for f in op.findings)
+    engineer_banner_html = ""
+    if has_engineer_involvement:
+        engineer_banner_html = (
+            '<div class="engineer-banner">'
+            '👷 <strong>Developer involvement needed</strong>: One or more issues in this '
+            'review require a developer to review the fix before merging. See the '
+            '"When to involve an engineer" note on the relevant issue card(s).'
+            '</div>'
+        )
+
     owner_findings_html = ""
     if op.findings:
         owner_findings_html = (
-            '<div class="section-header">Issues Found</div>'
+            f'<div class="section-header">Issues Found</div>'
+            f'{engineer_banner_html}'
             + "".join(_owner_finding_card(f) for f in op.findings)
         )
     elif op.merge_recommendation == "SAFE_TO_MERGE" and not has_tech_findings:
@@ -441,9 +484,9 @@ def _owner_report_html(
         # show a fallback warning rather than a contradictory "all clear" message.
         owner_findings_html = (
             '<div class="section-header">Issues Found</div>'
-            '<div class="inline-warning">⚠️ This report could not render detailed '
-            'owner issue cards. Please review the technical appendix below for the '
-            'full list of accepted findings.</div>'
+            '<div class="inline-warning">⚠️ The owner-friendly issue cards could not '
+            'be generated for this report. The technical appendix below contains the '
+            'full list of accepted findings from the review.</div>'
         )
 
     # Technical appendix

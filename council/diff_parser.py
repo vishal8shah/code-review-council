@@ -50,10 +50,13 @@ def get_git_diff(
         repo_root: Path to the repo. Defaults to cwd.
         staged: If True, diff staged changes (--cached).
         branch: If set, diff against this branch (e.g., "main").
+            In CI checkouts the local ref may not exist; the function
+            automatically retries with origin/<branch> before failing.
 
     Returns:
         Raw unified diff text.
     """
+    cwd = repo_root or Path.cwd()
     cmd = ["git", "diff", "--unified=3"]
 
     if staged:
@@ -61,14 +64,16 @@ def get_git_diff(
     elif branch:
         cmd.extend([f"{branch}...HEAD"])
 
-    result = subprocess.run(
-        cmd,
-        cwd=repo_root or Path.cwd(),
-        capture_output=True,
-        text=True,
-    )
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
     if result.returncode != 0:
+        # In CI checkouts the branch only exists as origin/<branch>.
+        # Retry once with the remote-tracking ref before giving up.
+        if branch and "unknown revision" in result.stderr:
+            fallback_cmd = ["git", "diff", "--unified=3", f"origin/{branch}...HEAD"]
+            fallback = subprocess.run(fallback_cmd, cwd=cwd, capture_output=True, text=True)
+            if fallback.returncode == 0:
+                return fallback.stdout
         raise RuntimeError(f"git diff failed: {result.stderr.strip()}")
 
     return result.stdout

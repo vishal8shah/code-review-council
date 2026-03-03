@@ -2267,7 +2267,7 @@ class TestOwnerMarkdownReport:
             risk_level="critical",
             confidence_label="High confidence",
             short_summary="Security issue.",
-            findings=[],
+            findings=[],  # empty findings — the trust-breaking case
         )
         out = tmp_path / "review.md"
         write_markdown_report(verdict, out, audience="owner")

@@ -10,7 +10,7 @@ import json
 
 import litellm
 
-from .schemas import ChairFinding, ChairVerdict, ReviewerOutput, ReviewPack
+from .schemas import ChairFinding, ChairVerdict, OwnerFindingView, OwnerPresentation, ReviewerOutput, ReviewPack
 
 
 CHAIR_SYSTEM_PROMPT = """You are the Council Chair of a Code Review Council. You receive independent
@@ -286,4 +286,219 @@ async def synthesize(
             all_findings=[],
             reviewer_agreement_score=0.0,
             rationale=f"Chair LLM call failed. Failing closed for safety. Error: {e}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Owner Presentation Generation
+# ---------------------------------------------------------------------------
+
+OWNER_PRESENTATION_SYSTEM_PROMPT = """You are translating a technical code review verdict for a product owner
+or semi-technical founder. They understand the product but do not read code.
+
+Your job is to translate the SAME findings from the technical review into plain language.
+Do NOT weaken or hide serious findings. Do NOT invent new findings.
+Be direct, honest, and helpful.
+
+For each accepted finding (blocker or warning), produce a plain-English card explaining:
+- What is wrong (no jargon)
+- Why it matters to the product or business
+- Whether to block the merge
+- An exact copy/paste prompt for an AI coding assistant (Claude, Cursor, Lovable, etc.)
+- What to test after the fix
+- Whether a real engineer should be involved
+
+Map severity to urgency:
+  CRITICAL → fix_before_merge
+  HIGH → fix_before_merge
+  MEDIUM → fix_soon
+  LOW → nice_to_have
+
+Map overall verdict to merge_recommendation:
+  FAIL → FIX_BEFORE_MERGE
+  PASS_WITH_WARNINGS → MERGE_WITH_CAUTION
+  PASS → SAFE_TO_MERGE
+
+Map confidence to confidence_label:
+  >= 0.85 → "High confidence"
+  >= 0.65 → "Moderate confidence"
+  < 0.65  → "Low confidence — review manually"
+
+Respond with ONLY a valid JSON object:
+{
+  "headline": "One-sentence situation summary for a non-technical reader",
+  "merge_recommendation": "FIX_BEFORE_MERGE",
+  "risk_level": "critical",
+  "confidence_label": "High confidence",
+  "short_summary": "2-3 sentence plain-English executive summary",
+  "degraded_warning": null,
+  "findings": [
+    {
+      "title": "Short plain-English title",
+      "severity_label": "Critical Security Issue",
+      "urgency": "fix_before_merge",
+      "plain_explanation": "What is wrong, in plain English",
+      "why_it_matters": "Business or product impact",
+      "fix_prompt": "Paste this into your AI assistant: In [file], fix [function] to...",
+      "test_after_fix": "How to verify the fix worked",
+      "involve_engineer": "Yes, if the fix involves changing authentication logic"
+    }
+  ]
+}
+
+risk_level must be one of: low, medium, high, critical
+merge_recommendation must be one of: SAFE_TO_MERGE, MERGE_WITH_CAUTION, FIX_BEFORE_MERGE
+urgency must be one of: fix_before_merge, fix_soon, nice_to_have"""
+
+
+def _build_owner_message(verdict: ChairVerdict) -> str:
+    """Build the user message for owner presentation generation."""
+    blockers_text = ""
+    if verdict.accepted_blockers:
+        blockers_text = "\n## Accepted Blockers\n"
+        for i, f in enumerate(verdict.accepted_blockers, 1):
+            loc = f.file
+            if f.line_start:
+                loc += f":{f.line_start}"
+            sym = f" ({f.symbol_name})" if f.symbol_name else ""
+            blockers_text += (
+                f"\n### Blocker {i}: [{f.severity}] {f.category} — {loc}{sym}\n"
+                f"Description: {f.description}\n"
+                f"Suggestion: {f.suggestion}\n"
+                f"Evidence: {f.evidence_ref or 'none'}\n"
+                f"Reviewers: {', '.join(f.source_reviewers)}\n"
+            )
+
+    warnings_text = ""
+    if verdict.warnings:
+        warnings_text = "\n## Warnings (Non-Blocking)\n"
+        for i, f in enumerate(verdict.warnings, 1):
+            loc = f.file
+            if f.line_start:
+                loc += f":{f.line_start}"
+            sym = f" ({f.symbol_name})" if f.symbol_name else ""
+            warnings_text += (
+                f"\n### Warning {i}: [{f.severity}] {f.category} — {loc}{sym}\n"
+                f"Description: {f.description}\n"
+                f"Suggestion: {f.suggestion}\n"
+                f"Evidence: {f.evidence_ref or 'none'}\n"
+            )
+
+    degraded_text = ""
+    if verdict.degraded:
+        degraded_text = (
+            f"\n## Degraded Run Warning\n"
+            f"Some reviewers failed during this run: {'; '.join(verdict.degraded_reasons)}\n"
+        )
+
+    return f"""# Technical Review Verdict to Translate
+
+## Overall Result
+- Verdict: {verdict.verdict}
+- Confidence: {verdict.confidence:.0%}
+- Summary: {verdict.summary}
+- Rationale: {verdict.rationale}
+{degraded_text}{blockers_text}{warnings_text}
+Translate this into an owner-audience presentation. Preserve all findings. Do not hide any issues.
+Respond with JSON only."""
+
+
+async def generate_owner_presentation(
+    verdict: ChairVerdict,
+    chair_model: str = "openai/gpt-4o",
+    timeout: float = 60.0,
+) -> OwnerPresentation:
+    """Generate an owner-audience presentation from a ChairVerdict.
+
+    This is a post-processing step that translates the same technical
+    findings into plain English for product owners. It does NOT change
+    which findings are accepted or dismissed — only how they are presented.
+
+    Args:
+        verdict: The technical ChairVerdict already produced by synthesize().
+        chair_model: LiteLLM model identifier for the translation call.
+        timeout: LLM call timeout in seconds.
+
+    Returns:
+        OwnerPresentation with plain-English summaries of all accepted findings.
+    """
+    # Fast-path: no accepted findings and no warnings — produce a simple SAFE_TO_MERGE
+    if not verdict.accepted_blockers and not verdict.warnings:
+        confidence_label = (
+            "High confidence" if verdict.confidence >= 0.85
+            else "Moderate confidence" if verdict.confidence >= 0.65
+            else "Low confidence — review manually"
+        )
+        return OwnerPresentation(
+            headline="This change looks safe to merge.",
+            merge_recommendation="SAFE_TO_MERGE",
+            risk_level="low",
+            confidence_label=confidence_label,
+            short_summary=verdict.summary or "No issues found. All reviewers passed.",
+            findings=[],
+            degraded_warning=(
+                "Note: one or more reviewers had issues during this run. "
+                "Manual spot-check is recommended."
+                if verdict.degraded else None
+            ),
+        )
+
+    try:
+        response = await litellm.acompletion(
+            model=chair_model,
+            messages=[
+                {"role": "system", "content": OWNER_PRESENTATION_SYSTEM_PROMPT},
+                {"role": "user", "content": _build_owner_message(verdict)},
+            ],
+            response_format={"type": "json_object"},
+            timeout=timeout,
+            temperature=0.2,
+            num_retries=2,
+        )
+
+        content = response.choices[0].message.content or "{}"
+        parsed = json.loads(content)
+
+        findings = []
+        for f in parsed.get("findings", []):
+            try:
+                findings.append(OwnerFindingView(**f))
+            except Exception:
+                continue
+
+        return OwnerPresentation(
+            headline=parsed.get("headline", "Review complete."),
+            merge_recommendation=parsed.get("merge_recommendation", "MERGE_WITH_CAUTION"),
+            risk_level=parsed.get("risk_level", "medium"),
+            confidence_label=parsed.get("confidence_label", "Moderate confidence"),
+            short_summary=parsed.get("short_summary", verdict.summary),
+            findings=findings,
+            degraded_warning=parsed.get("degraded_warning"),
+        )
+
+    except Exception as e:
+        # Owner presentation failure is non-fatal — fall back to a minimal safe output
+        confidence_label = (
+            "High confidence" if verdict.confidence >= 0.85
+            else "Moderate confidence" if verdict.confidence >= 0.65
+            else "Low confidence — review manually"
+        )
+        merge_rec = (
+            "FIX_BEFORE_MERGE" if verdict.verdict == "FAIL"
+            else "MERGE_WITH_CAUTION" if verdict.verdict == "PASS_WITH_WARNINGS"
+            else "SAFE_TO_MERGE"
+        )
+        risk = (
+            "critical" if verdict.verdict == "FAIL" and verdict.accepted_blockers
+            else "medium" if verdict.verdict == "PASS_WITH_WARNINGS"
+            else "low"
+        )
+        return OwnerPresentation(
+            headline=verdict.summary,
+            merge_recommendation=merge_rec,
+            risk_level=risk,
+            confidence_label=confidence_label,
+            short_summary=verdict.summary,
+            findings=[],
+            degraded_warning=f"Owner presentation generation failed: {e}",
         )

@@ -98,6 +98,16 @@ class CostConfig(BaseModel):
     budget_daily_usd: float = 20.00
 
 
+class PresentationConfig(BaseModel):
+    """Output presentation settings.
+
+    Controls which audience the generated reports target.
+    Absence of a [presentation] section in .council.toml defaults to developer.
+    """
+
+    default_audience: Literal["developer", "owner"] = "developer"
+
+
 class CouncilConfig(BaseModel):
     """Top-level council configuration — the full .council.toml schema."""
 
@@ -111,6 +121,7 @@ class CouncilConfig(BaseModel):
     reviewers: list[ReviewerConfig] = []
     reporters: ReportersConfig = ReportersConfig()
     cost: CostConfig = CostConfig()
+    presentation: PresentationConfig = PresentationConfig()
 
     @property
     def active_reviewers(self) -> list[ReviewerConfig]:
@@ -181,6 +192,7 @@ def load_config(repo_root: Path | None = None) -> CouncilConfig:
     gate_zero_raw = raw.get("gate_zero", {})
     reporters_raw = raw.get("reporters", {})
     cost_raw = raw.get("cost", {})
+    presentation_raw = raw.get("presentation", {})
 
     # Parse reviewers — support both [[reviewers]] and [[reviewers.custom]]
     reviewer_list = raw.get("reviewers", DEFAULT_REVIEWERS)
@@ -198,4 +210,5 @@ def load_config(repo_root: Path | None = None) -> CouncilConfig:
         reviewers=[ReviewerConfig(**r) for r in reviewer_list],
         reporters=ReportersConfig(**reporters_raw),
         cost=CostConfig(**cost_raw),
+        presentation=PresentationConfig(**presentation_raw),
     )

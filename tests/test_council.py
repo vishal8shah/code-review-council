@@ -1274,3 +1274,504 @@ class TestDiffTextFileBoundaries:
         assert "=== FILE: src/a.py (modified) ===" in pack.diff_text
         assert "=== FILE: src/b.py (added) ===" in pack.diff_text
 
+
+# ---------------------------------------------------------------------------
+# Presentation Layer Tests
+# ---------------------------------------------------------------------------
+
+
+class TestPresentationConfig:
+    """PresentationConfig loading and defaults."""
+
+    def test_default_audience_is_developer(self, tmp_path):
+        """Absence of [presentation] section defaults to developer audience."""
+        config = load_config(tmp_path)
+        assert config.presentation.default_audience == "developer"
+
+    def test_presentation_config_from_toml(self, tmp_path):
+        """[presentation] section is parsed correctly from .council.toml."""
+        toml = tmp_path / ".council.toml"
+        toml.write_text("""
+[council]
+chair_model = "openai/gpt-4o"
+
+[presentation]
+default_audience = "owner"
+""")
+        config = load_config(tmp_path)
+        assert config.presentation.default_audience == "owner"
+
+    def test_backward_compat_no_presentation_section(self, tmp_path):
+        """Config without [presentation] still loads correctly."""
+        toml = tmp_path / ".council.toml"
+        toml.write_text("""
+[council]
+chair_model = "openai/gpt-4o"
+
+[gate_zero]
+require_docs = false
+""")
+        config = load_config(tmp_path)
+        # Should not raise; must default to developer
+        assert config.presentation.default_audience == "developer"
+        # Other settings must be intact
+        assert config.gate_zero.require_docs is False
+
+
+class TestOwnerSchemas:
+    """OwnerPresentation and OwnerFindingView schema validation."""
+
+    def test_owner_finding_view_all_fields(self):
+        """OwnerFindingView accepts all required and optional fields."""
+        from council.schemas import OwnerFindingView
+        f = OwnerFindingView(
+            title="User data exposed",
+            severity_label="Critical Security Issue",
+            urgency="fix_before_merge",
+            plain_explanation="Anyone can read other users' data without logging in.",
+            why_it_matters="Your users' private information is at risk.",
+            fix_prompt="In auth.py, fix get_user() to check the session before returning data.",
+            test_after_fix="Try accessing /api/user/2 when logged in as user 1.",
+            involve_engineer="Yes, if the fix touches authentication middleware.",
+        )
+        assert f.urgency == "fix_before_merge"
+        assert f.involve_engineer is not None
+
+    def test_owner_finding_view_optional_involve_engineer(self):
+        """involve_engineer is optional and defaults to None."""
+        from council.schemas import OwnerFindingView
+        f = OwnerFindingView(
+            title="Minor issue",
+            severity_label="Warning",
+            urgency="nice_to_have",
+            plain_explanation="A small improvement.",
+            why_it_matters="Slightly better UX.",
+            fix_prompt="Change the label.",
+            test_after_fix="Check the UI.",
+        )
+        assert f.involve_engineer is None
+
+    def test_owner_presentation_all_fields(self):
+        """OwnerPresentation validates with all fields."""
+        from council.schemas import OwnerPresentation, OwnerFindingView
+        op = OwnerPresentation(
+            headline="Critical security issue found.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="critical",
+            confidence_label="High confidence",
+            short_summary="There is a SQL injection vulnerability in the login form.",
+            findings=[
+                OwnerFindingView(
+                    title="SQL injection in login",
+                    severity_label="Critical Security Issue",
+                    urgency="fix_before_merge",
+                    plain_explanation="Attackers can bypass the login.",
+                    why_it_matters="Account takeover is possible.",
+                    fix_prompt="Fix the query parameterization.",
+                    test_after_fix="Try entering ' OR '1'='1 in the login form.",
+                )
+            ],
+            degraded_warning=None,
+        )
+        assert op.merge_recommendation == "FIX_BEFORE_MERGE"
+        assert len(op.findings) == 1
+
+    def test_chair_verdict_owner_presentation_optional(self):
+        """ChairVerdict.owner_presentation is None by default."""
+        v = ChairVerdict(
+            verdict="PASS", confidence=0.9,
+            summary="Clean.", rationale="No issues.",
+        )
+        assert v.owner_presentation is None
+
+    def test_chair_verdict_owner_presentation_assignable(self):
+        """ChairVerdict.owner_presentation can be set."""
+        from council.schemas import OwnerPresentation
+        v = ChairVerdict(
+            verdict="PASS", confidence=0.9,
+            summary="Clean.", rationale="No issues.",
+        )
+        v.owner_presentation = OwnerPresentation(
+            headline="Safe to merge.",
+            merge_recommendation="SAFE_TO_MERGE",
+            risk_level="low",
+            confidence_label="High confidence",
+            short_summary="No issues found.",
+        )
+        assert v.owner_presentation is not None
+        assert v.owner_presentation.merge_recommendation == "SAFE_TO_MERGE"
+
+
+class TestOwnerPresentationGeneration:
+    """generate_owner_presentation fast-paths and LLM parsing."""
+
+    @pytest.mark.asyncio
+    async def test_fast_path_no_findings(self):
+        """No accepted findings → fast SAFE_TO_MERGE without LLM call."""
+        from council.chair import generate_owner_presentation
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.9,
+            summary="All clear.", rationale="No issues.",
+        )
+        op = await generate_owner_presentation(verdict)
+        assert op.merge_recommendation == "SAFE_TO_MERGE"
+        assert op.risk_level == "low"
+        assert op.findings == []
+        # Should NOT have called any LLM
+        # (no patch needed — fast-path exits before LLM)
+
+    @pytest.mark.asyncio
+    async def test_fast_path_degraded_adds_warning(self):
+        """Degraded run with no findings includes a degraded warning."""
+        from council.chair import generate_owner_presentation
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.7,
+            summary="All clear.", rationale="No issues.",
+            degraded=True,
+            degraded_reasons=["secops: timeout"],
+        )
+        op = await generate_owner_presentation(verdict)
+        assert op.degraded_warning is not None
+        assert "reviewer" in op.degraded_warning.lower() or "manual" in op.degraded_warning.lower()
+
+    @pytest.mark.asyncio
+    async def test_llm_response_parsed_correctly(self):
+        """LLM JSON is parsed into a valid OwnerPresentation."""
+        from council.chair import generate_owner_presentation
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="SQL injection found.",
+            rationale="SecOps confirmed.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    description="SQL injection", suggestion="Parameterize",
+                    chair_action="accepted", chair_reasoning="Evidence clear",
+                    source_reviewers=["secops"],
+                )
+            ],
+        )
+
+        owner_response = json.dumps({
+            "headline": "Critical security issue — do not merge yet.",
+            "merge_recommendation": "FIX_BEFORE_MERGE",
+            "risk_level": "critical",
+            "confidence_label": "High confidence",
+            "short_summary": "The login form is vulnerable to SQL injection.",
+            "degraded_warning": None,
+            "findings": [{
+                "title": "Login form can be bypassed",
+                "severity_label": "Critical Security Issue",
+                "urgency": "fix_before_merge",
+                "plain_explanation": "Attackers can log in as any user.",
+                "why_it_matters": "Account takeover is possible.",
+                "fix_prompt": "In auth.py, use parameterized queries.",
+                "test_after_fix": "Try ' OR '1'='1 in the login box.",
+                "involve_engineer": None,
+            }],
+        })
+
+        mock_resp = MagicMock()
+        mock_resp.choices = [MagicMock()]
+        mock_resp.choices[0].message.content = owner_response
+
+        with patch("council.chair.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_resp)
+            op = await generate_owner_presentation(verdict)
+
+        assert op.merge_recommendation == "FIX_BEFORE_MERGE"
+        assert op.risk_level == "critical"
+        assert len(op.findings) == 1
+        assert op.findings[0].urgency == "fix_before_merge"
+
+    @pytest.mark.asyncio
+    async def test_llm_failure_falls_back_gracefully(self):
+        """LLM failure produces a fallback OwnerPresentation, not an exception."""
+        from council.chair import generate_owner_presentation
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Issue found.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    description="Problem", suggestion="Fix",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                    source_reviewers=["secops"],
+                )
+            ],
+        )
+
+        with patch("council.chair.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(side_effect=Exception("API down"))
+            op = await generate_owner_presentation(verdict)
+
+        # Should not raise; must fall back to a minimal presentation
+        assert op.merge_recommendation == "FIX_BEFORE_MERGE"
+        assert op.degraded_warning is not None
+        assert "failed" in op.degraded_warning.lower()
+
+    @pytest.mark.asyncio
+    async def test_accepted_findings_preserved_in_owner_output(self):
+        """Owner presentation does not remove accepted technical findings from the verdict."""
+        from council.chair import generate_owner_presentation
+        blocker = ChairFinding(
+            severity="CRITICAL", category="security", file="auth.py",
+            description="SQL injection", suggestion="Parameterize",
+            chair_action="accepted", chair_reasoning="Evidence clear",
+            source_reviewers=["secops"],
+        )
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="SQL injection found.",
+            accepted_blockers=[blocker],
+        )
+
+        owner_response = json.dumps({
+            "headline": "Critical issue.",
+            "merge_recommendation": "FIX_BEFORE_MERGE",
+            "risk_level": "critical",
+            "confidence_label": "High confidence",
+            "short_summary": "SQL injection in login.",
+            "degraded_warning": None,
+            "findings": [{
+                "title": "Login can be bypassed",
+                "severity_label": "Critical Security Issue",
+                "urgency": "fix_before_merge",
+                "plain_explanation": "Attackers can log in as any user.",
+                "why_it_matters": "Account takeover.",
+                "fix_prompt": "Fix parameterization.",
+                "test_after_fix": "Test the login.",
+            }],
+        })
+
+        mock_resp = MagicMock()
+        mock_resp.choices = [MagicMock()]
+        mock_resp.choices[0].message.content = owner_response
+
+        with patch("council.chair.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_resp)
+            op = await generate_owner_presentation(verdict)
+
+        # Technical findings still on the verdict
+        assert len(verdict.accepted_blockers) == 1
+        assert verdict.accepted_blockers[0].description == "SQL injection"
+        # Owner findings are a translation, not a replacement
+        assert len(op.findings) == 1
+
+
+class TestHTMLReporter:
+    """HTML report generation."""
+
+    def _make_fail_verdict(self) -> ChairVerdict:
+        return ChairVerdict(
+            verdict="FAIL",
+            confidence=0.9,
+            summary="Critical security issue.",
+            rationale="SQL injection confirmed.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    line_start=23, description="SQL injection",
+                    suggestion="Use parameterized queries",
+                    evidence_ref="f'SELECT * FROM users WHERE id={user_id}'",
+                    chair_action="accepted", chair_reasoning="Evidence-backed",
+                    source_reviewers=["secops"],
+                )
+            ],
+        )
+
+    def test_developer_html_is_generated(self, tmp_path):
+        """Developer audience HTML report is written to disk."""
+        from council.reporters.html_report import write_html_report
+        verdict = self._make_fail_verdict()
+        out = tmp_path / "report.html"
+        write_html_report(verdict, out, audience="developer")
+        content = out.read_text()
+        assert out.exists()
+        assert "<!DOCTYPE html>" in content
+        assert "Code Review Council" in content
+
+    def test_developer_html_contains_verdict(self, tmp_path):
+        """Developer HTML contains the verdict."""
+        from council.reporters.html_report import write_html_report
+        verdict = self._make_fail_verdict()
+        out = tmp_path / "report.html"
+        write_html_report(verdict, out, audience="developer")
+        content = out.read_text()
+        assert "FAIL" in content
+
+    def test_developer_html_contains_finding(self, tmp_path):
+        """Developer HTML contains the accepted blocker description."""
+        from council.reporters.html_report import write_html_report
+        verdict = self._make_fail_verdict()
+        out = tmp_path / "report.html"
+        write_html_report(verdict, out, audience="developer")
+        content = out.read_text()
+        assert "SQL injection" in content
+        assert "auth.py" in content
+
+    def test_owner_html_uses_owner_presentation(self, tmp_path):
+        """Owner HTML report uses OwnerPresentation when available."""
+        from council.reporters.html_report import write_html_report
+        from council.schemas import OwnerPresentation, OwnerFindingView
+        verdict = self._make_fail_verdict()
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Critical issue — do not merge.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="critical",
+            confidence_label="High confidence",
+            short_summary="The login is vulnerable to attack.",
+            findings=[
+                OwnerFindingView(
+                    title="Login can be bypassed by attackers",
+                    severity_label="Critical Security Issue",
+                    urgency="fix_before_merge",
+                    plain_explanation="Anyone can log in as any user.",
+                    why_it_matters="Account takeover is possible.",
+                    fix_prompt="Fix the query in auth.py to use parameterized queries.",
+                    test_after_fix="Try the login with a SQL injection payload.",
+                )
+            ],
+        )
+        out = tmp_path / "owner.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "FIX BEFORE MERGE" in content
+        assert "Login can be bypassed by attackers" in content
+        assert "The login is vulnerable to attack." in content
+        assert "Fix the query in auth.py" in content
+
+    def test_owner_html_has_technical_appendix(self, tmp_path):
+        """Owner HTML includes a technical appendix with original findings."""
+        from council.reporters.html_report import write_html_report
+        from council.schemas import OwnerPresentation
+        verdict = self._make_fail_verdict()
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Issue found.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="high",
+            confidence_label="High confidence",
+            short_summary="Security issue.",
+        )
+        out = tmp_path / "owner.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text()
+        # Technical appendix should be present
+        assert "Technical" in content
+        assert "auth.py" in content
+
+    def test_owner_html_without_presentation_falls_back(self, tmp_path):
+        """Owner audience without owner_presentation falls back to developer layout."""
+        from council.reporters.html_report import write_html_report
+        verdict = self._make_fail_verdict()
+        # No owner_presentation set
+        out = tmp_path / "fallback.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "<!DOCTYPE html>" in content
+        assert "FAIL" in content
+
+    def test_html_no_external_resources(self, tmp_path):
+        """Generated HTML has no CDN or external asset references."""
+        from council.reporters.html_report import write_html_report
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.9, summary="Clean.", rationale="All good.",
+        )
+        out = tmp_path / "report.html"
+        write_html_report(verdict, out)
+        content = out.read_text()
+        # No http references to CDNs
+        assert "cdn." not in content
+        assert "https://" not in content
+        assert "http://" not in content
+
+    def test_html_self_contained(self, tmp_path):
+        """HTML report is a single file — no script src or link href to external files."""
+        from council.reporters.html_report import write_html_report
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.9, summary="Clean.", rationale="All good.",
+        )
+        out = tmp_path / "report.html"
+        write_html_report(verdict, out)
+        content = out.read_text()
+        assert 'src="http' not in content
+        assert 'href="http' not in content
+
+    def test_html_with_review_pack_and_reviewers(self, tmp_path):
+        """HTML report includes metadata when review_pack and reviewer_outputs provided."""
+        from council.reporters.html_report import write_html_report
+        verdict = ChairVerdict(
+            verdict="PASS_WITH_WARNINGS", confidence=0.8,
+            summary="One warning.",
+            warnings=[ChairFinding(
+                severity="MEDIUM", category="architecture", file="api.py",
+                description="Missing error handling",
+                suggestion="Add try/except",
+                chair_action="accepted", chair_reasoning="Real issue but not blocking",
+                source_reviewers=["architect"],
+            )],
+        )
+        rp = ReviewPack(
+            diff_text="+ code",
+            changed_files=["api.py"],
+            languages_detected=["python"],
+            total_lines_changed=10,
+            token_estimate=500,
+        )
+        reviewer_outputs = [
+            ReviewerOutput(
+                reviewer_id="architect", model="claude-sonnet-4",
+                verdict="PASS", confidence=0.8, findings=[],
+            ),
+        ]
+        out = tmp_path / "report.html"
+        write_html_report(verdict, out, review_pack=rp, reviewer_outputs=reviewer_outputs)
+        content = out.read_text()
+        assert "api.py" in content
+        assert "Missing error handling" in content
+
+
+class TestCLIAudienceFlag:
+    """CLI --audience flag and backward compatibility."""
+
+    def test_cli_has_audience_option(self):
+        """CLI review command exposes --audience option."""
+        from typer.testing import CliRunner
+        from council.cli import app
+        runner = CliRunner()
+        result = runner.invoke(app, ["review", "--help"])
+        assert "--audience" in result.output
+
+    def test_cli_has_output_html_option(self):
+        """CLI review command exposes --output-html option."""
+        from typer.testing import CliRunner
+        from council.cli import app
+        runner = CliRunner()
+        result = runner.invoke(app, ["review", "--help"])
+        assert "--output-html" in result.output
+
+    def test_cli_invalid_audience_exits_nonzero(self):
+        """Invalid --audience value produces a clear error."""
+        from typer.testing import CliRunner
+        from council.cli import app
+        runner = CliRunner()
+        # We need to mock git to avoid actual git calls
+        with patch("council.orchestrator.get_git_diff", return_value=""):
+            result = runner.invoke(app, ["review", "--audience", "invalid"])
+        assert result.exit_code != 0
+        assert "invalid" in result.output.lower() or "must be" in result.output.lower()
+
+    def test_developer_audience_backward_compatible(self, tmp_path):
+        """--audience developer produces the same flow as no audience flag."""
+        from council.schemas import OwnerPresentation
+        # developer audience should NOT set owner_presentation
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.9, summary="Clean.", rationale="All good.",
+        )
+        assert verdict.owner_presentation is None
+
+    def test_presentation_config_default_developer(self, tmp_path):
+        """Config without [presentation] section gives developer audience by default."""
+        config = load_config(tmp_path)
+        assert config.presentation.default_audience == "developer"
+

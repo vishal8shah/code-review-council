@@ -32,6 +32,12 @@ def review(
     branch: str = typer.Option(None, "--branch", "-b", help="Diff against this branch"),
     output_json: str = typer.Option(None, "--output-json", help="Write JSON report to this path"),
     output_md: str = typer.Option(None, "--output-md", help="Write markdown report to this path"),
+    output_html: str = typer.Option(None, "--output-html", help="Write HTML report to this path"),
+    audience: str = typer.Option(
+        None,
+        "--audience",
+        help="Output audience: 'developer' (default, technical) or 'owner' (plain-English for product owners)",
+    ),
     repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),
 ) -> None:
     """Run the Code Review Council on current changes."""
@@ -40,6 +46,15 @@ def review(
 
     root = Path(repo_root) if repo_root else Path.cwd()
     config = load_config(root)
+
+    # Resolve audience: CLI flag > config default > "developer"
+    resolved_audience = audience or config.presentation.default_audience or "developer"
+    if resolved_audience not in ("developer", "owner"):
+        console.print(
+            f"[red]Invalid --audience value '{resolved_audience}'. "
+            "Must be 'developer' or 'owner'.[/]"
+        )
+        raise typer.Exit(code=1)
 
     # Safety: warn if --ci without explicit diff target (could review empty diff)
     if ci and not staged and not branch:
@@ -61,6 +76,17 @@ def review(
 
     verdict = result.verdict
 
+    # Owner presentation — generated after synthesis, only when requested
+    if resolved_audience == "owner":
+        from .chair import generate_owner_presentation
+        verdict.owner_presentation = asyncio.run(
+            generate_owner_presentation(
+                verdict=verdict,
+                chair_model=config.chair_model,
+                timeout=float(config.timeout_seconds),
+            )
+        )
+
     # Stage 3: Reports
     # Terminal output (always)
     from .reporters.terminal import print_verdict
@@ -70,6 +96,7 @@ def review(
         reviewer_outputs=result.reviewer_outputs,
         gate_result=result.gate_result,
         ci_mode=ci,
+        audience=resolved_audience,
     )
 
     # Markdown report
@@ -105,6 +132,18 @@ def review(
             reviewer_outputs=result.reviewer_outputs,
         )
         console.print(f"  JSON report saved to: {json_path}", style="dim")
+
+    # HTML report
+    if output_html:
+        from .reporters.html_report import write_html_report
+        write_html_report(
+            verdict=verdict,
+            output_path=output_html,
+            audience=resolved_audience,
+            review_pack=result.review_pack,
+            reviewer_outputs=result.reviewer_outputs,
+        )
+        console.print(f"  HTML report saved to: {output_html}", style="dim")
 
     # Exit code
     if ci and verdict.verdict == "FAIL":

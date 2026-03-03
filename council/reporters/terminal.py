@@ -104,6 +104,7 @@ def print_verdict(
     reviewer_outputs: list[ReviewerOutput] | None = None,
     gate_result: GateZeroResult | None = None,
     ci_mode: bool = False,
+    audience: str = "developer",
 ) -> None:
     """Print the full council report to terminal."""
     style, icon = VERDICT_STYLES.get(verdict.verdict, ("", "?"))
@@ -147,5 +148,24 @@ def print_verdict(
 
     if verdict.summary:
         console.print(f"\n  {verdict.summary}", style="dim italic")
+
+    # Owner audience: print a plain-English summary if present
+    if audience == "owner" and verdict.owner_presentation is not None:
+        op = verdict.owner_presentation
+        console.print()
+        console.rule(style="cyan")
+        console.print(f"  [bold cyan]Owner Summary[/]")
+        console.print(f"  Recommendation: [bold]{op.merge_recommendation}[/]")
+        console.print(f"  Risk: {op.risk_level}  |  {op.confidence_label}")
+        console.print(f"\n  {op.short_summary}", style="italic")
+        if op.degraded_warning:
+            console.print(f"\n  ⚠️  {op.degraded_warning}", style="yellow")
+        if op.findings:
+            console.print(f"\n  [bold]Issues ({len(op.findings)}):[/]")
+            for f in op.findings:
+                console.print(f"\n  [{f.urgency.upper()}] {f.title}", style="bold")
+                console.print(f"  {f.plain_explanation}")
+                console.print(f"  Why it matters: {f.why_it_matters}", style="dim")
+        console.rule(style="cyan")
 
     console.print()

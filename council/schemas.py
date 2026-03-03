@@ -241,3 +241,43 @@ class ChairVerdict(BaseModel):
     all_findings: list[ChairFinding] = []
     reviewer_agreement_score: float = Field(ge=0.0, le=1.0, default=1.0)
     rationale: str = ""
+    # Owner presentation — populated only when --audience owner is requested
+    owner_presentation: "OwnerPresentation | None" = None
+
+
+# ---------------------------------------------------------------------------
+# Owner Presentation Layer
+# ---------------------------------------------------------------------------
+
+
+class OwnerFindingView(BaseModel):
+    """Owner-audience view of a single accepted finding.
+
+    This is a translation of a technical ChairFinding into plain English
+    for product owners and semi-technical stakeholders.
+    """
+
+    title: str  # Short, plain-English title
+    severity_label: str  # e.g. "Critical Security Issue", "Warning"
+    urgency: Literal["fix_before_merge", "fix_soon", "nice_to_have"]
+    plain_explanation: str  # What is wrong, in plain English
+    why_it_matters: str  # Business / product impact
+    fix_prompt: str  # Copy/paste prompt for an AI coding assistant
+    test_after_fix: str  # What to verify after the fix is applied
+    involve_engineer: str | None = None  # When to loop in a real developer
+
+
+class OwnerPresentation(BaseModel):
+    """Owner-audience presentation layer generated from a ChairVerdict.
+
+    This is NOT a second set of findings. It is a translation of the same
+    accepted findings into language suitable for product owners.
+    """
+
+    headline: str  # One-line summary of the overall situation
+    merge_recommendation: Literal["SAFE_TO_MERGE", "MERGE_WITH_CAUTION", "FIX_BEFORE_MERGE"]
+    risk_level: Literal["low", "medium", "high", "critical"]
+    confidence_label: str  # e.g. "High confidence", "Moderate confidence"
+    short_summary: str  # 2-3 sentence plain-English executive summary
+    findings: list[OwnerFindingView] = []
+    degraded_warning: str | None = None  # Set if the review run was degraded

@@ -45,7 +45,71 @@ council review --staged
 
 # CI mode (exits 1 on FAIL)
 council review --ci --branch main --output-json council-report.json
+
+# Generate an HTML report for a product owner
+council review --audience owner --output-html owner-report.html
 ```
+
+## Audience Modes
+
+`council review` supports two output audiences. The underlying review engine is identical for both — the same diff, the same reviewers, the same findings. Only the presentation changes.
+
+### `--audience developer` (default)
+
+The standard technical output. Shows:
+- Gate Zero static findings
+- Reviewer panel results
+- Accepted blockers and warnings with file/line references, evidence, and policy IDs
+- Chair rationale
+
+This is the default. Existing usage without `--audience` is unchanged.
+
+### `--audience owner`
+
+A plain-English translation of the same findings, aimed at product owners and semi-technical founders who need to understand the review result without reading code.
+
+The owner output:
+- **Leads with the recommendation** (SAFE TO MERGE / MERGE WITH CAUTION / FIX BEFORE MERGE)
+- Explains what is wrong and why it matters to the product or business
+- Provides a copy/paste fix prompt for an AI coding assistant (Claude, Cursor, Lovable, etc.)
+- Tells you what to test after the fix
+- Flags whether a real engineer should review the fix
+- Follows with a technical appendix for developer reference
+
+**Important**: owner mode is a translation layer, not a weaker review. The same analysis engine, the same diff, the same reviewers, the same findings. Only the presentation changes. Serious findings are not hidden or softened.
+
+This is a **PR/diff/code-change review tool**, not a full holistic application audit platform.
+
+### `--output-html <path>`
+
+Writes a standalone, self-contained HTML report (no external assets, no CDN, works offline). Especially useful with `--audience owner` to share a polished, shareable report artifact.
+
+```bash
+# Technical HTML for developer review
+council review --output-html report.html
+
+# Owner-friendly HTML to share with stakeholders
+council review --audience owner --output-html owner-report.html
+```
+
+### `--output-md <path>` with audience
+
+The markdown reporter also respects `--audience`. With `--audience owner`, the markdown leads with the recommendation, risk level, plain-English issue cards (including fix prompts), and a technical appendix. Developer audience produces the standard technical markdown.
+
+```bash
+council review --audience owner --output-md owner-review.md
+```
+
+### Configuring a default audience
+
+Add a `[presentation]` section to `.council.toml`:
+
+```toml
+[presentation]
+default_audience = "developer"  # or "owner"
+```
+
+Absence of this section defaults to `developer`. The CLI `--audience` flag always overrides the config.
 
 ## Configuration
 
@@ -65,6 +129,10 @@ check_secrets = true
 id = "secops"
 model = "anthropic/claude-sonnet-4-20250514"
 enabled = true
+
+# Optional: set a default output audience
+[presentation]
+default_audience = "developer"
 ```
 
 See the solution design document for full configuration reference.

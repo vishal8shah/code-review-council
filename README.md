@@ -2,6 +2,10 @@
 
 Multi-agent LLM code review system — an automated quality gate for AI-generated ("vibe-coded") code.
 
+> **Start here:** See [GETTING_STARTED.md](GETTING_STARTED.md) for the fastest path to install, configure, and run your first review.
+>
+> **Requirements:** Python **3.12+**, Git, and at least one supported LLM provider API key.
+
 ## How It Works
 
 Changes pass through a pipeline:

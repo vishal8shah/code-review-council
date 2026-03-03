@@ -351,6 +351,139 @@ merge_recommendation must be one of: SAFE_TO_MERGE, MERGE_WITH_CAUTION, FIX_BEFO
 urgency must be one of: fix_before_merge, fix_soon, nice_to_have"""
 
 
+_WHY_IT_MATTERS = {
+    "security": "This could expose user data, account access, or other sensitive behavior.",
+    "testing": "This could let a broken change slip through without being caught before merge.",
+    "architecture": "This could make the change brittle, harder to maintain, or more likely to fail in edge cases.",
+    "documentation": "This could slow future changes or increase confusion for the next person touching this code.",
+    "performance": "This could create slower behavior or higher infrastructure cost under real usage.",
+    "style": "This could create product risk if merged without review.",
+}
+
+_SEVERITY_LABELS = {
+    "CRITICAL": "Critical issue",
+    "HIGH": "High-risk issue",
+    "MEDIUM": "Important warning",
+    "LOW": "Minor improvement",
+}
+
+_SEVERITY_URGENCY: dict[str, str] = {
+    "CRITICAL": "fix_before_merge",
+    "HIGH": "fix_before_merge",
+    "MEDIUM": "fix_soon",
+    "LOW": "nice_to_have",
+}
+
+_ENGINEER_KEYWORDS = frozenset(
+    {"auth", "permission", "credential", "token", "secret", "delete", "infra", "config"}
+)
+
+
+def _build_fallback_owner_finding(f: ChairFinding) -> OwnerFindingView:
+    """Convert a single technical ChairFinding into an owner-audience card.
+
+    Deterministic: no LLM call, no randomness. Used when LLM translation
+    fails or returns an incomplete result.
+    """
+    severity = f.severity
+    category = f.category
+
+    if f.symbol_name:
+        title = f"{_SEVERITY_LABELS.get(severity, 'Issue')} in {f.symbol_name} ({f.file})"
+    else:
+        title = f"{_SEVERITY_LABELS.get(severity, 'Issue')} in {f.file}"
+
+    urgency = _SEVERITY_URGENCY.get(severity, "fix_soon")
+    why_it_matters = _WHY_IT_MATTERS.get(
+        category, "This could create product risk if merged without review."
+    )
+
+    symbol_part = f" in `{f.symbol_name}`" if f.symbol_name else ""
+    suggestion_part = f" Recommended direction: {f.suggestion}." if f.suggestion else ""
+    fix_prompt = (
+        f"In {f.file}{symbol_part}, fix this issue: {f.description}.{suggestion_part} "
+        "Preserve existing behavior and add/update tests if needed."
+    )
+
+    involve_engineer: str | None = None
+    if category == "security" or any(
+        kw in f.description.lower() for kw in _ENGINEER_KEYWORDS
+    ):
+        involve_engineer = (
+            "Yes — this touches security-sensitive or infrastructure code. "
+            "Have a developer review the fix before merging."
+        )
+
+    return OwnerFindingView(
+        title=title,
+        severity_label=_SEVERITY_LABELS.get(severity, severity.capitalize()),
+        urgency=urgency,  # type: ignore[arg-type]
+        plain_explanation=f.description,
+        why_it_matters=why_it_matters,
+        fix_prompt=fix_prompt,
+        test_after_fix="Re-run the affected flow and verify the issue no longer occurs.",
+        involve_engineer=involve_engineer,
+    )
+
+
+def _build_fallback_owner_presentation(verdict: ChairVerdict) -> OwnerPresentation:
+    """Build a fully deterministic owner presentation from technical findings.
+
+    Used when LLM translation fails, times out, or returns an incomplete /
+    count-mismatched result. Never drops or hides accepted findings.
+    """
+    confidence_label = (
+        "High confidence" if verdict.confidence >= 0.85
+        else "Moderate confidence" if verdict.confidence >= 0.65
+        else "Low confidence — review manually"
+    )
+    merge_rec: str = (
+        "FIX_BEFORE_MERGE" if verdict.verdict == "FAIL"
+        else "MERGE_WITH_CAUTION" if verdict.verdict == "PASS_WITH_WARNINGS"
+        else "SAFE_TO_MERGE"
+    )
+
+    has_critical = any(f.severity == "CRITICAL" for f in verdict.accepted_blockers)
+    has_high = any(f.severity == "HIGH" for f in verdict.accepted_blockers)
+    if verdict.verdict == "FAIL":
+        risk: str = "critical" if has_critical else "high"
+    elif verdict.verdict == "PASS_WITH_WARNINGS":
+        risk = "medium"
+    else:
+        risk = "low"
+
+    findings = [_build_fallback_owner_finding(f) for f in verdict.accepted_blockers]
+    findings += [_build_fallback_owner_finding(f) for f in verdict.warnings]
+
+    n_blockers = len(verdict.accepted_blockers)
+    n_warnings = len(verdict.warnings)
+    if verdict.verdict == "FAIL":
+        headline = (
+            f"This change has {n_blockers} issue{'s' if n_blockers != 1 else ''} "
+            "that must be fixed before merging."
+        )
+    elif verdict.verdict == "PASS_WITH_WARNINGS":
+        headline = (
+            f"This change can be merged, but has {n_warnings} "
+            f"warning{'s' if n_warnings != 1 else ''} to address."
+        )
+    else:
+        headline = "This change looks safe to merge."
+
+    return OwnerPresentation(
+        headline=headline,
+        merge_recommendation=merge_rec,  # type: ignore[arg-type]
+        risk_level=risk,  # type: ignore[arg-type]
+        confidence_label=confidence_label,
+        short_summary=verdict.summary or headline,
+        findings=findings,
+        degraded_warning=(
+            "Owner-friendly explanation generation was incomplete, so this report uses a "
+            "deterministic fallback based on the technical findings."
+        ),
+    )
+
+
 def _build_owner_message(verdict: ChairVerdict) -> str:
     """Build the user message for owner presentation generation."""
     blockers_text = ""
@@ -443,6 +576,9 @@ async def generate_owner_presentation(
             ),
         )
 
+    # Number of technical findings the owner presentation must cover.
+    expected_count = len(verdict.accepted_blockers) + len(verdict.warnings)
+
     try:
         response = await litellm.acompletion(
             model=chair_model,
@@ -459,46 +595,41 @@ async def generate_owner_presentation(
         content = response.choices[0].message.content or "{}"
         parsed = json.loads(content)
 
-        findings = []
+        # Validate required top-level fields and enum values.
+        _valid_merge_recs = {"SAFE_TO_MERGE", "MERGE_WITH_CAUTION", "FIX_BEFORE_MERGE"}
+        _valid_risk_levels = {"low", "medium", "high", "critical"}
+        required_keys = ("headline", "merge_recommendation", "risk_level", "short_summary")
+        if (
+            not all(k in parsed for k in required_keys)
+            or parsed.get("merge_recommendation") not in _valid_merge_recs
+            or parsed.get("risk_level") not in _valid_risk_levels
+        ):
+            return _build_fallback_owner_presentation(verdict)
+
+        # Parse findings, counting successes.
+        findings: list[OwnerFindingView] = []
         for f in parsed.get("findings", []):
             try:
                 findings.append(OwnerFindingView(**f))
             except Exception:
-                continue
+                continue  # count mismatch will trigger fallback below
+
+        # Integrity check: owner finding count must match technical finding count.
+        # If they differ, the translation is incomplete — use the full deterministic fallback
+        # rather than silently presenting a partial / misleading owner report.
+        if len(findings) != expected_count:
+            return _build_fallback_owner_presentation(verdict)
 
         return OwnerPresentation(
-            headline=parsed.get("headline", "Review complete."),
-            merge_recommendation=parsed.get("merge_recommendation", "MERGE_WITH_CAUTION"),
-            risk_level=parsed.get("risk_level", "medium"),
+            headline=parsed["headline"],
+            merge_recommendation=parsed["merge_recommendation"],
+            risk_level=parsed["risk_level"],
             confidence_label=parsed.get("confidence_label", "Moderate confidence"),
-            short_summary=parsed.get("short_summary", verdict.summary),
+            short_summary=parsed["short_summary"],
             findings=findings,
             degraded_warning=parsed.get("degraded_warning"),
         )
 
-    except Exception as e:
-        # Owner presentation failure is non-fatal — fall back to a minimal safe output
-        confidence_label = (
-            "High confidence" if verdict.confidence >= 0.85
-            else "Moderate confidence" if verdict.confidence >= 0.65
-            else "Low confidence — review manually"
-        )
-        merge_rec = (
-            "FIX_BEFORE_MERGE" if verdict.verdict == "FAIL"
-            else "MERGE_WITH_CAUTION" if verdict.verdict == "PASS_WITH_WARNINGS"
-            else "SAFE_TO_MERGE"
-        )
-        risk = (
-            "critical" if verdict.verdict == "FAIL" and verdict.accepted_blockers
-            else "medium" if verdict.verdict == "PASS_WITH_WARNINGS"
-            else "low"
-        )
-        return OwnerPresentation(
-            headline=verdict.summary,
-            merge_recommendation=merge_rec,
-            risk_level=risk,
-            confidence_label=confidence_label,
-            short_summary=verdict.summary,
-            findings=[],
-            degraded_warning=f"Owner presentation generation failed: {e}",
-        )
+    except Exception:
+        # LLM call failed or JSON was unparseable — fall back deterministically.
+        return _build_fallback_owner_presentation(verdict)

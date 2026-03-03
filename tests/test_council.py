@@ -1486,7 +1486,7 @@ class TestOwnerPresentationGeneration:
 
     @pytest.mark.asyncio
     async def test_llm_failure_falls_back_gracefully(self):
-        """LLM failure produces a fallback OwnerPresentation, not an exception."""
+        """LLM failure → deterministic fallback with findings, not an exception."""
         from council.chair import generate_owner_presentation
         verdict = ChairVerdict(
             verdict="FAIL", confidence=0.9,
@@ -1505,10 +1505,126 @@ class TestOwnerPresentationGeneration:
             mock_litellm.acompletion = AsyncMock(side_effect=Exception("API down"))
             op = await generate_owner_presentation(verdict)
 
-        # Should not raise; must fall back to a minimal presentation
+        # Must not raise, must not return empty findings for a FAIL verdict
         assert op.merge_recommendation == "FIX_BEFORE_MERGE"
         assert op.degraded_warning is not None
-        assert "failed" in op.degraded_warning.lower()
+        # Uses deterministic fallback language (not "failed")
+        assert "deterministic" in op.degraded_warning.lower() or "incomplete" in op.degraded_warning.lower()
+        # Critical: fallback must include the technical finding as an owner card
+        assert len(op.findings) == 1
+        assert "auth.py" in op.findings[0].title or "auth.py" in op.findings[0].fix_prompt
+
+    @pytest.mark.asyncio
+    async def test_fallback_no_contradiction_fail_verdict(self):
+        """Fallback for FAIL verdict: findings must not be empty (P0 fix)."""
+        from council.chair import generate_owner_presentation
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Critical issue found.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="api.py",
+                    description="SQL injection", suggestion="Parameterize queries",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                    source_reviewers=["secops"],
+                ),
+                ChairFinding(
+                    severity="HIGH", category="architecture", file="models.py",
+                    description="Missing validation", suggestion="Add input checks",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                    source_reviewers=["architect"],
+                ),
+            ],
+        )
+
+        with patch("council.chair.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(side_effect=Exception("Timeout"))
+            op = await generate_owner_presentation(verdict)
+
+        assert op.merge_recommendation == "FIX_BEFORE_MERGE"
+        # Two blockers must produce two owner cards — never empty findings for FAIL
+        assert len(op.findings) == 2
+        assert op.degraded_warning is not None
+
+    @pytest.mark.asyncio
+    async def test_incomplete_llm_findings_triggers_fallback(self):
+        """LLM returns fewer findings than expected → full deterministic fallback (P1 fix)."""
+        from council.chair import generate_owner_presentation
+        verdict = ChairVerdict(
+            verdict="FAIL", confidence=0.9,
+            summary="Two issues found.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    description="SQL injection", suggestion="Parameterize",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                    source_reviewers=["secops"],
+                ),
+                ChairFinding(
+                    severity="HIGH", category="testing", file="tests/test_auth.py",
+                    description="No tests for login", suggestion="Add tests",
+                    chair_action="accepted", chair_reasoning="Confirmed",
+                    source_reviewers=["qa"],
+                ),
+            ],
+        )
+
+        # LLM returns only ONE finding instead of the expected TWO
+        owner_response = json.dumps({
+            "headline": "Issue found.",
+            "merge_recommendation": "FIX_BEFORE_MERGE",
+            "risk_level": "critical",
+            "confidence_label": "High confidence",
+            "short_summary": "Security issue.",
+            "degraded_warning": None,
+            "findings": [{
+                "title": "Login can be bypassed",
+                "severity_label": "Critical Security Issue",
+                "urgency": "fix_before_merge",
+                "plain_explanation": "Attackers can log in as any user.",
+                "why_it_matters": "Account takeover.",
+                "fix_prompt": "Fix parameterization.",
+                "test_after_fix": "Test the login.",
+            }],
+            # Only 1 finding — LLM dropped the second one
+        })
+
+        mock_resp = MagicMock()
+        mock_resp.choices = [MagicMock()]
+        mock_resp.choices[0].message.content = owner_response
+
+        with patch("council.chair.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_resp)
+            op = await generate_owner_presentation(verdict)
+
+        # Must fallback deterministically — owner count must equal technical count
+        assert len(op.findings) == 2  # both blockers represented
+        assert op.degraded_warning is not None  # fallback was used
+
+    @pytest.mark.asyncio
+    async def test_fallback_finding_covers_all_categories(self):
+        """Deterministic fallback covers blockers AND warnings."""
+        from council.chair import generate_owner_presentation
+        verdict = ChairVerdict(
+            verdict="PASS_WITH_WARNINGS", confidence=0.8,
+            summary="One warning.",
+            warnings=[
+                ChairFinding(
+                    severity="MEDIUM", category="architecture", file="api.py",
+                    description="Missing error handling", suggestion="Add try/except",
+                    chair_action="accepted", chair_reasoning="Non-blocking",
+                    source_reviewers=["architect"],
+                ),
+            ],
+        )
+
+        with patch("council.chair.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(side_effect=Exception("Timeout"))
+            op = await generate_owner_presentation(verdict)
+
+        assert op.merge_recommendation == "MERGE_WITH_CAUTION"
+        assert len(op.findings) == 1
+        assert op.findings[0].urgency == "fix_soon"  # MEDIUM maps to fix_soon
 
     @pytest.mark.asyncio
     async def test_accepted_findings_preserved_in_owner_output(self):
@@ -1729,6 +1845,126 @@ class TestHTMLReporter:
         content = out.read_text()
         assert "api.py" in content
         assert "Missing error handling" in content
+
+
+class TestHTMLTrustFixes:
+    """Regression tests for the P0/P1 trust and integrity fixes."""
+
+    def _make_fail_verdict_with_blockers(self) -> ChairVerdict:
+        return ChairVerdict(
+            verdict="FAIL",
+            confidence=0.9,
+            summary="Critical security issue.",
+            rationale="SQL injection confirmed.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL", category="security", file="auth.py",
+                    line_start=23, description="SQL injection",
+                    suggestion="Use parameterized queries",
+                    chair_action="accepted", chair_reasoning="Evidence-backed",
+                    source_reviewers=["secops"],
+                )
+            ],
+        )
+
+    def test_html_no_no_issues_message_when_recommendation_not_safe(self, tmp_path):
+        """Owner HTML must NOT say 'No issues require your attention' for FIX_BEFORE_MERGE."""
+        from council.reporters.html_report import write_html_report
+        from council.schemas import OwnerPresentation
+        verdict = self._make_fail_verdict_with_blockers()
+        # Set owner_presentation with empty findings (simulates old broken fallback)
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Critical issue found.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="critical",
+            confidence_label="High confidence",
+            short_summary="Security issue.",
+            findings=[],  # empty — the trust-breaking case
+        )
+        out = tmp_path / "owner.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "No issues require your attention" not in content
+        # Must show a fallback warning instead
+        assert "technical appendix" in content.lower() or "issue cards" in content.lower()
+
+    def test_html_no_issues_message_only_for_safe_to_merge(self, tmp_path):
+        """'No issues' message is allowed only for SAFE_TO_MERGE with no technical findings."""
+        from council.reporters.html_report import write_html_report
+        from council.schemas import OwnerPresentation
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.95,
+            summary="All clear.", rationale="No issues.",
+        )
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Safe to merge.",
+            merge_recommendation="SAFE_TO_MERGE",
+            risk_level="low",
+            confidence_label="High confidence",
+            short_summary="No issues found.",
+            findings=[],
+        )
+        out = tmp_path / "owner.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "No issues require your attention" in content
+
+    def test_html_copy_button_present(self, tmp_path):
+        """Owner HTML includes a copy button for each finding's fix prompt."""
+        from council.reporters.html_report import write_html_report
+        from council.schemas import OwnerPresentation, OwnerFindingView
+        verdict = self._make_fail_verdict_with_blockers()
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Issue found.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="critical",
+            confidence_label="High confidence",
+            short_summary="Security issue.",
+            findings=[
+                OwnerFindingView(
+                    title="Login bypass",
+                    severity_label="Critical Security Issue",
+                    urgency="fix_before_merge",
+                    plain_explanation="Attackers can log in as anyone.",
+                    why_it_matters="Account takeover risk.",
+                    fix_prompt="In auth.py, fix the query to use parameterized statements.",
+                    test_after_fix="Test login with SQL injection payload.",
+                )
+            ],
+        )
+        out = tmp_path / "owner.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text()
+        assert "Copy fix prompt" in content
+        assert "_councilCopy" in content
+        assert "data-prompt" in content
+        # Fix prompt text must be somewhere in the page
+        assert "parameterized statements" in content
+
+    def test_html_copy_js_not_in_developer_report(self, tmp_path):
+        """Developer HTML report does not include the copy-button JS (keeps it lean)."""
+        from council.reporters.html_report import write_html_report
+        verdict = ChairVerdict(
+            verdict="PASS", confidence=0.9, summary="Clean.", rationale="All good.",
+        )
+        out = tmp_path / "dev.html"
+        write_html_report(verdict, out, audience="developer")
+        content = out.read_text()
+        # The copy-button JS is only injected into the owner report
+        assert "_councilCopy" not in content
+
+    def test_owner_finding_card_import_sanity(self):
+        """_owner_finding_card annotation is OwnerFindingView, not the old invalid string."""
+        from council.reporters.html_report import _owner_finding_card
+        import inspect
+        sig = inspect.signature(_owner_finding_card)
+        param = list(sig.parameters.values())[0]
+        ann = param.annotation
+        # Under `from __future__ import annotations` the annotation is stored as a
+        # string.  Either way, it must not contain the old invalid forward reference.
+        ann_str = ann if isinstance(ann, str) else ann.__name__
+        assert "OwnerPresentation.findings" not in ann_str
+        assert "OwnerFindingView" in ann_str
 
 
 class TestCLIAudienceFlag:

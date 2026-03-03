@@ -13,7 +13,7 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
-from ..schemas import ChairFinding, ChairVerdict, OwnerPresentation, ReviewerOutput, ReviewPack
+from ..schemas import ChairFinding, ChairVerdict, OwnerFindingView, OwnerPresentation, ReviewerOutput, ReviewPack
 
 # ---------------------------------------------------------------------------
 # Verdict display constants
@@ -222,6 +222,33 @@ _CSS = """
   }
   .reviewer-table th { font-weight: 600; color: #6b7280; background: #f9fafb; }
 
+  /* Copy button */
+  .copy-btn {
+    margin-top: 8px;
+    display: inline-block;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #0369a1;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .copy-btn:hover { background: #e0f2fe; }
+
+  /* Inline warning box (used for empty-state safety) */
+  .inline-warning {
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #92400e;
+    margin-bottom: 16px;
+  }
+
   /* Footer */
   .footer {
     margin-top: 48px;
@@ -230,6 +257,27 @@ _CSS = """
     font-size: 12px;
     color: #9ca3af;
   }
+"""
+
+# Inline JS for copy-to-clipboard.  No external dependencies.
+_COPY_JS = """
+<script>
+function _councilCopy(btn) {
+  var text = btn.getAttribute('data-prompt');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = 'Copied';
+      setTimeout(function() { btn.textContent = 'Copy fix prompt'; }, 2000);
+    }, function() {
+      btn.textContent = 'Copy failed';
+      setTimeout(function() { btn.textContent = 'Copy fix prompt'; }, 2000);
+    });
+  } else {
+    btn.textContent = 'Copy fix prompt (use Ctrl+C)';
+    setTimeout(function() { btn.textContent = 'Copy fix prompt'; }, 2000);
+  }
+}
+</script>
 """
 
 
@@ -254,7 +302,7 @@ def _severity_badge(severity: str) -> str:
     return _badge(severity, bg, fg)
 
 
-def _owner_finding_card(f: "OwnerPresentation.findings[0]") -> str:  # type: ignore[type-arg]
+def _owner_finding_card(f: OwnerFindingView) -> str:
     icon, label, bg, fg = URGENCY_LABELS.get(
         f.urgency, ("💡", f.urgency, "#f3f4f6", "#374151")
     )
@@ -266,6 +314,9 @@ def _owner_finding_card(f: "OwnerPresentation.findings[0]") -> str:  # type: ign
             f'<div class="involve-engineer">{_e(f.involve_engineer)}</div>'
             f'</div>'
         )
+    # data-prompt uses html.escape so the attribute value is safe even if the
+    # fix_prompt contains quotes or angle brackets.
+    prompt_attr = html.escape(f.fix_prompt, quote=True)
     return f"""
 <div class="finding-card">
   <div class="finding-card-header" style="background:{bg}">
@@ -285,8 +336,9 @@ def _owner_finding_card(f: "OwnerPresentation.findings[0]") -> str:  # type: ign
       <div class="owner-field-value">{_e(f.why_it_matters)}</div>
     </div>
     <div class="owner-field">
-      <div class="owner-field-label">Copy / paste fix prompt</div>
+      <div class="owner-field-label">Fix prompt</div>
       <div class="fix-prompt">{_e(f.fix_prompt)}</div>
+      <button class="copy-btn" data-prompt="{prompt_attr}" onclick="_councilCopy(this)">Copy fix prompt</button>
     </div>
     <div class="owner-field">
       <div class="owner-field-label">What to test after fixing</div>
@@ -368,17 +420,30 @@ def _owner_report_html(
             f'<div class="degraded-warning">⚠️ {_e(op.degraded_warning)}</div>'
         )
 
-    # Owner finding cards
+    # Owner finding cards.
+    # Safety rule: only show "no issues" when the recommendation is SAFE_TO_MERGE
+    # AND there are genuinely no technical findings.  Any other combination would
+    # be contradictory and misleading.
+    has_tech_findings = bool(verdict.accepted_blockers or verdict.warnings)
     owner_findings_html = ""
     if op.findings:
         owner_findings_html = (
             '<div class="section-header">Issues Found</div>'
             + "".join(_owner_finding_card(f) for f in op.findings)
         )
-    else:
+    elif op.merge_recommendation == "SAFE_TO_MERGE" and not has_tech_findings:
         owner_findings_html = (
             '<div class="section-header">Issues Found</div>'
             '<div class="summary-box"><p>No issues require your attention.</p></div>'
+        )
+    else:
+        # Empty findings but a non-safe recommendation or known technical findings —
+        # show a fallback warning rather than a contradictory "all clear" message.
+        owner_findings_html = (
+            '<div class="section-header">Issues Found</div>'
+            '<div class="inline-warning">⚠️ This report could not render detailed '
+            'owner issue cards. Please review the technical appendix below for the '
+            'full list of accepted findings.</div>'
         )
 
     # Technical appendix
@@ -500,6 +565,7 @@ def _owner_report_html(
     same underlying findings as the developer report
   </div>
 </div>
+{_COPY_JS}
 </body>
 </html>"""
 

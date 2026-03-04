@@ -9,6 +9,7 @@ import ast
 import asyncio
 import json
 from pathlib import Path
+from urllib.error import HTTPError
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -2811,6 +2812,60 @@ def test_github_pr_annotation_sanitizes_control_sequences(capsys):
     _emit_annotations(verdict)
     err = capsys.readouterr().err
     assert "line1 line2 ;; inject" in err
+
+
+def test_extract_pr_number_hardening(tmp_path):
+    from council.reporters.github_pr import _extract_pr_number
+
+    assert _extract_pr_number(str(tmp_path / "missing.json")) is None
+
+    event_path = tmp_path / "event.json"
+    event_path.write_text('{"pull_request": {"number": "42"}}', encoding="utf-8")
+    assert _extract_pr_number(str(event_path)) == 42
+
+    event_path.write_text('{"pull_request": {"number": true}}', encoding="utf-8")
+    assert _extract_pr_number(str(event_path)) is None
+
+
+def test_github_pr_rate_limit_retry_after_header(monkeypatch):
+    from council.reporters.github_pr import post_github_pr_review
+
+    verdict = ChairVerdict(verdict="PASS", confidence=0.9, summary="s", rationale="r")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", "/event.json")
+    monkeypatch.setenv("COUNCIL_GITHUB_MAX_RETRIES", "1")
+
+    sleep_calls = []
+
+    class _Resp:
+        def __init__(self, payload: bytes = b"[]"):
+            self._payload = payload
+
+        def read(self):
+            return self._payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    calls = {"count": 0}
+
+    def fake_urlopen(req, timeout=0):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise HTTPError(req.full_url, 429, "rate", hdrs={"Retry-After": "0"}, fp=None)
+        return _Resp()
+
+    monkeypatch.setattr("council.reporters.github_pr._extract_pr_number", lambda _: 7)
+    monkeypatch.setattr("council.reporters.github_pr.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("council.reporters.github_pr.time.sleep", lambda s: sleep_calls.append(s))
+
+    assert post_github_pr_review(verdict) is True
+    assert calls["count"] == 3
+    assert sleep_calls == [0.0]
 
 
 def test_default_workflow_permissions_include_issues_write():

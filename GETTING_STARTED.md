@@ -114,6 +114,15 @@ council review --branch main
 council review --ci --branch main
 ```
 
+**CI mode with GitHub PR sticky comment + annotations:**
+```bash
+council review --ci --github-pr --branch main
+```
+Optional env tuning for flaky/rate-limited runners:
+- `COUNCIL_GITHUB_MAX_RETRIES` (default: `2`)
+- `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS` (default: `1.0`)
+- `COUNCIL_GITHUB_HTTP_TIMEOUT` (default: `10`)
+
 **Generate an owner-friendly HTML report:**
 ```bash
 council review --audience owner --output-html owner-report.html

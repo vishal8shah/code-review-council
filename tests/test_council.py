@@ -1287,14 +1287,49 @@ class TestWorkflowScaffold:
         from council.cli import _DEFAULT_WORKFLOW
         assert "Check LLM credentials availability" in _DEFAULT_WORKFLOW
         assert "id: llm_keys" in _DEFAULT_WORKFLOW
+        assert "env:" in _DEFAULT_WORKFLOW
+        assert "if [ -n \"$ANTHROPIC_API_KEY\" ] || [ -n \"$OPENAI_API_KEY\" ] || [ -n \"$GOOGLE_API_KEY\" ]; then" in _DEFAULT_WORKFLOW
         assert "if: steps.llm_keys.outputs.has_key == 'true'" in _DEFAULT_WORKFLOW
         assert "No LLM API keys available (common on fork PRs)" in _DEFAULT_WORKFLOW
+        assert '"skipped":"no_llm_api_keys"' in _DEFAULT_WORKFLOW
+        assert "Run the BYOK workflow in your fork: Actions -> Code Review Council (BYOK - Fork)" in _DEFAULT_WORKFLOW
 
     def test_workflow_passes_branch(self):
         """Generated workflow must pass --branch to avoid empty-diff reviews."""
         from council.cli import _DEFAULT_WORKFLOW
         assert "--branch" in _DEFAULT_WORKFLOW
         assert "github.base_ref" in _DEFAULT_WORKFLOW
+
+    def test_byok_workflow_scaffold_contains_required_bits(self):
+        """BYOK workflow template should be dispatch-only and artifact-focused."""
+        from council.cli import _DEFAULT_WORKFLOW_BYOK
+
+        assert "workflow_dispatch" in _DEFAULT_WORKFLOW_BYOK
+        assert "upstream_repo" in _DEFAULT_WORKFLOW_BYOK
+        assert "Fail fast if no BYOK keys configured" in _DEFAULT_WORKFLOW_BYOK
+        assert 'if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW_BYOK
+        assert '"skipped":"no_byok_keys"' in _DEFAULT_WORKFLOW_BYOK
+        assert "Resolve review base ref" in _DEFAULT_WORKFLOW_BYOK
+        assert "UPSTREAM_REPO: ${{ inputs.upstream_repo }}" in _DEFAULT_WORKFLOW_BYOK
+        assert "BASE_REF: ${{ inputs.base_ref }}" in _DEFAULT_WORKFLOW_BYOK
+        assert r"^[A-Za-z0-9_.\-/]+$" in _DEFAULT_WORKFLOW_BYOK
+        assert '"skipped":"invalid_base_ref"' in _DEFAULT_WORKFLOW_BYOK
+        assert "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" in _DEFAULT_WORKFLOW_BYOK
+        assert '"skipped":"invalid_upstream_repo"' in _DEFAULT_WORKFLOW_BYOK
+        assert '"skipped":"upstream_fetch_failed"' in _DEFAULT_WORKFLOW_BYOK
+        assert 'git remote add upstream "https://github.com/$UPSTREAM_REPO.git" || true' in _DEFAULT_WORKFLOW_BYOK
+        assert 'if [ "${BASE_REF#-}" != "$BASE_REF" ]; then' in _DEFAULT_WORKFLOW_BYOK
+        assert 'if ! git fetch --no-tags upstream -- "$BASE_REF"; then' in _DEFAULT_WORKFLOW_BYOK
+        assert "Warn if workflow is running on the base branch" in _DEFAULT_WORKFLOW_BYOK
+        assert "TARGET_BRANCH: ${{ steps.review_base.outputs.target }}" in _DEFAULT_WORKFLOW_BYOK
+        assert "AUDIENCE: ${{ inputs.audience }}" in _DEFAULT_WORKFLOW_BYOK
+        assert '[ "$AUDIENCE" != "developer" ] && [ "$AUDIENCE" != "owner" ]' in _DEFAULT_WORKFLOW_BYOK
+        assert '"skipped":"invalid_audience"' in _DEFAULT_WORKFLOW_BYOK
+        assert "--output-json council-report.json" in _DEFAULT_WORKFLOW_BYOK
+        assert "--output-md council-review.md" in _DEFAULT_WORKFLOW_BYOK
+        assert "--github-pr" not in _DEFAULT_WORKFLOW_BYOK
+        assert "permissions:" in _DEFAULT_WORKFLOW_BYOK
+        assert "contents: read" in _DEFAULT_WORKFLOW_BYOK
 
 
 class TestDiffTextFileBoundaries:
@@ -2748,11 +2783,24 @@ def test_github_pr_comment_and_annotations(capsys):
 
 
 def test_init_defaults_include_prompt_and_integrity_and_github_pr():
-    from council.cli import _DEFAULT_CONFIG, _DEFAULT_WORKFLOW
+    from council.cli import _DEFAULT_CONFIG, _DEFAULT_WORKFLOW, _DEFAULT_WORKFLOW_BYOK
     assert 'on_integrity_issue = "fail"' in _DEFAULT_CONFIG
     assert 'prompt = "prompts/secops.md"' in _DEFAULT_CONFIG
     assert '--github-pr' in _DEFAULT_WORKFLOW
     assert 'actions/checkout@' in _DEFAULT_WORKFLOW and len(_DEFAULT_WORKFLOW.split('actions/checkout@')[1].splitlines()[0].strip()) >= 40
+    assert 'workflow_dispatch' in _DEFAULT_WORKFLOW_BYOK
+
+
+def test_init_scaffolds_both_workflow_files(tmp_path):
+    from typer.testing import CliRunner
+    from council.cli import app
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["init", "--repo", str(tmp_path)])
+    assert result.exit_code == 0
+
+    assert (tmp_path / ".github" / "workflows" / "council-review.yml").exists()
+    assert (tmp_path / ".github" / "workflows" / "council-byok.yml").exists()
 
 
 def test_cli_ci_degraded_fail_policy_blocks_merge():

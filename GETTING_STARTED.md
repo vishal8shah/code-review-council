@@ -192,6 +192,7 @@ echo $ANTHROPIC_API_KEY
 **Prompt-injection findings in test fixtures**
 If CI flags prompt-injection on test fixture strings, ensure the changed file is under `tests/` (or `conftest.py`) so Gate Zero test-file exclusions apply.
 For real source files, treat this as a genuine security warning and sanitize untrusted prompt content.
+Secret scanning still runs for test files; committed tokens in tests will still block CI.
 
 **Owner report mentions a "fallback" or "deterministic"**
 This is a safety feature, not a failure. It means:

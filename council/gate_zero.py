@@ -81,15 +81,11 @@ def check_prompt_injection(diff_context: DiffContext) -> list[GateZeroFinding]:
                 else:
                     target_line += 1
     return findings
-
-
 def check_secrets(diff_context: DiffContext) -> list[GateZeroFinding]:
     """Scan diff content for leaked secrets."""
     findings: list[GateZeroFinding] = []
     for diff_file in diff_context.files:
         if diff_file.change_type == "deleted":
-            continue
-        if _is_test_path(diff_file.path):
             continue
         for hunk in diff_file.hunks:
             # Track actual target line number through the hunk
@@ -117,8 +113,6 @@ def check_secrets(diff_context: DiffContext) -> list[GateZeroFinding]:
                     # Context line — exists in both source and target
                     target_line += 1
     return findings
-
-
 def check_readme_updated(diff_context: DiffContext, config: GateZeroConfig) -> list[GateZeroFinding]:
     """If new public modules are added, README must be in the diff."""
     if not config.require_readme_on_new_module:

@@ -341,6 +341,23 @@ class TestGateZero:
         findings = check_secrets(ctx)
         assert len(findings) == 0
 
+    def test_secret_detection_in_test_files_still_fires(self):
+        """Secrets in test files are still security findings."""
+        ctx = parse_diff(
+            """diff --git a/tests/test_auth.py b/tests/test_auth.py
+index 111..222 100644
+--- a/tests/test_auth.py
++++ b/tests/test_auth.py
+@@ -1,0 +1,2 @@
++API_KEY = 'AKIAIOSFODNN7EXAMPLE'
++print('fixture')
+""",
+            load_content=False,
+        )
+        findings = check_secrets(ctx)
+        assert findings
+        assert any(f.severity == "CRITICAL" for f in findings)
+
     def test_readme_check_fires(self):
         """New public module without README update triggers finding."""
         from council.config import GateZeroConfig
@@ -386,6 +403,24 @@ class TestGateZero:
         result = check(ctx, config)
         assert result.hard_fail is True
         assert result.passed is False
+
+    def test_full_gate_zero_hard_fail_for_test_file_secret(self):
+        """Gate Zero still hard-fails when test files contain secrets."""
+        ctx = parse_diff(
+            """diff --git a/tests/test_auth.py b/tests/test_auth.py
+index 111..222 100644
+--- a/tests/test_auth.py
++++ b/tests/test_auth.py
+@@ -1,0 +1,2 @@
++API_KEY = 'AKIAIOSFODNN7EXAMPLE'
++print('fixture')
+""",
+            load_content=False,
+        )
+        config = CouncilConfig()
+        result = check(ctx, config)
+        assert result.hard_fail is True
+
 
 
 # ---------------------------------------------------------------------------

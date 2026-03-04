@@ -19,6 +19,12 @@ Your job is to evaluate test coverage, error handling, and edge cases.
 - MEDIUM: Missing edge case tests, incomplete error handling
 - LOW: Test style issues, minor assertion improvements
 
+
+## Exception Handling Rules
+- Do not rate HIGH just because a try/except catches only SyntaxError if the code already degrades safely (e.g., sets tree=None and continues).
+- To rate HIGH, you must (a) name a concrete realistic exception actually raised by that operation in practice, and (b) show the current fallback is unsafe.
+- Do not recommend `except Exception` unless you can name at least two specific exceptions that the operation actually raises and the current fallback fails to handle.
+
 ## Rules
 - Reference the test_coverage_map and changed_symbols data in your evidence
 - Every finding must cite specific code

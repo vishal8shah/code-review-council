@@ -213,13 +213,20 @@ def init(
     # Create GitHub Actions workflow
     workflow_dir = root / ".github" / "workflows"
     workflow_path = workflow_dir / "council-review.yml"
-    if not workflow_path.exists():
+    byok_workflow_path = workflow_dir / "council-byok.yml"
+    if not workflow_path.exists() or not byok_workflow_path.exists():
         workflow_dir.mkdir(parents=True, exist_ok=True)
+
+    if not workflow_path.exists():
         workflow_path.write_text(_DEFAULT_WORKFLOW, encoding="utf-8")
         console.print(f"  [green]Created[/] {workflow_path}")
         console.print(
             "  [dim]→ Add ANTHROPIC_API_KEY and OPENAI_API_KEY to your repo secrets[/]"
         )
+
+    if not byok_workflow_path.exists():
+        byok_workflow_path.write_text(_DEFAULT_WORKFLOW_BYOK, encoding="utf-8")
+        console.print(f"  [green]Created[/] {byok_workflow_path}")
 
     console.print("\n  🏛️ Council initialized. Run [bold]council review[/] to review changes.")
 
@@ -341,14 +348,17 @@ jobs:
 
       - name: Check LLM credentials availability
         id: llm_keys
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
-          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ] || [ -n "${{ secrets.OPENAI_API_KEY }}" ] || [ -n "${{ secrets.GOOGLE_API_KEY }}" ]; then
+          if [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$OPENAI_API_KEY" ] || [ -n "$GOOGLE_API_KEY" ]; then
             echo "has_key=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_key=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Code Review Council skipped::No LLM API keys available (common on fork PRs). Skipping council review step."
-            printf '{"skipped":"no_llm_api_keys"}
-' > council-report.json
+            printf '{"skipped":"no_llm_api_keys","how_to_run_full":"Run the BYOK workflow in your fork: Actions -> Code Review Council (BYOK - Fork)"}\n' > council-report.json
           fi
 
       - name: Run Council Review
@@ -366,6 +376,177 @@ jobs:
         with:
           name: council-report
           path: council-report.json
+"""
+
+_DEFAULT_WORKFLOW_BYOK = """\
+name: Code Review Council (BYOK - Fork)
+on:
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Diff target branch/ref (usually main)
+        required: false
+        default: main
+      upstream_repo:
+        description: Optional upstream repository in owner/name format for accurate PR-base diffs
+        required: false
+        default: ""
+      audience:
+        description: Report audience passed to --audience (developer or owner)
+        required: false
+        default: developer
+
+jobs:
+  council-review-byok:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: '3.12'
+
+      - name: Install Code Review Council
+        run: pip install .
+
+      - name: Fail fast if no BYOK keys configured
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ]; then
+            printf '{"skipped":"no_byok_keys","how_to_fix":"Add OPENAI_API_KEY and/or ANTHROPIC_API_KEY and/or GOOGLE_API_KEY as Actions secrets in your fork, then rerun"}\n' > council-report.json
+            printf '# Council BYOK skipped\n\nNo BYOK secrets found. Add Actions secrets in your fork and rerun.\n' > council-review.md
+            echo "::error::No BYOK LLM API keys found. Add OPENAI_API_KEY and/or ANTHROPIC_API_KEY and/or GOOGLE_API_KEY as Actions secrets in your fork repository, then rerun this workflow."
+            exit 1
+          fi
+
+      - name: Resolve review base ref
+        id: review_base
+        env:
+          UPSTREAM_REPO: ${{ inputs.upstream_repo }}
+          BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          set -euo pipefail
+
+          fail() {
+            case "$1" in
+              invalid_base_ref)
+                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}
+' > council-report.json
+                printf '# Council BYOK skipped
+
+Invalid base_ref input. Use a valid git branch/ref format and rerun.
+' > council-review.md
+                ;;
+              invalid_upstream_repo)
+                printf '{"skipped":"invalid_upstream_repo","how_to_fix":"Set upstream_repo to owner/repo format (for example: org/project) and rerun."}
+' > council-report.json
+                printf '# Council BYOK skipped
+
+Invalid upstream_repo input. Use owner/repo format and rerun.
+' > council-review.md
+                ;;
+              upstream_fetch_failed)
+                printf '{"skipped":"upstream_fetch_failed","how_to_fix":"Verify upstream_repo is correct and base_ref exists (and repo is public or accessible), then rerun."}
+' > council-report.json
+                printf '# Council BYOK skipped
+
+Failed to fetch upstream base ref. Check upstream_repo/base_ref and rerun.
+' > council-review.md
+                ;;
+              *)
+                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}
+' > council-report.json
+                printf '# Council BYOK skipped
+
+Invalid input.
+' > council-review.md
+                ;;
+            esac
+            echo "::error::$2"
+            exit 1
+          }
+
+          if [ -z "$BASE_REF" ]; then
+            fail invalid_base_ref "Invalid base_ref."
+          fi
+          if [[ "$BASE_REF" == -* ]]; then
+            fail invalid_base_ref "Invalid base_ref."
+          fi
+          if [[ "$BASE_REF" == /* ]]; then
+            fail invalid_base_ref "Invalid base_ref."
+          fi
+          if [[ "$BASE_REF" == *..* ]]; then
+            fail invalid_base_ref "Invalid base_ref."
+          fi
+          if [[ ! "$BASE_REF" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]]; then
+            fail invalid_base_ref "Invalid base_ref."
+          fi
+          if [[ "$BASE_REF" == refs/* ]]; then
+            git check-ref-format "$BASE_REF" >/dev/null 2>&1 || fail invalid_base_ref "Invalid base_ref."
+          else
+            git check-ref-format --branch "$BASE_REF" >/dev/null 2>&1 || fail invalid_base_ref "Invalid base_ref."
+          fi
+
+          if [ -n "$UPSTREAM_REPO" ]; then
+            if [[ ! "$UPSTREAM_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+              fail invalid_upstream_repo "Invalid upstream_repo format. Expected owner/repo."
+            fi
+            UPSTREAM_URL="https://github.com/${UPSTREAM_REPO}.git"
+            if git remote get-url upstream >/dev/null 2>&1; then
+              git remote set-url upstream "$UPSTREAM_URL"
+            else
+              git remote add upstream "$UPSTREAM_URL"
+            fi
+            if ! git fetch --no-tags upstream -- "$BASE_REF"; then
+              fail upstream_fetch_failed "Failed to fetch upstream base ref."
+            fi
+            TARGET="upstream/${BASE_REF}"
+          else
+            TARGET="$BASE_REF"
+          fi
+
+          echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
+      - name: Warn if workflow is running on the base branch
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          echo "Running on ref: $GITHUB_REF_NAME"
+          if [ "$GITHUB_REF_NAME" = "$BASE_REF" ]; then
+            echo "::warning::You are running on the base branch '$BASE_REF'. You probably meant to run this workflow on your PR branch."
+          fi
+
+      - name: Run Council Review (BYOK)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          TARGET_BRANCH: ${{ steps.review_base.outputs.target }}
+          AUDIENCE: ${{ inputs.audience }}
+        run: |
+          if [ "$AUDIENCE" != "developer" ] && [ "$AUDIENCE" != "owner" ]; then
+            printf '{"skipped":"invalid_audience","how_to_fix":"Set audience to developer or owner and rerun"}\n' > council-report.json
+            printf '# Council BYOK skipped\n\nInvalid audience input. Use developer or owner and rerun.\n' > council-review.md
+            echo "::error::Invalid audience. Expected developer or owner."
+            exit 1
+          fi
+
+          council review --ci --branch "$TARGET_BRANCH" --audience "$AUDIENCE" --output-json council-report.json --output-md council-review.md
+
+      - name: Upload Review Report
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+        if: always()
+        with:
+          name: council-report
+          path: |
+            council-report.json
+            council-review.md
 """
 
 
@@ -387,6 +568,16 @@ Your job is to find security vulnerabilities in code changes.
 - HIGH: Security weakness that could lead to exploitation
 - MEDIUM: Defense-in-depth issue (missing rate limiting, overly broad CORS)
 - LOW: Security hygiene (logging improvements, header hardening)
+
+## Shell & Workflow Injection: Mandatory Evidence Chain
+For any injection finding rated HIGH/CRITICAL, you MUST satisfy ALL THREE:
+1) Missing/insufficient validation: explicitly show upstream validation is absent or insufficient for the sink.
+   - Credit combined validation chains (explicit dangerous-sequence guards + sufficient allowlist + git check-ref-format).
+   - If the variable passes a sufficient chain AND is used safely, do NOT flag downstream usage.
+2) Unsafe sink: show unquoted use / eval / missing `--` in git commands. Credit double-quoting "$VAR" and `--` as mitigations.
+3) Realistic payload: provide an example string that passes existing validation AND changes execution. If you cannot, do NOT rate HIGH/CRITICAL.
+
+- String assignment is not execution (e.g., TARGET="upstream/${VAR}") and must not be flagged as injection.
 
 ## Rules
 - Only flag issues you have HIGH confidence about
@@ -415,6 +606,11 @@ Your job is to evaluate test coverage, error handling, and edge cases.
 - HIGH: Public function with no tests and no error handling for likely failure modes
 - MEDIUM: Missing edge case tests, incomplete error handling
 - LOW: Test style issues, minor assertion improvements
+
+## Exception Handling Rules
+- Do not rate HIGH just because a try/except catches only SyntaxError if the code already degrades safely (e.g., sets tree=None and continues).
+- To rate HIGH, you must (a) name a concrete realistic exception actually raised by that operation in practice, and (b) show the current fallback is unsafe.
+- Do not recommend `except Exception` unless you can name at least two specific exceptions that the operation actually raises and the current fallback fails to handle.
 
 ## Rules
 - Reference the test_coverage_map and changed_symbols data in your evidence

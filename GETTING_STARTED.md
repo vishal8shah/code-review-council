@@ -92,6 +92,7 @@ This creates:
 - `.council.toml` — configuration for models, reviewers, and enforcement
 - `.councilignore` — files to exclude from review (lock files, generated code, etc.)
 - `.github/workflows/council-review.yml` — GitHub Actions CI workflow
+- `.github/workflows/council-byok.yml` — manual BYOK workflow for fork contributors
 
 Open `.council.toml` to adjust models, reviewers, and settings before running your first review.
 
@@ -124,6 +125,42 @@ Optional env tuning for flaky/rate-limited runners:
 - `COUNCIL_GITHUB_HTTP_TIMEOUT` (default: `10`)
 - If you hit model TPM/rate-limit errors, lower `[council].reviewer_concurrency` in `.council.toml` (for Anthropic, `1-2` is usually safest).
 - On fork PRs where repo secrets are unavailable, the default workflow now skips LLM review and writes a placeholder `council-report.json` artifact instead of failing.
+
+---
+
+## Fork PRs: Run full Council with your own API key (BYOK)
+
+When contributing from a fork, upstream repository secrets are often unavailable. Use the fork-safe BYOK workflow in your fork instead:
+
+1. In your fork repository, add one or more Actions secrets:
+   - `OPENAI_API_KEY` and/or
+   - `ANTHROPIC_API_KEY` and/or
+   - `GOOGLE_API_KEY`
+2. Open **Actions** in your fork and run workflow **Code Review Council (BYOK - Fork)**.
+3. Run the workflow from your PR branch (select the branch in the dispatch UI).
+4. Set `base_ref` (usually `main`), optional `audience` (`developer` or `owner`), and optional `upstream_repo` (`owner/repo`) if you want diffs against upstream instead of your fork's base branch.
+5. Download the `council-report` artifact (`council-report.json` + `council-review.md`).
+6. Paste the review results into the upstream PR discussion.
+
+Security note: only run BYOK workflows on branches you control. Never run BYOK on branches from unknown contributors. Use restricted/low-quota API keys.
+
+---
+
+## Local BYOK run
+
+You can also run the full CI-style review locally with your own environment keys:
+
+```bash
+export OPENAI_API_KEY=your_key_here
+# or/and
+export ANTHROPIC_API_KEY=your_key_here
+# or/and
+export GOOGLE_API_KEY=your_key_here
+
+council review --ci --branch main --audience developer --output-json council-report.json --output-md council-review.md
+```
+
+This produces local JSON + Markdown outputs without posting to GitHub PR comments.
 
 **Generate an owner-friendly HTML report:**
 ```bash

@@ -198,6 +198,7 @@ class ReviewerOutput(BaseModel):
     reasoning: str = ""
     tokens_used: int = 0
     error: str | None = None  # set if reviewer timed out or failed
+    integrity_error: bool = False  # structured integrity signal for orchestrator
 
 
 # ---------------------------------------------------------------------------

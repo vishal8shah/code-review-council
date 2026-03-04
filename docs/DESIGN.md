@@ -476,12 +476,14 @@ class ReviewerOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str
     tokens_used: int
+    error: str | None = None
+    integrity_error: bool = False
 
 class ChairVerdict(BaseModel):
     verdict: Literal["PASS", "PASS_WITH_WARNINGS", "FAIL"]
     confidence: float = Field(ge=0.0, le=1.0)
-    degraded: bool = False                     # true if any reviewer failed/timed out
-    degraded_reason: str | None = None
+    degraded: bool = False                     # true if integrity issues occurred
+    degraded_reasons: list[str] = []
     summary: str
     accepted_blockers: list[Finding]           # findings accepted as blockers (cause FAIL)
     dismissed_findings: list[DismissedFinding] # findings explicitly dismissed with reason

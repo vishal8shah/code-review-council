@@ -19,10 +19,12 @@ def write_json_report(
         "verdict": verdict.verdict,
         "confidence": verdict.confidence,
         "degraded": verdict.degraded,
+        "degraded_reasons": verdict.degraded_reasons,
         "summary": verdict.summary,
         "rationale": verdict.rationale,
         "reviewer_agreement_score": verdict.reviewer_agreement_score,
         "accepted_blockers": [f.model_dump() for f in verdict.accepted_blockers],
+        "warnings": [f.model_dump() for f in verdict.warnings],
         "dismissed_findings": [f.model_dump() for f in verdict.dismissed_findings],
     }
 
@@ -44,6 +46,7 @@ def write_json_report(
                 "findings_count": len(r.findings),
                 "confidence": r.confidence,
                 "error": r.error,
+                "integrity_error": r.integrity_error,
                 "tokens_used": r.tokens_used,
             }
             for r in reviewer_outputs

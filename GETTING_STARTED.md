@@ -207,6 +207,7 @@ Confirm that your CI workflow compares against the correct base branch and that 
 - code evidence
 - reviewer rationale
 - accepted blockers and warnings by category
+- per-reviewer `error` and `integrity_error` fields in JSON output for CI triage
 
 **Owner audience** — best for product owners, founders, or semi-technical stakeholders who want:
 - merge recommendation (SAFE TO MERGE / MERGE WITH CAUTION / FIX BEFORE MERGE)

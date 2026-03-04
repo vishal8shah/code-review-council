@@ -11,6 +11,7 @@ Stage 3:    Report Generation
 from __future__ import annotations
 
 import asyncio
+from importlib import import_module
 from pathlib import Path
 
 from . import chair as chair_module
@@ -22,13 +23,7 @@ from .reviewers.base import BaseReviewer
 from .reviewers.docs import DocsReviewer
 from .reviewers.qa import QAReviewer
 from .reviewers.secops import SecOpsReviewer
-from .schemas import (
-    ChairVerdict,
-    DiffContext,
-    GateZeroResult,
-    ReviewerOutput,
-    ReviewPack,
-)
+from .schemas import ChairVerdict, DiffContext, GateZeroResult, ReviewerOutput, ReviewPack
 
 
 class CouncilResult:
@@ -46,7 +41,20 @@ class CouncilResult:
         self.reviewer_outputs = reviewer_outputs or []
         self.gate_result = gate_result
 
-# Map reviewer IDs to their classes
+
+
+
+def _is_integrity_error(error: str | None) -> bool:
+    """Return True only for integrity-classified reviewer errors."""
+    if not error:
+        return False
+    normalized = error.strip().lower()
+    return (
+        normalized.startswith("integrity issue:")
+        or "reviewer_task_exception" in normalized
+        or "invalid json" in normalized
+    )
+
 REVIEWER_CLASSES: dict[str, type[BaseReviewer]] = {
     "secops": SecOpsReviewer,
     "qa": QAReviewer,
@@ -55,16 +63,60 @@ REVIEWER_CLASSES: dict[str, type[BaseReviewer]] = {
 }
 
 
-def _instantiate_reviewers(configs: list[ReviewerConfig]) -> list[BaseReviewer]:
+def _load_class_path(class_path: str) -> type[BaseReviewer] | None:
+    """Load class from dotted path. Returns None on invalid path/import."""
+    if not class_path or "." not in class_path:
+        return None
+    try:
+        module_name, class_name = class_path.rsplit(".", 1)
+        module = import_module(module_name)
+        cls = getattr(module, class_name)
+        if isinstance(cls, type) and issubclass(cls, BaseReviewer):
+            return cls
+    except Exception:
+        return None
+    return None
+
+
+def _instantiate_reviewers(
+    configs: list[ReviewerConfig],
+    on_integrity_issue: str,
+    repo_root: Path | None = None,
+) -> list[BaseReviewer]:
     """Create reviewer instances from config."""
     reviewers: list[BaseReviewer] = []
+    base_root = repo_root or Path.cwd()
+
     for rc in configs:
-        cls = REVIEWER_CLASSES.get(rc.id, BaseReviewer)
-        reviewers.append(cls(
-            reviewer_id=rc.id,
-            model=rc.model,
-            prompt_path=rc.prompt if rc.prompt else None,
-        ))
+        cls = _load_class_path(rc.class_path) if rc.class_path else None
+        if cls is None:
+            cls = REVIEWER_CLASSES.get(rc.id, BaseReviewer)
+
+        prompt_path: str | None = None
+        if rc.prompt:
+            p = Path(rc.prompt)
+            if not p.is_absolute():
+                p = base_root / p
+            prompt_path = str(p)
+
+        try:
+            reviewers.append(cls(
+                reviewer_id=rc.id,
+                model=rc.model,
+                prompt_path=prompt_path,
+                on_integrity_issue=on_integrity_issue,
+            ))
+        except TypeError as exc:
+            msg = str(exc)
+            if "on_integrity_issue" in msg and "unexpected keyword" in msg:
+                # Backward compatibility for custom reviewers not yet accepting integrity policy kwarg
+                reviewers.append(cls(
+                    reviewer_id=rc.id,
+                    model=rc.model,
+                    prompt_path=prompt_path,
+                ))
+            else:
+                raise
     return reviewers
 
 
@@ -75,23 +127,11 @@ async def run_council(
     branch: str | None = None,
     diff_text: str | None = None,
 ) -> CouncilResult:
-    """Run the full Code Review Council pipeline.
-
-    Args:
-        repo_root: Path to the git repo root.
-        config: Council configuration. Loaded from .council.toml if None.
-        staged: If True, review staged changes.
-        branch: Branch to diff against (e.g., "main").
-        diff_text: Pre-supplied diff text (for testing). Skips git call.
-
-    Returns:
-        CouncilResult with verdict and all auxiliary data.
-    """
+    """Run the full Code Review Council pipeline."""
     if config is None:
         from .config import load_config
         config = load_config(repo_root)
 
-    # Get diff
     if diff_text is None:
         diff_text = get_git_diff(repo_root=repo_root, staged=staged, branch=branch)
 
@@ -105,25 +145,18 @@ async def run_council(
             )
         )
 
-    # Parse diff into structured context
     diff_context: DiffContext = parse_diff(diff_text, repo_root=repo_root)
 
-    # Stage 0: Gate Zero (deterministic static checks)
     gate_result = gate_zero.check(diff_context, config, repo_root=repo_root)
     if gate_result.hard_fail:
-        return CouncilResult(
-            verdict=gate_result.as_early_exit(),
-            gate_result=gate_result,
-        )
+        return CouncilResult(verdict=gate_result.as_early_exit(), gate_result=gate_result)
 
-    # Stage 0.5: Diff Preprocessing (filter, chunk, budget)
     processed_diff, skipped_files, truncated_files = diff_preprocessor.process(
         diff_context,
         config=config.preprocessor,
         repo_root=repo_root,
     )
 
-    # Stage 0.75: Assemble ReviewPack
     review_pack = rp_module.assemble(
         diff_context=processed_diff,
         gate_zero_findings=gate_result.findings,
@@ -132,9 +165,11 @@ async def run_council(
         truncated_files=truncated_files,
     )
 
-    # Stage 1: Fan-out to all reviewers in parallel
-    active_reviewers = config.active_reviewers
-    reviewer_instances = _instantiate_reviewers(active_reviewers)
+    reviewer_instances = _instantiate_reviewers(
+        config.active_reviewers,
+        config.enforcement.on_integrity_issue,
+        repo_root=repo_root,
+    )
 
     if not reviewer_instances:
         return CouncilResult(
@@ -149,40 +184,41 @@ async def run_council(
             gate_result=gate_result,
         )
 
-    # Run all reviewers in parallel with exception handling
     tasks = [reviewer.review(review_pack) for reviewer in reviewer_instances]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Separate successes from failures
     reviewer_outputs: list[ReviewerOutput] = []
-    failed_reviewers: list[str] = []
     integrity_issues: list[str] = []
 
     for reviewer, result in zip(reviewer_instances, results):
         if isinstance(result, Exception):
-            failed_reviewers.append(reviewer.reviewer_id)
-            integrity_issues.append(f"{reviewer.reviewer_id}: exception — {type(result).__name__}")
+            integrity_issues.append(f"{reviewer.reviewer_id}: reviewer_task_exception: {type(result).__name__}")
             reviewer_outputs.append(
                 ReviewerOutput(
                     reviewer_id=reviewer.reviewer_id,
                     model=reviewer.model,
-                    verdict="PASS",
+                    verdict="FAIL" if config.enforcement.on_integrity_issue == "fail" else "PASS",
                     findings=[],
                     confidence=0.0,
                     reasoning="",
                     tokens_used=0,
-                    error=f"Reviewer failed: {type(result).__name__}: {result}",
+                    error=f"reviewer_task_exception: {type(result).__name__}: {result}",
+                    integrity_error=True,
                 )
             )
-        else:
-            reviewer_outputs.append(result)
-            # Check for reviewer-level integrity issues (parse errors, dropped findings)
-            if result.error:
-                integrity_issues.append(f"{result.reviewer_id}: {result.error}")
+            continue
+
+        reviewer_outputs.append(result)
+        if result.integrity_error or _is_integrity_error(result.error):
+            integrity_issues.append(f"{result.reviewer_id}: {result.error}")
+
+        if result.verdict == "FAIL" and not result.findings and result.error is None:
+            integrity_issues.append(
+                f"{result.reviewer_id}: integrity issue: FAIL verdict with no findings/evidence"
+            )
 
     degraded = len(integrity_issues) > 0
 
-    # Stage 2: Chair synthesis
     verdict = await chair_module.synthesize(
         review_pack=review_pack,
         reviews=reviewer_outputs,

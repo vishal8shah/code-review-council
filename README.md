@@ -143,6 +143,7 @@ See the solution design document for full configuration reference.
 - **ReviewPack**: Reviewers get structured context (changed symbols, test coverage map, policy violations), not raw diff text.
 - **Evidence-based Chair**: Findings are accepted/dismissed individually with explicit reasoning. No count-based rules.
 - **Degraded mode**: If a reviewer times out or returns malformed output, the council continues with reduced confidence and surfaces specific integrity issues.
+- **JSON CI triage**: JSON reports include per-reviewer `error` and `integrity_error` so blocked runs are easier to debug in CI logs/artifacts.
 - **LiteLLM**: Single interface to call any LLM provider.
 
 ## Known Limitations (V1 Alpha)

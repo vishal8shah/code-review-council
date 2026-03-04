@@ -167,26 +167,59 @@ Respond with ONLY valid JSON:
 
 
     def _extract_json_object(self, text: str) -> str | None:
-        """Best-effort JSON object extraction from model output."""
+        """Best-effort extraction of the first complete JSON object."""
         if not text:
             return None
 
         candidate = text.strip()
 
-        if candidate.startswith("```"):
-            lines = candidate.splitlines()
-            if lines and lines[0].strip().startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            candidate = "\n".join(lines).strip()
+        def _scan_for_object(payload: str) -> str | None:
+            start = payload.find("{")
+            if start == -1:
+                return None
 
-        start = candidate.find("{")
-        end = candidate.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return candidate[start : end + 1]
+            depth = 0
+            in_string = False
+            escaped = False
+            for idx in range(start, len(payload)):
+                ch = payload[idx]
 
-        return None
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == '"':
+                        in_string = False
+                    continue
+
+                if ch == '"':
+                    in_string = True
+                    continue
+
+                if ch == "{":
+                    depth += 1
+                    continue
+
+                if ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return payload[start : idx + 1]
+            return None
+
+        if "```" in candidate:
+            parts = candidate.split("```")
+            for block in parts[1::2]:
+                cleaned = block.strip()
+                if not cleaned:
+                    continue
+                if "\n" in cleaned and cleaned.splitlines()[0].strip().lower() in {"json", "javascript", "js"}:
+                    cleaned = "\n".join(cleaned.splitlines()[1:]).strip()
+                extracted = _scan_for_object(cleaned)
+                if extracted:
+                    return extracted
+
+        return _scan_for_object(candidate)
 
     def _load_json_payload(self, raw_json: str) -> dict | None:
         """Parse model JSON with lenient fallback for fenced/wrapped outputs."""

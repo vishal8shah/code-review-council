@@ -277,6 +277,7 @@ class TestConfig:
 [council]
 chair_model = "anthropic/claude-opus-4-6"
 timeout_seconds = 30
+reviewer_concurrency = 1
 
 [gate_zero]
 require_docs = false
@@ -291,6 +292,7 @@ enabled = true
         config = load_config(tmp_path)
         assert config.chair_model == "anthropic/claude-opus-4-6"
         assert config.timeout_seconds == 30
+        assert config.reviewer_concurrency == 1
         assert config.gate_zero.require_docs is False
         assert len(config.reviewers) == 1
 
@@ -2523,6 +2525,25 @@ def test_integrity_policy_invalid_json_fail_mode():
 
 
 
+def test_integrity_policy_extracts_first_balanced_json_object():
+    r = BaseReviewer(reviewer_id="x", model="m", on_integrity_issue="fail")
+    raw = (
+        "Model note {not json}.\n"
+        "```json\n"
+        "{\n"
+        "  \"verdict\": \"PASS\",\n"
+        "  \"confidence\": 0.9,\n"
+        "  \"findings\": [],\n"
+        "  \"reasoning\": \"ok\"\n"
+        "}\n"
+        "```\n"
+        "trailing notes with } braces"
+    )
+    out = r._parse_response(raw, 12)
+    assert out.verdict == "PASS"
+    assert out.integrity_error is False
+
+
 def test_integrity_policy_accepts_fenced_json_payload():
     r = BaseReviewer(reviewer_id="x", model="m", on_integrity_issue="fail")
     raw = """```json
@@ -3066,9 +3087,10 @@ async def test_orchestrator_respects_reviewer_concurrency_limit():
     ), patch(
         "council.orchestrator.chair_module.synthesize", new=AsyncMock(return_value=ChairVerdict(verdict="PASS", confidence=0.9, summary="ok", rationale="ok"))
     ):
-        await run_council(repo_root=Path.cwd(), config=cfg, diff_text="+x")
+        result = await run_council(repo_root=Path.cwd(), config=cfg, diff_text="+x")
 
     assert state["max_active"] == 1
+    assert len(result.reviewer_outputs) == 2
 
 
 def test_instantiate_reviewers_reraises_unrelated_typeerror():

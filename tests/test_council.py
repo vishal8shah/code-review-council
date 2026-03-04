@@ -580,6 +580,50 @@ class TestReviewPack:
         assert "tests/test_parser.py" in m.get("src/parser.py", [])
         assert m.get("src/utils.py") == []
 
+    def test_test_coverage_map_matches_imports(self):
+        """Maps tests to source files when tests import the source module."""
+        ctx = DiffContext(files=[
+            DiffFile(path="council/cli.py", change_type="modified"),
+            DiffFile(
+                path="tests/test_council.py",
+                change_type="modified",
+                source_content="from council.cli import app\n",
+            ),
+        ])
+        m = _build_test_coverage_map(ctx)
+        assert "tests/test_council.py" in m.get("council/cli.py", [])
+
+    def test_assemble_marks_test_symbols_as_self_covered(self):
+        """Changed symbols in test files should be treated as self-covered tests."""
+        ctx = DiffContext(
+            files=[
+                DiffFile(
+                    path="tests/test_sample.py",
+                    language="python",
+                    change_type="modified",
+                    source_content="class TestSample:\n    def test_case(self):\n        assert True\n",
+                    hunks=[
+                        DiffHunk(
+                            source_start=1,
+                            source_length=0,
+                            target_start=1,
+                            target_length=3,
+                            content="+class TestSample:\n+    def test_case(self):\n+        assert True\n",
+                        )
+                    ],
+                )
+            ],
+            changed_files=["tests/test_sample.py"],
+            branch="feature/test-self-coverage",
+        )
+        rp = assemble(ctx, gate_zero_findings=[], config=CouncilConfig())
+        assert rp.changed_symbols
+        for symbol in rp.changed_symbols:
+            assert symbol.file == "tests/test_sample.py"
+            assert symbol.has_tests is True
+            assert symbol.test_file == "tests/test_sample.py"
+
+
     def test_assemble_full(self):
         """Full assembly produces a complete ReviewPack."""
         ctx = DiffContext(
@@ -1287,14 +1331,54 @@ class TestWorkflowScaffold:
         from council.cli import _DEFAULT_WORKFLOW
         assert "Check LLM credentials availability" in _DEFAULT_WORKFLOW
         assert "id: llm_keys" in _DEFAULT_WORKFLOW
+        assert "env:" in _DEFAULT_WORKFLOW
+        assert "if [ -n \"$ANTHROPIC_API_KEY\" ] || [ -n \"$OPENAI_API_KEY\" ] || [ -n \"$GOOGLE_API_KEY\" ]; then" in _DEFAULT_WORKFLOW
         assert "if: steps.llm_keys.outputs.has_key == 'true'" in _DEFAULT_WORKFLOW
         assert "No LLM API keys available (common on fork PRs)" in _DEFAULT_WORKFLOW
+        assert '"skipped":"no_llm_api_keys"' in _DEFAULT_WORKFLOW
+        assert "Run the BYOK workflow in your fork: Actions -> Code Review Council (BYOK - Fork)" in _DEFAULT_WORKFLOW
 
     def test_workflow_passes_branch(self):
         """Generated workflow must pass --branch to avoid empty-diff reviews."""
         from council.cli import _DEFAULT_WORKFLOW
         assert "--branch" in _DEFAULT_WORKFLOW
         assert "github.base_ref" in _DEFAULT_WORKFLOW
+
+    def test_byok_workflow_scaffold_contains_required_bits(self):
+        """BYOK workflow template should be dispatch-only and artifact-focused."""
+        from council.cli import _DEFAULT_WORKFLOW_BYOK
+
+        assert "workflow_dispatch" in _DEFAULT_WORKFLOW_BYOK
+        assert "upstream_repo" in _DEFAULT_WORKFLOW_BYOK
+        assert "Fail fast if no BYOK keys configured" in _DEFAULT_WORKFLOW_BYOK
+        assert 'if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW_BYOK
+        assert '"skipped":"no_byok_keys"' in _DEFAULT_WORKFLOW_BYOK
+        assert "Resolve review base ref" in _DEFAULT_WORKFLOW_BYOK
+        assert "UPSTREAM_REPO: ${{ inputs.upstream_repo }}" in _DEFAULT_WORKFLOW_BYOK
+        assert "BASE_REF: ${{ inputs.base_ref }}" in _DEFAULT_WORKFLOW_BYOK
+        assert "set -euo pipefail" in _DEFAULT_WORKFLOW_BYOK
+        assert "fail() {" in _DEFAULT_WORKFLOW_BYOK
+        assert '[[ ! "$BASE_REF" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]]' in _DEFAULT_WORKFLOW_BYOK
+        assert '[[ "$BASE_REF" == *..* ]]' in _DEFAULT_WORKFLOW_BYOK
+        assert '[[ "$BASE_REF" == /* ]]' in _DEFAULT_WORKFLOW_BYOK
+        assert '[[ "$BASE_REF" == -* ]]' in _DEFAULT_WORKFLOW_BYOK
+        assert 'git check-ref-format --branch "$BASE_REF"' in _DEFAULT_WORKFLOW_BYOK
+        assert 'git check-ref-format "$BASE_REF"' in _DEFAULT_WORKFLOW_BYOK
+        assert "invalid_base_ref" in _DEFAULT_WORKFLOW_BYOK
+        assert "invalid_upstream_repo" in _DEFAULT_WORKFLOW_BYOK
+        assert "upstream_fetch_failed" in _DEFAULT_WORKFLOW_BYOK
+        assert 'if [[ ! "$UPSTREAM_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then' in _DEFAULT_WORKFLOW_BYOK
+        assert 'if ! git fetch --no-tags upstream -- "$BASE_REF"; then' in _DEFAULT_WORKFLOW_BYOK
+        assert "Warn if workflow is running on the base branch" in _DEFAULT_WORKFLOW_BYOK
+        assert "TARGET_BRANCH: ${{ steps.review_base.outputs.target }}" in _DEFAULT_WORKFLOW_BYOK
+        assert "AUDIENCE: ${{ inputs.audience }}" in _DEFAULT_WORKFLOW_BYOK
+        assert '[ "$AUDIENCE" != "developer" ] && [ "$AUDIENCE" != "owner" ]' in _DEFAULT_WORKFLOW_BYOK
+        assert '"skipped":"invalid_audience"' in _DEFAULT_WORKFLOW_BYOK
+        assert "--output-json council-report.json" in _DEFAULT_WORKFLOW_BYOK
+        assert "--output-md council-review.md" in _DEFAULT_WORKFLOW_BYOK
+        assert "--github-pr" not in _DEFAULT_WORKFLOW_BYOK
+        assert "permissions:" in _DEFAULT_WORKFLOW_BYOK
+        assert "contents: read" in _DEFAULT_WORKFLOW_BYOK
 
 
 class TestDiffTextFileBoundaries:
@@ -2748,11 +2832,24 @@ def test_github_pr_comment_and_annotations(capsys):
 
 
 def test_init_defaults_include_prompt_and_integrity_and_github_pr():
-    from council.cli import _DEFAULT_CONFIG, _DEFAULT_WORKFLOW
+    from council.cli import _DEFAULT_CONFIG, _DEFAULT_WORKFLOW, _DEFAULT_WORKFLOW_BYOK
     assert 'on_integrity_issue = "fail"' in _DEFAULT_CONFIG
     assert 'prompt = "prompts/secops.md"' in _DEFAULT_CONFIG
     assert '--github-pr' in _DEFAULT_WORKFLOW
     assert 'actions/checkout@' in _DEFAULT_WORKFLOW and len(_DEFAULT_WORKFLOW.split('actions/checkout@')[1].splitlines()[0].strip()) >= 40
+    assert 'workflow_dispatch' in _DEFAULT_WORKFLOW_BYOK
+
+
+def test_init_scaffolds_both_workflow_files(tmp_path):
+    from typer.testing import CliRunner
+    from council.cli import app
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["init", "--repo", str(tmp_path)])
+    assert result.exit_code == 0
+
+    assert (tmp_path / ".github" / "workflows" / "council-review.yml").exists()
+    assert (tmp_path / ".github" / "workflows" / "council-byok.yml").exists()
 
 
 def test_cli_ci_degraded_fail_policy_blocks_merge():

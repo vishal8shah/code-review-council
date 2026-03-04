@@ -22,19 +22,26 @@ jobs:
 
       - name: Check LLM credentials availability
         id: llm_keys
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
-          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ] || [ -n "${{ secrets.OPENAI_API_KEY }}" ] || [ -n "${{ secrets.GOOGLE_API_KEY }}" ]; then
+          if [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$OPENAI_API_KEY" ] || [ -n "$GOOGLE_API_KEY" ]; then
             echo "has_key=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_key=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Code Review Council skipped::No LLM API keys available (common on fork PRs). Skipping council review step."
-            printf '{"skipped":"no_llm_api_keys"}
-' > council-report.json
+            printf '{"skipped":"no_llm_api_keys","how_to_run_full":"Run the BYOK workflow in your fork: Actions -> Code Review Council (BYOK - Fork)"}\n' > council-report.json
+            printf '# Code Review Council skipped\n\nNo LLM API keys available in this repo (common on fork PRs).\nRun the BYOK workflow in your fork to generate a full report.\n' > council-review.md
           fi
 
       - name: Run Council Review
         if: steps.llm_keys.outputs.has_key == 'true'
-        run: council review --ci --github-pr --branch ${{ github.base_ref }} --output-json council-report.json
+        run: |
+          council review --ci --github-pr --branch "${{ github.base_ref }}" \
+            --output-json council-report.json \
+            --output-md council-review.md
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -46,4 +53,6 @@ jobs:
         if: always()
         with:
           name: council-report
-          path: council-report.json
+          path: |
+            council-report.json
+            council-review.md

@@ -46,6 +46,17 @@ Updated after initial self-review, two rounds of GPT-5.2 peer review, and three 
 
 ---
 
+
+### Recent Changes (Post Round 2)
+| Change | Summary |
+|---|---|
+| Chair injection policy | Removed hard override for injection findings; added exploitability evidence gate before blocker acceptance |
+| Prompt guardrails | Added additional secops and QA guardrails to reduce speculative findings |
+| BYOK workflow | Added fork-safe BYOK workflow that emits `council-report.json` and `council-review.md` artifacts |
+| Config schema + defaults | `load_config()` now accepts nested `[[council.reviewer]]` / `[[council.reviewers]]`; default reviewer model mix updated to GPT-5.2/GPT-4o/GPT-4o-mini |
+
+---
+
 ## Remaining Known Limitations
 
 ### Accuracy

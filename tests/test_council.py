@@ -296,6 +296,49 @@ enabled = true
         assert config.gate_zero.require_docs is False
         assert len(config.reviewers) == 1
 
+    def test_load_nested_council_reviewer_config(self, tmp_path):
+        """Nested [[council.reviewer]] tables are accepted."""
+        toml = tmp_path / ".council.toml"
+        toml.write_text("""
+[council]
+chair_model = "openai/gpt-4o"
+
+[[council.reviewer]]
+id = "secops"
+name = "Security Operations Reviewer"
+model = "openai/gpt-5.2"
+prompt = "prompts/secops.md"
+enabled = true
+
+[[council.reviewer]]
+id = "qa"
+name = "QA Engineer"
+model = "openai/gpt-5.2"
+prompt = "prompts/qa.md"
+enabled = true
+""")
+        config = load_config(tmp_path)
+        assert [r.id for r in config.active_reviewers] == ["secops", "qa"]
+        assert [r.model for r in config.active_reviewers] == ["openai/gpt-5.2", "openai/gpt-5.2"]
+
+    def test_load_nested_council_reviewers_config(self, tmp_path):
+        """Nested [[council.reviewers]] tables are accepted."""
+        toml = tmp_path / ".council.toml"
+        toml.write_text("""
+[council]
+chair_model = "openai/gpt-4o"
+
+[[council.reviewers]]
+id = "architect"
+name = "Solutions Architect"
+model = "openai/gpt-4o"
+prompt = "prompts/architecture.md"
+enabled = true
+""")
+        config = load_config(tmp_path)
+        assert [r.id for r in config.active_reviewers] == ["architect"]
+        assert [r.model for r in config.active_reviewers] == ["openai/gpt-4o"]
+
     def test_active_reviewers_filters_disabled(self):
         """active_reviewers property filters out disabled reviewers."""
         from council.config import ReviewerConfig

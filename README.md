@@ -128,13 +128,83 @@ check_secrets = true
 
 [[reviewers]]
 id = "secops"
-model = "anthropic/claude-sonnet-4-20250514"
+name = "Security Operations Reviewer"
+model = "openai/gpt-5.2"
+prompt = "prompts/secops.md"
 enabled = true
 
 # Optional: set a default output audience
 [presentation]
 default_audience = "developer"
 ```
+
+Model schema note: canonical reviewer config is `[[reviewers]]`, and nested forms
+`[[council.reviewer]]` / `[[council.reviewers]]` are also accepted for compatibility.
+
+### Model presets
+
+Balanced preset:
+```toml
+[council]
+chair_model = "anthropic/claude-sonnet-4-6"
+
+[[reviewers]]
+id = "secops"
+name = "Security Operations Reviewer"
+model = "openai/gpt-5.2"
+prompt = "prompts/secops.md"
+
+[[reviewers]]
+id = "qa"
+name = "QA Engineer"
+model = "openai/gpt-5.2"
+prompt = "prompts/qa.md"
+
+[[reviewers]]
+id = "architect"
+name = "Solutions Architect"
+model = "openai/gpt-4o"
+prompt = "prompts/architecture.md"
+
+[[reviewers]]
+id = "docs"
+name = "Documentation Reviewer"
+model = "openai/gpt-4o-mini"
+prompt = "prompts/docs.md"
+```
+
+Simple ops preset:
+```toml
+[council]
+chair_model = "openai/gpt-4o"
+
+[[reviewers]]
+id = "secops"
+name = "Security Operations Reviewer"
+model = "openai/gpt-5.2"
+prompt = "prompts/secops.md"
+
+[[reviewers]]
+id = "qa"
+name = "QA Engineer"
+model = "openai/gpt-5.2"
+prompt = "prompts/qa.md"
+
+[[reviewers]]
+id = "architect"
+name = "Solutions Architect"
+model = "openai/gpt-4o"
+prompt = "prompts/architecture.md"
+
+[[reviewers]]
+id = "docs"
+name = "Documentation Reviewer"
+model = "openai/gpt-4o-mini"
+prompt = "prompts/docs.md"
+```
+
+BYOK note: fork PRs can run the `council-byok` workflow to produce `council-report.json`
+and `council-review.md` artifacts even when upstream secrets are unavailable.
 
 See the solution design document for full configuration reference.
 

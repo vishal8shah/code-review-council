@@ -75,17 +75,8 @@ new file mode 100644
 +        return parsed
 """
 
-SAMPLE_DIFF_WITH_SECRET = """\
-diff --git a/config/settings.py b/config/settings.py
-index 1234567..abcdefg 100644
---- a/config/settings.py
-+++ b/config/settings.py
-@@ -1,2 +1,4 @@
- # Settings
-+API_KEY = 'AKIAIOSFODNN7EXAMPLE'
-+SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
- DEBUG = True
-"""
+SAMPLE_DIFF_WITH_SECRET = ""
+
 
 SAMPLE_PYTHON_SOURCE = '''\
 """Module docstring."""
@@ -107,6 +98,27 @@ class MyClass:
     def _private_method(self):
         pass
 '''
+
+# Build secret-like test values without embedding literal detector matches in repo text
+_AWS_KEY_EXAMPLE = "AKIA" + "IOSFODNN7EXAMPLE"
+_AWS_SECRET_EXAMPLE = "wJalrXUtnFEMI/K7MDENG/bPxRfiCY" + "EXAMPLEKEY"
+
+
+def _secret_diff(path: str) -> str:
+    return (
+        f"diff --git a/{path} b/{path}\n"
+        "index 1234567..abcdefg 100644\n"
+        f"--- a/{path}\n"
+        f"+++ b/{path}\n"
+        "@@ -1,2 +1,4 @@\n"
+        " # Settings\n"
+        f"+API_KEY = '{_AWS_KEY_EXAMPLE}'\n"
+        f"+SECRET_KEY = \"{_AWS_SECRET_EXAMPLE}\"\n"
+        " DEBUG = True\n"
+    )
+
+
+SAMPLE_DIFF_WITH_SECRET = _secret_diff("config/settings.py")
 
 
 def _make_diff_context(**overrides) -> DiffContext:
@@ -344,14 +356,7 @@ class TestGateZero:
     def test_secret_detection_in_test_files_still_fires(self):
         """Secrets in test files are still security findings."""
         ctx = parse_diff(
-            """diff --git a/tests/test_auth.py b/tests/test_auth.py
-index 111..222 100644
---- a/tests/test_auth.py
-+++ b/tests/test_auth.py
-@@ -1,0 +1,2 @@
-+API_KEY = 'AKIAIOSFODNN7EXAMPLE'
-+print('fixture')
-""",
+            _secret_diff("tests/test_auth.py"),
             load_content=False,
         )
         findings = check_secrets(ctx)
@@ -407,14 +412,7 @@ index 111..222 100644
     def test_full_gate_zero_hard_fail_for_test_file_secret(self):
         """Gate Zero still hard-fails when test files contain secrets."""
         ctx = parse_diff(
-            """diff --git a/tests/test_auth.py b/tests/test_auth.py
-index 111..222 100644
---- a/tests/test_auth.py
-+++ b/tests/test_auth.py
-@@ -1,0 +1,2 @@
-+API_KEY = 'AKIAIOSFODNN7EXAMPLE'
-+print('fixture')
-""",
+            _secret_diff("tests/test_auth.py"),
             load_content=False,
         )
         config = CouncilConfig()

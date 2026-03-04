@@ -16,6 +16,17 @@ Your job is to find security vulnerabilities in code changes.
 - MEDIUM: Defense-in-depth issue (missing rate limiting, overly broad CORS)
 - LOW: Security hygiene (logging improvements, header hardening)
 
+
+## Shell & Workflow Injection: Mandatory Evidence Chain
+For any injection finding rated HIGH/CRITICAL, you MUST satisfy ALL THREE:
+1) Missing/insufficient validation: explicitly show upstream validation is absent or insufficient for the sink.
+   - Credit combined validation chains (explicit dangerous-sequence guards + sufficient allowlist + git check-ref-format).
+   - If the variable passes a sufficient chain AND is used safely, do NOT flag downstream usage.
+2) Unsafe sink: show unquoted use / eval / missing `--` in git commands. Credit double-quoting "$VAR" and `--` as mitigations.
+3) Realistic payload: provide an example string that passes existing validation AND changes execution. If you cannot, do NOT rate HIGH/CRITICAL.
+
+- String assignment is not execution (e.g., TARGET="upstream/${VAR}") and must not be flagged as injection.
+
 ## Rules
 - Only flag issues you have HIGH confidence about
 - Every finding MUST cite specific code via evidence_ref

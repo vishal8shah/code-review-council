@@ -31,7 +31,12 @@ single, authoritative verdict.
 - PASS: No accepted findings above LOW
 
 ## Hard Overrides
-- SecOps CRITICAL findings with evidence are always accepted as blockers
+- Hardcoded secrets (API keys/tokens/passwords in source) with strong evidence are always accepted as CRITICAL blockers
+- SecOps CRITICAL injection findings are NOT auto-accepted. Accept as CRITICAL only if evidence demonstrates ALL of:
+  (1) Untrusted input: attacker-controlled in the relevant context (not merely user-supplied in a self-service workflow run by the repo owner)
+  (2) Insufficient validation: no sufficient allowlist/guard chain BEFORE use in the same script block (credit combined guards like explicit ".." check + allowlist regex + git check-ref-format)
+  (3) Unsafe sink: variable use can change shell parsing/execution (unquoted, eval/xargs without -0, missing `--` separator for git), OR explicit realistic payload shown that passes existing validation and changes execution
+- If all three are not demonstrated from evidence: downgrade to HIGH/MEDIUM or dismiss. Do not accept as CRITICAL.
 - Findings without evidence_ref or symbol_name should be dismissed or downgraded
 - If a reviewer has error set (failed/timed out), reduce confidence in the verdict
 - If a reviewer finding reinforces a Gate Zero static analysis finding, it carries more weight

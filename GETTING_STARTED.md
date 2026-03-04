@@ -114,6 +114,17 @@ council review --branch main
 council review --ci --branch main
 ```
 
+**CI mode with GitHub PR sticky comment + annotations:**
+```bash
+council review --ci --github-pr --branch main
+```
+Optional env tuning for flaky/rate-limited runners:
+- `COUNCIL_GITHUB_MAX_RETRIES` (default: `2`)
+- `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS` (default: `1.0`)
+- `COUNCIL_GITHUB_HTTP_TIMEOUT` (default: `10`)
+- If you hit model TPM/rate-limit errors, lower `[council].reviewer_concurrency` in `.council.toml` (for Anthropic, `1-2` is usually safest).
+- On fork PRs where repo secrets are unavailable, the default workflow now skips LLM review and writes a placeholder `council-report.json` artifact instead of failing.
+
 **Generate an owner-friendly HTML report:**
 ```bash
 council review --audience owner --output-html owner-report.html
@@ -188,6 +199,12 @@ echo $OPENAI_API_KEY
 echo $ANTHROPIC_API_KEY
 ```
 
+
+**Prompt-injection findings in test fixtures**
+If CI flags prompt-injection on test fixture strings, ensure the changed file is under `tests/` (or `conftest.py`) so Gate Zero test-file exclusions apply.
+For real source files, treat this as a genuine security warning and sanitize untrusted prompt content.
+Secret scanning still runs for test files; committed tokens in tests will still block CI.
+
 **Owner report mentions a "fallback" or "deterministic"**
 This is a safety feature, not a failure. It means:
 - the technical findings still exist and are shown in the technical appendix
@@ -207,6 +224,7 @@ Confirm that your CI workflow compares against the correct base branch and that 
 - code evidence
 - reviewer rationale
 - accepted blockers and warnings by category
+- per-reviewer `error` and `integrity_error` fields in JSON output for CI triage
 
 **Owner audience** — best for product owners, founders, or semi-technical stakeholders who want:
 - merge recommendation (SAFE TO MERGE / MERGE WITH CAUTION / FIX BEFORE MERGE)

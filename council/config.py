@@ -29,6 +29,7 @@ class EnforcementConfig(BaseModel):
     mode: Literal["ci", "local", "both"] = "ci"
     ci_block_on: Literal["FAIL", "PASS_WITH_WARNINGS"] = "FAIL"
     local_mode: Literal["advisory", "gate"] = "advisory"
+    on_integrity_issue: Literal["fail", "warn", "ignore"] = "fail"
 
 
 class PreprocessorPriorities(BaseModel):
@@ -78,6 +79,7 @@ class ReviewerConfig(BaseModel):
     name: str
     model: str
     prompt: str = ""  # path to prompt file, relative to repo root
+    class_path: str = ""  # optional dotted import path for custom reviewer class
     enabled: bool = True
     focus: list[str] = []
 
@@ -114,6 +116,7 @@ class CouncilConfig(BaseModel):
     chair_model: str = "openai/gpt-4o"
     fail_on: Literal["FAIL", "PASS_WITH_WARNINGS"] = "FAIL"
     timeout_seconds: int = 60
+    reviewer_concurrency: int = 2
 
     enforcement: EnforcementConfig = EnforcementConfig()
     preprocessor: PreprocessorConfig = PreprocessorConfig()

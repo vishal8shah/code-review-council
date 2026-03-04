@@ -27,7 +27,60 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("Generic Secret", re.compile(r"""(?:password|passwd|secret)\s*[=:]\s*['"][^'"]{8,}['"]""", re.IGNORECASE)),
 ]
 
+PROMPT_INJECTION_PATTERNS: list[re.Pattern] = [
+    re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.IGNORECASE),
+    re.compile(r"disregard\s+(the\s+)?(above|prior)\s+instructions", re.IGNORECASE),
+    re.compile(r"you\s+are\s+now\s+(chatgpt|gpt|system)", re.IGNORECASE),
+    re.compile(r"reveal\s+(the\s+)?system\s+prompt", re.IGNORECASE),
+    re.compile(r"developer\s+message", re.IGNORECASE),
+]
 
+
+def _is_test_path(path: str) -> bool:
+    p = Path(path)
+    posix = p.as_posix()
+    name = p.name
+    return (
+        posix.startswith("tests/")
+        or "/tests/" in f"/{posix}"
+        or name == "conftest.py"
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+    )
+
+
+
+def check_prompt_injection(diff_context: DiffContext) -> list[GateZeroFinding]:
+    """Detect prompt-injection strings in ADDED lines."""
+    findings: list[GateZeroFinding] = []
+    for diff_file in diff_context.files:
+        if diff_file.change_type == "deleted":
+            continue
+        if _is_test_path(diff_file.path):
+            continue
+        for hunk in diff_file.hunks:
+            target_line = hunk.target_start
+            for line in hunk.content.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    added = line[1:]
+                    if any(p.search(added) for p in PROMPT_INJECTION_PATTERNS):
+                        findings.append(GateZeroFinding(
+                            check="prompt_injection",
+                            severity="HIGH",
+                            category="security",
+                            file=diff_file.path,
+                            line_start=target_line,
+                            message="Potential prompt-injection content found in added line",
+                            suggestion="Remove instruction-like text from untrusted content or sanitize before LLM use",
+                        ))
+                    target_line += 1
+                elif line.startswith("-") and not line.startswith("---"):
+                    pass
+                elif line.startswith("@@"):
+                    pass
+                else:
+                    target_line += 1
+    return findings
 def check_secrets(diff_context: DiffContext) -> list[GateZeroFinding]:
     """Scan diff content for leaked secrets."""
     findings: list[GateZeroFinding] = []
@@ -60,8 +113,6 @@ def check_secrets(diff_context: DiffContext) -> list[GateZeroFinding]:
                     # Context line — exists in both source and target
                     target_line += 1
     return findings
-
-
 def check_readme_updated(diff_context: DiffContext, config: GateZeroConfig) -> list[GateZeroFinding]:
     """If new public modules are added, README must be in the diff."""
     if not config.require_readme_on_new_module:
@@ -95,6 +146,8 @@ def check_file_size(diff_context: DiffContext, config: GateZeroConfig) -> list[G
     findings: list[GateZeroFinding] = []
     for diff_file in diff_context.files:
         if diff_file.change_type == "deleted":
+            continue
+        if _is_test_path(diff_file.path):
             continue
         if diff_file.additions > config.max_file_lines:
             findings.append(GateZeroFinding(
@@ -133,6 +186,8 @@ def check_language_specific(diff_context: DiffContext, config: GateZeroConfig) -
 
     for diff_file in diff_context.files:
         if diff_file.change_type == "deleted":
+            continue
+        if _is_test_path(diff_file.path):
             continue
         if diff_file.source_content is None:
             continue
@@ -205,6 +260,8 @@ def check_linters(
     files_by_lang: dict[str, list[str]] = {}
     for diff_file in diff_context.files:
         if diff_file.change_type == "deleted":
+            continue
+        if _is_test_path(diff_file.path):
             continue
         lang = diff_file.language
         if lang and lang in linter_cmds:
@@ -281,6 +338,7 @@ def check(diff_context: DiffContext, config: CouncilConfig, repo_root: Path | No
     if gc.check_secrets:
         findings.extend(check_secrets(diff_context))
 
+    findings.extend(check_prompt_injection(diff_context))
     findings.extend(check_readme_updated(diff_context, gc))
     findings.extend(check_file_size(diff_context, gc))
     findings.extend(check_language_specific(diff_context, gc))

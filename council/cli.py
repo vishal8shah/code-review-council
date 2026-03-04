@@ -33,6 +33,7 @@ def review(
     output_json: str = typer.Option(None, "--output-json", help="Write JSON report to this path"),
     output_md: str = typer.Option(None, "--output-md", help="Write markdown report to this path (respects --audience)"),
     output_html: str = typer.Option(None, "--output-html", help="Write HTML report to this path"),
+    github_pr: bool = typer.Option(False, "--github-pr", help="Post/update a sticky GitHub PR comment and emit workflow annotations"),
     audience: str = typer.Option(
         None,
         "--audience",
@@ -146,7 +147,22 @@ def review(
         )
         console.print(f"  HTML report saved to: {output_html}", style="dim")
 
+    # GitHub PR reporter (annotations + sticky comment)
+    if github_pr or config.reporters.github_pr:
+        from .reporters.github_pr import post_github_pr_review
+        posted = post_github_pr_review(verdict, reviewer_outputs=result.reviewer_outputs)
+        if not posted:
+            console.print("  [dim]GitHub PR comment not posted (missing env/PR context or API failure).[/]")
+
     # Exit code
+    if ci and verdict.degraded and config.enforcement.on_integrity_issue == "fail":
+        console.print(
+            "\n  Merge blocked: integrity issues detected in degraded review run "
+            "(on_integrity_issue=fail).",
+            style="bold red",
+        )
+        raise typer.Exit(code=1)
+
     if ci and verdict.verdict == "FAIL":
         console.print("\n  Merge blocked. Fix issues and push again.", style="bold red")
         raise typer.Exit(code=1)
@@ -185,6 +201,15 @@ def init(
         ignore_path.write_text(_DEFAULT_COUNCILIGNORE, encoding="utf-8")
         console.print(f"  [green]Created[/] {ignore_path}")
 
+    # Create default prompt files
+    prompts_dir = root / "prompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+    for rel_path, content in _DEFAULT_PROMPTS.items():
+        prompt_path = root / rel_path
+        if not prompt_path.exists():
+            prompt_path.write_text(content, encoding="utf-8")
+            console.print(f"  [green]Created[/] {prompt_path}")
+
     # Create GitHub Actions workflow
     workflow_dir = root / ".github" / "workflows"
     workflow_path = workflow_dir / "council-review.yml"
@@ -204,11 +229,13 @@ _DEFAULT_CONFIG = """\
 chair_model = "openai/gpt-4o"
 fail_on = "FAIL"
 timeout_seconds = 60
+reviewer_concurrency = 2
 
 [council.enforcement]
 mode = "ci"
 ci_block_on = "FAIL"
 local_mode = "advisory"
+on_integrity_issue = "fail"
 
 [preprocessor]
 max_review_tokens = 30000
@@ -235,31 +262,35 @@ javascript = false  # not yet implemented — enable when analyzer is added
 id = "secops"
 name = "Security Operations Reviewer"
 model = "anthropic/claude-sonnet-4-20250514"
+prompt = "prompts/secops.md"
 enabled = true
 
 [[reviewers]]
 id = "qa"
 name = "QA Engineer"
 model = "anthropic/claude-sonnet-4-20250514"
+prompt = "prompts/qa.md"
 enabled = true
 
 [[reviewers]]
 id = "architect"
 name = "Solutions Architect"
 model = "anthropic/claude-sonnet-4-20250514"
+prompt = "prompts/architecture.md"
 enabled = true
 
 [[reviewers]]
 id = "docs"
 name = "Documentation Reviewer"
 model = "anthropic/claude-sonnet-4-20250514"
+prompt = "prompts/docs.md"
 enabled = true
 
 [reporters]
 terminal = true
 markdown = true
 json_report = "ci"
-github_pr = false  # not yet implemented — enable when reporter is added
+github_pr = false
 
 [cost]
 warn_threshold_usd = 1.00
@@ -294,33 +325,151 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+      issues: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
         with:
           python-version: '3.12'
 
       - name: Install Code Review Council
         run: pip install .
 
+      - name: Check LLM credentials availability
+        id: llm_keys
+        run: |
+          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ] || [ -n "${{ secrets.OPENAI_API_KEY }}" ] || [ -n "${{ secrets.GOOGLE_API_KEY }}" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Code Review Council skipped::No LLM API keys available (common on fork PRs). Skipping council review step."
+            printf '{"skipped":"no_llm_api_keys"}
+' > council-report.json
+          fi
+
       - name: Run Council Review
-        run: council review --ci --branch ${{ github.base_ref }} --output-json council-report.json
+        if: steps.llm_keys.outputs.has_key == 'true'
+        run: council review --ci --github-pr --branch ${{ github.base_ref }} --output-json council-report.json
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Review Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
         if: always()
         with:
           name: council-report
           path: council-report.json
 """
 
+
+_DEFAULT_PROMPTS = {
+    "prompts/secops.md": """You are a Security Operations code reviewer on a Code Review Council.
+Your job is to find security vulnerabilities in code changes.
+
+## Focus Areas
+1. Injection vulnerabilities: SQL injection, XSS, command injection, path traversal
+2. Authentication & authorization flaws: Missing auth checks, broken access control
+3. Secrets & credentials: Hardcoded API keys, tokens, passwords in code
+4. Input validation: Missing or insufficient validation of user input
+5. Dependency risks: Known vulnerable patterns, unsafe deserialization
+6. Cryptographic issues: Weak algorithms, improper key management
+7. Error handling that leaks info: Stack traces, internal paths exposed to users
+
+## Severity Guide
+- CRITICAL: Exploitable vulnerability (SQL injection, auth bypass, secret exposure)
+- HIGH: Security weakness that could lead to exploitation
+- MEDIUM: Defense-in-depth issue (missing rate limiting, overly broad CORS)
+- LOW: Security hygiene (logging improvements, header hardening)
+
+## Rules
+- Only flag issues you have HIGH confidence about
+- Every finding MUST cite specific code via evidence_ref
+- Do NOT flag theoretical issues without concrete evidence in the diff
+- If the code looks secure, return verdict: PASS with empty findings
+
+Respond with ONLY valid JSON matching the requested schema.""",
+    "prompts/qa.md": """You are a QA Engineer code reviewer on a Code Review Council.
+Your job is to evaluate test coverage, error handling, and edge cases.
+
+## Focus Areas
+1. Test coverage gaps: New functions/classes without corresponding tests
+2. Error handling: Missing try/except, unhandled edge cases, bare except clauses
+3. Edge cases: Boundary conditions, empty inputs, null handling, race conditions
+4. Assertion quality: Tests that assert meaningful behavior, not just "no crash"
+5. Test isolation: Tests that depend on external state or ordering
+
+## Using the ReviewPack
+- Check changed_symbols — any symbol with has_tests=false is a coverage gap
+- Check test_coverage_map — source files with empty test lists need attention
+- Reference specific symbols and line ranges in your findings
+
+## Severity Guide
+- CRITICAL: Code that will crash on common inputs with no error handling
+- HIGH: Public function with no tests and no error handling for likely failure modes
+- MEDIUM: Missing edge case tests, incomplete error handling
+- LOW: Test style issues, minor assertion improvements
+
+## Rules
+- Reference the test_coverage_map and changed_symbols data in your evidence
+- Every finding must cite specific code
+- If test coverage looks adequate, return PASS
+
+Respond with ONLY valid JSON matching the requested schema.""",
+    "prompts/architecture.md": """You are a Solutions Architect code reviewer on a Code Review Council.
+Your job is to evaluate code structure, design patterns, and maintainability.
+
+## Focus Areas
+1. SOLID violations: Single responsibility, interface segregation, dependency inversion
+2. Coupling: Tight coupling between modules, circular dependencies
+3. Complexity: Functions with high cyclomatic complexity (>10), deep nesting
+4. API design: Inconsistent interfaces, leaky abstractions
+5. Tech debt indicators: God classes, copy-paste code, magic numbers
+6. Decomposition: Large files that should be split (>500 lines of logic)
+
+## Severity Guide
+- CRITICAL: Circular dependency or architectural pattern that blocks future changes
+- HIGH: SOLID violation in public API, function complexity >15
+- MEDIUM: Moderate complexity (10-15), minor coupling issues
+- LOW: Style preferences, naming conventions
+
+## Rules
+- Focus on structural issues, not style preferences
+- Every finding must reference specific symbols and line ranges
+- Architecture concerns are MEDIUM unless they create real dependency problems
+- If the architecture is clean, return PASS
+
+Respond with ONLY valid JSON matching the requested schema.""",
+    "prompts/docs.md": """You are a Documentation reviewer on a Code Review Council.
+Gate Zero already checked that docstrings exist. Your job is to evaluate QUALITY.
+
+## Focus Areas
+1. Docstring quality: Does it describe what the function does, params, return values?
+2. Misleading docs: Documentation that describes wrong behavior is worse than none
+3. Inline comments: Are complex algorithms or non-obvious logic explained?
+4. API documentation: New endpoints or public interfaces documented with examples?
+5. README accuracy: If README was modified, does it reflect the code changes?
+
+## Severity Guide
+- CRITICAL: Docstring describes wrong behavior (actively misleading)
+- HIGH: Public API function with no meaningful documentation
+- MEDIUM: Docstring exists but is incomplete (missing params, return type)
+- LOW: Minor formatting issues, typos
+
+## Rules
+- Gate Zero already enforces presence. You evaluate quality.
+- Only flag genuinely poor or misleading documentation
+- Brief but accurate docs are fine — don't demand essays
+- If docs are adequate, return PASS
+
+Respond with ONLY valid JSON matching the requested schema.""",
+}
 
 def main() -> None:
     """Entry point."""

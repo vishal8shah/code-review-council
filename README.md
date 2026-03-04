@@ -119,6 +119,7 @@ Absence of this section defaults to `developer`. The CLI `--audience` flag alway
 [council]
 chair_model = "openai/gpt-4o"
 timeout_seconds = 60
+reviewer_concurrency = 2  # throttle parallel reviewer calls to avoid TPM/rate-limit failures
 
 [gate_zero]
 require_docs = true
@@ -143,6 +144,7 @@ See the solution design document for full configuration reference.
 - **ReviewPack**: Reviewers get structured context (changed symbols, test coverage map, policy violations), not raw diff text.
 - **Evidence-based Chair**: Findings are accepted/dismissed individually with explicit reasoning. No count-based rules.
 - **Degraded mode**: If a reviewer times out or returns malformed output, the council continues with reduced confidence and surfaces specific integrity issues.
+- **JSON CI triage**: JSON reports include per-reviewer `error` and `integrity_error` so blocked runs are easier to debug in CI logs/artifacts.
 - **LiteLLM**: Single interface to call any LLM provider.
 
 ## Known Limitations (V1 Alpha)
@@ -151,7 +153,7 @@ See the solution design document for full configuration reference.
 - **Language support**: Gate Zero analyzers (docstrings, type hints) are implemented for Python only. TypeScript/JavaScript analyzers are disabled by default pending implementation. The diff preprocessor, reviewer panel, and Chair work with any language.
 - **Test coverage map**: Only detects test files present in the current diff, not the full repo. The QA reviewer is informed this is a weak signal.
 - **Large file handling**: Files exceeding the token budget are truncated, not split at logical boundaries. Truncated files are labeled in the ReviewPack.
-- **PR annotations**: Inline GitHub PR comments are not yet implemented. Use the markdown report or JSON output for CI integration.
+- **GitHub API variability**: `--github-pr` supports sticky PR comments and workflow annotations, but still runs in best-effort mode. You can tune retries/timeouts with `COUNCIL_GITHUB_MAX_RETRIES`, `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS`, and `COUNCIL_GITHUB_HTTP_TIMEOUT` for noisy CI networks.
 
 ## License
 

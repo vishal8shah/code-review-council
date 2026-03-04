@@ -432,39 +432,78 @@ jobs:
           UPSTREAM_REPO: ${{ inputs.upstream_repo }}
           BASE_REF: ${{ inputs.base_ref }}
         run: |
-          set -euo pipefail
-          if ! echo "$BASE_REF" | grep -Eq '^[A-Za-z0-9_.\-/]+$'; then
-            printf '{"skipped":"invalid_base_ref","how_to_fix":"Set base_ref using only letters, numbers, dot, underscore, hyphen, and slash (for example: main or release/1.2)"}\n' > council-report.json
-            printf '# Council BYOK skipped\n\nInvalid base_ref input. Use a valid git branch/ref format and rerun.\n' > council-review.md
-            echo "::error::Invalid base_ref."
-            exit 1
-          fi
-          if [ "${BASE_REF#-}" != "$BASE_REF" ]; then
-            printf '{"skipped":"invalid_base_ref","how_to_fix":"base_ref cannot start with a dash. Use a branch/ref name like main or release/1.2 and rerun"}\n' > council-report.json
-            printf '# Council BYOK skipped\n\nInvalid base_ref input. It cannot start with a dash.\n' > council-review.md
-            echo "::error::Invalid base_ref."
-            exit 1
-          fi
+          python - <<'PY'
+          import ast
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
 
-          if [ -n "$UPSTREAM_REPO" ]; then
-            if ! echo "$UPSTREAM_REPO" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
-              printf '{"skipped":"invalid_upstream_repo","how_to_fix":"Set upstream_repo to owner/repo format (for example: org/project) and rerun"}\n' > council-report.json
-              printf '# Council BYOK skipped\n\nInvalid upstream_repo input. Use owner/repo format and rerun.\n' > council-review.md
-              echo "::error::Invalid upstream_repo format. Expected owner/repo."
-              exit 1
-            fi
-            git remote add upstream "https://github.com/$UPSTREAM_REPO.git" || true
-            if ! git fetch --no-tags upstream -- "$BASE_REF"; then
-              printf '{"skipped":"upstream_fetch_failed","how_to_fix":"Verify upstream_repo is correct and base_ref exists (and repo is public or accessible), then rerun"}\n' > council-report.json
-              printf '# Council BYOK skipped\n\nFailed to fetch upstream base ref. Check upstream_repo/base_ref and rerun.\n' > council-review.md
-              echo "::error::Failed to fetch upstream/$BASE_REF from $UPSTREAM_REPO"
-              exit 1
-            fi
-            echo "target=upstream/$BASE_REF" >> "$GITHUB_OUTPUT"
-          else
-            echo "target=$BASE_REF" >> "$GITHUB_OUTPUT"
-          fi
+          report_path = Path("council-report.json")
+          review_path = Path("council-review.md")
 
+          def fail(skip: str, how_to_fix: str, markdown_message: str, error_message: str) -> None:
+              report_path.write_text(
+                  f'{{"skipped":"{skip}","how_to_fix":"{how_to_fix}"}}\n',
+                  encoding="utf-8",
+              )
+              review_path.write_text(
+                  f"# Council BYOK skipped\n\n{markdown_message}\n",
+                  encoding="utf-8",
+              )
+              print(f"::error::{error_message}")
+              raise SystemExit(1)
+
+          base_ref = os.environ.get("BASE_REF", "")
+          upstream_repo = os.environ.get("UPSTREAM_REPO", "")
+
+          if not re.fullmatch(r"^[A-Za-z0-9_./-]+$", base_ref) or base_ref.startswith("-"):
+              fail(
+                  "invalid_base_ref",
+                  "Set base_ref using only letters, numbers, dot, underscore, hyphen, and slash (for example: main or release/1.2)",
+                  "Invalid base_ref input. Use a valid git branch/ref format and rerun.",
+                  "Invalid base_ref.",
+              )
+
+          if upstream_repo and not re.fullmatch(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", upstream_repo):
+              fail(
+                  "invalid_upstream_repo",
+                  "Set upstream_repo to owner/repo format (for example: org/project) and rerun",
+                  "Invalid upstream_repo input. Use owner/repo format and rerun.",
+                  "Invalid upstream_repo format. Expected owner/repo.",
+              )
+
+          target = base_ref
+          if upstream_repo:
+              upstream_url = f"https://github.com/{upstream_repo}.git"
+              get_remote = subprocess.run(
+                  ["git", "remote", "get-url", "upstream"],
+                  check=False,
+                  capture_output=True,
+                  text=True,
+              )
+              if get_remote.returncode == 0:
+                  subprocess.run(["git", "remote", "set-url", "upstream", upstream_url], check=True)
+              else:
+                  subprocess.run(["git", "remote", "add", "upstream", upstream_url], check=True)
+
+              fetch = subprocess.run(
+                  ["git", "fetch", "--no-tags", "upstream", "--", base_ref],
+                  check=False,
+              )
+              if fetch.returncode != 0:
+                  fail(
+                      "upstream_fetch_failed",
+                      "Verify upstream_repo is correct and base_ref exists (and repo is public or accessible), then rerun",
+                      "Failed to fetch upstream base ref. Check upstream_repo/base_ref and rerun.",
+                      f"Failed to fetch upstream/{base_ref} from {upstream_repo}",
+                  )
+              target = f"upstream/{base_ref}"
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as fh:
+              fh.write(f"target={target}\n")
+          PY
       - name: Warn if workflow is running on the base branch
         env:
           BASE_REF: ${{ inputs.base_ref }}

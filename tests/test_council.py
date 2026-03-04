@@ -580,6 +580,19 @@ class TestReviewPack:
         assert "tests/test_parser.py" in m.get("src/parser.py", [])
         assert m.get("src/utils.py") == []
 
+    def test_test_coverage_map_matches_imports(self):
+        """Maps tests to source files when tests import the source module."""
+        ctx = DiffContext(files=[
+            DiffFile(path="council/cli.py", change_type="modified"),
+            DiffFile(
+                path="tests/test_council.py",
+                change_type="modified",
+                source_content="from council.cli import app\n",
+            ),
+        ])
+        m = _build_test_coverage_map(ctx)
+        assert "tests/test_council.py" in m.get("council/cli.py", [])
+
     def test_assemble_full(self):
         """Full assembly produces a complete ReviewPack."""
         ctx = DiffContext(
@@ -1312,14 +1325,15 @@ class TestWorkflowScaffold:
         assert "Resolve review base ref" in _DEFAULT_WORKFLOW_BYOK
         assert "UPSTREAM_REPO: ${{ inputs.upstream_repo }}" in _DEFAULT_WORKFLOW_BYOK
         assert "BASE_REF: ${{ inputs.base_ref }}" in _DEFAULT_WORKFLOW_BYOK
-        assert r"^[A-Za-z0-9_.\-/]+$" in _DEFAULT_WORKFLOW_BYOK
-        assert '"skipped":"invalid_base_ref"' in _DEFAULT_WORKFLOW_BYOK
+        assert r"^[A-Za-z0-9_./-]+$" in _DEFAULT_WORKFLOW_BYOK
+        assert "invalid_base_ref" in _DEFAULT_WORKFLOW_BYOK
         assert "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" in _DEFAULT_WORKFLOW_BYOK
-        assert '"skipped":"invalid_upstream_repo"' in _DEFAULT_WORKFLOW_BYOK
-        assert '"skipped":"upstream_fetch_failed"' in _DEFAULT_WORKFLOW_BYOK
-        assert 'git remote add upstream "https://github.com/$UPSTREAM_REPO.git" || true' in _DEFAULT_WORKFLOW_BYOK
-        assert 'if [ "${BASE_REF#-}" != "$BASE_REF" ]; then' in _DEFAULT_WORKFLOW_BYOK
-        assert 'if ! git fetch --no-tags upstream -- "$BASE_REF"; then' in _DEFAULT_WORKFLOW_BYOK
+        assert "invalid_upstream_repo" in _DEFAULT_WORKFLOW_BYOK
+        assert "upstream_fetch_failed" in _DEFAULT_WORKFLOW_BYOK
+        assert "python - <<'PY'" in _DEFAULT_WORKFLOW_BYOK
+        assert 'if not re.fullmatch(r"^[A-Za-z0-9_./-]+$", base_ref) or base_ref.startswith("-"):' in _DEFAULT_WORKFLOW_BYOK
+        assert "fetch = subprocess.run(" in _DEFAULT_WORKFLOW_BYOK
+        assert '"git", "fetch", "--no-tags", "upstream", "--", base_ref' in _DEFAULT_WORKFLOW_BYOK
         assert "Warn if workflow is running on the base branch" in _DEFAULT_WORKFLOW_BYOK
         assert "TARGET_BRANCH: ${{ steps.review_base.outputs.target }}" in _DEFAULT_WORKFLOW_BYOK
         assert "AUDIENCE: ${{ inputs.audience }}" in _DEFAULT_WORKFLOW_BYOK

@@ -177,18 +177,66 @@ def _filter_to_changed_symbols(
 
 
 def _build_test_coverage_map(diff_context: DiffContext) -> dict[str, list[str]]:
-    """Map source files to their test files based on naming conventions."""
-    test_files = [f.path for f in diff_context.files if "test" in f.path.lower()]
-    source_files = [f.path for f in diff_context.files if "test" not in f.path.lower()]
+    """Map source files to test files using imports and naming conventions."""
 
-    coverage_map: dict[str, list[str]] = {}
-    for src in source_files:
-        src_stem = Path(src).stem
-        matching_tests = [
-            t for t in test_files
-            if src_stem in Path(t).stem
-        ]
-        coverage_map[src] = matching_tests
+    def _is_test_file(path: str) -> bool:
+        low = path.lower()
+        name = Path(path).name.lower()
+        return (
+            path.startswith("tests/")
+            or name.startswith("test_")
+            or name.endswith("_test.py")
+            or name == "conftest.py"
+            or "test" in low
+        )
+
+    test_entries = [f for f in diff_context.files if _is_test_file(f.path)]
+    source_entries = [f for f in diff_context.files if not _is_test_file(f.path)]
+
+    coverage_map: dict[str, list[str]] = {f.path: [] for f in source_entries}
+
+    # Module path map for changed Python source files (e.g. council/cli.py -> council.cli)
+    source_modules: dict[str, str] = {}
+    for src in source_entries:
+        if src.path.endswith('.py'):
+            source_modules[src.path] = src.path[:-3].replace('/', '.')
+
+    for test in test_entries:
+        if not test.path.endswith('.py'):
+            continue
+
+        imports: set[str] = set()
+        tree = None
+        if test.source_content:
+            try:
+                tree = ast.parse(test.source_content)
+            except SyntaxError:
+                tree = None
+
+        if tree is not None:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imports.add(alias.name)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imports.add(node.module)
+                    for alias in node.names:
+                        if alias.name != '*':
+                            imports.add(f"{node.module}.{alias.name}")
+
+        matched_by_import = False
+        if imports:
+            for src_path, module in source_modules.items():
+                if any(imp == module or imp.startswith(f"{module}.") for imp in imports):
+                    coverage_map[src_path].append(test.path)
+                    matched_by_import = True
+
+        # Fallback to filename-stem convention when imports are absent or do not match.
+        if not matched_by_import:
+            test_stem = Path(test.path).stem
+            for src in source_entries:
+                if Path(src.path).stem in test_stem:
+                    coverage_map[src.path].append(test.path)
 
     return coverage_map
 

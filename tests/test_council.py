@@ -1281,6 +1281,15 @@ class TestWorkflowScaffold:
         assert "pip install ." in _DEFAULT_WORKFLOW
         assert "pip install code-review-council" not in _DEFAULT_WORKFLOW
 
+
+    def test_workflow_skips_when_no_llm_keys(self):
+        """Generated workflow should skip council run when fork PRs have no secrets."""
+        from council.cli import _DEFAULT_WORKFLOW
+        assert "Check LLM credentials availability" in _DEFAULT_WORKFLOW
+        assert "id: llm_keys" in _DEFAULT_WORKFLOW
+        assert "if: steps.llm_keys.outputs.has_key == 'true'" in _DEFAULT_WORKFLOW
+        assert "No LLM API keys available (common on fork PRs)" in _DEFAULT_WORKFLOW
+
     def test_workflow_passes_branch(self):
         """Generated workflow must pass --branch to avoid empty-diff reviews."""
         from council.cli import _DEFAULT_WORKFLOW

@@ -20,7 +20,20 @@ jobs:
       - name: Install Code Review Council
         run: pip install .
 
+      - name: Check LLM credentials availability
+        id: llm_keys
+        run: |
+          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ] || [ -n "${{ secrets.OPENAI_API_KEY }}" ] || [ -n "${{ secrets.GOOGLE_API_KEY }}" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Code Review Council skipped::No LLM API keys available (common on fork PRs). Skipping council review step."
+            printf '{"skipped":"no_llm_api_keys"}
+' > council-report.json
+          fi
+
       - name: Run Council Review
+        if: steps.llm_keys.outputs.has_key == 'true'
         run: council review --ci --github-pr --branch ${{ github.base_ref }} --output-json council-report.json
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

@@ -268,28 +268,28 @@ javascript = false  # not yet implemented — enable when analyzer is added
 [[reviewers]]
 id = "secops"
 name = "Security Operations Reviewer"
-model = "anthropic/claude-sonnet-4-20250514"
+model = "openai/gpt-5.2"
 prompt = "prompts/secops.md"
 enabled = true
 
 [[reviewers]]
 id = "qa"
 name = "QA Engineer"
-model = "anthropic/claude-sonnet-4-20250514"
+model = "openai/gpt-5.2"
 prompt = "prompts/qa.md"
 enabled = true
 
 [[reviewers]]
 id = "architect"
 name = "Solutions Architect"
-model = "anthropic/claude-sonnet-4-20250514"
+model = "openai/gpt-4o"
 prompt = "prompts/architecture.md"
 enabled = true
 
 [[reviewers]]
 id = "docs"
 name = "Documentation Reviewer"
-model = "anthropic/claude-sonnet-4-20250514"
+model = "openai/gpt-4o-mini"
 prompt = "prompts/docs.md"
 enabled = true
 

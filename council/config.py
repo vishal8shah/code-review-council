@@ -140,28 +140,28 @@ DEFAULT_REVIEWERS: list[dict[str, Any]] = [
     {
         "id": "secops",
         "name": "Security Operations Reviewer",
-        "model": "anthropic/claude-sonnet-4-20250514",
+        "model": "openai/gpt-5.2",
         "prompt": "prompts/secops.md",
         "enabled": True,
     },
     {
         "id": "qa",
         "name": "QA Engineer",
-        "model": "anthropic/claude-sonnet-4-20250514",
+        "model": "openai/gpt-5.2",
         "prompt": "prompts/qa.md",
         "enabled": True,
     },
     {
         "id": "architect",
         "name": "Solutions Architect",
-        "model": "anthropic/claude-sonnet-4-20250514",
+        "model": "openai/gpt-4o",
         "prompt": "prompts/architecture.md",
         "enabled": True,
     },
     {
         "id": "docs",
         "name": "Documentation Reviewer",
-        "model": "anthropic/claude-sonnet-4-20250514",
+        "model": "openai/gpt-4o-mini",
         "prompt": "prompts/docs.md",
         "enabled": True,
     },
@@ -190,6 +190,17 @@ def load_config(repo_root: Path | None = None) -> CouncilConfig:
 
     # Extract council-level settings
     council_raw = raw.get("council", {})
+    nested_reviewer_list = None
+    if isinstance(council_raw, dict):
+        if "reviewer" in council_raw:
+            nested_reviewer_list = council_raw.pop("reviewer")
+        elif "reviewers" in council_raw:
+            nested = council_raw.pop("reviewers")
+            if isinstance(nested, dict):
+                nested_reviewer_list = nested.get("custom")
+            else:
+                nested_reviewer_list = nested
+
     enforcement_raw = council_raw.pop("enforcement", {})
     preprocessor_raw = raw.get("preprocessor", {})
     gate_zero_raw = raw.get("gate_zero", {})
@@ -198,10 +209,13 @@ def load_config(repo_root: Path | None = None) -> CouncilConfig:
     presentation_raw = raw.get("presentation", {})
 
     # Parse reviewers — support both [[reviewers]] and [[reviewers.custom]]
-    reviewer_list = raw.get("reviewers", DEFAULT_REVIEWERS)
-    if isinstance(reviewer_list, dict):
-        # TOML [[reviewers.custom]] creates a dict with "custom" key
-        reviewer_list = reviewer_list.get("custom", DEFAULT_REVIEWERS)
+    if nested_reviewer_list:
+        reviewer_list = nested_reviewer_list
+    else:
+        reviewer_list = raw.get("reviewers", DEFAULT_REVIEWERS)
+        if isinstance(reviewer_list, dict):
+            # TOML [[reviewers.custom]] creates a dict with "custom" key
+            reviewer_list = reviewer_list.get("custom", DEFAULT_REVIEWERS)
     if not reviewer_list:
         reviewer_list = DEFAULT_REVIEWERS
 

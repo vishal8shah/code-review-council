@@ -140,6 +140,7 @@ When contributing from a fork, upstream repository secrets are often unavailable
 3. Run the workflow from your PR branch (select the branch in the dispatch UI).
 4. Set `base_ref` (usually `main`), optional `audience` (`developer` or `owner`), and optional `upstream_repo` (`owner/repo`) if you want diffs against upstream instead of your fork's base branch.
 5. Download the `council-report` artifact (`council-report.json` + `council-review.md`).
+   - `council-review.md` is the markdown review output from the BYOK run.
 6. Paste the review results into the upstream PR discussion.
 
 Security note: only run BYOK workflows on branches you control. Never run BYOK on branches from unknown contributors. Use restricted/low-quota API keys.
@@ -161,6 +162,7 @@ council review --ci --branch main --audience developer --output-json council-rep
 ```
 
 This produces local JSON + Markdown outputs without posting to GitHub PR comments.
+The markdown file is written to the path passed with `--output-md` (for example `council-review.md`).
 
 **Generate an owner-friendly HTML report:**
 ```bash
@@ -212,6 +214,18 @@ council review --audience owner --output-md owner-review.md
 ```
 
 These owner outputs use the same underlying analysis as developer mode. Only the presentation changes — the same findings, translated into plain English.
+
+---
+
+## Model presets (quick guidance)
+
+If you want low-friction defaults, use chair `openai/gpt-4o` with reviewer mix:
+- secops/qa: `openai/gpt-5.2`
+- architect: `openai/gpt-4o`
+- docs: `openai/gpt-4o-mini`
+
+If you want a stronger synthesis model, keep the same reviewer mix and use
+`anthropic/claude-sonnet-4-6` as `chair_model`.
 
 ---
 

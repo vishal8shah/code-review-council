@@ -379,9 +379,10 @@ You do NOT use mechanical counting rules like "3+ HIGH = FAIL". Instead:
    - **FAIL**: Any accepted CRITICAL blocker (security-validated or policy-backed)
    - **PASS_WITH_WARNINGS**: Accepted HIGH/MEDIUM findings that are non-blocking
    - **PASS**: No accepted blockers
-5. **SecOps hard override**: If the SecOps reviewer flags a CRITICAL security 
-   issue with evidence, it is ALWAYS treated as a blocker regardless of other 
-   reviewers' assessments. This is the only automatic escalation rule.
+5. **Chair adjudication policy**: Secrets exposures are auto-escalated to 
+   CRITICAL blockers when validated in changed code. Prompt-injection findings 
+   require an exploitability chain (source, sink, and execution path) and are 
+   not auto-accepted without that evidence.
 
 ## Conflict Resolution Rules
 - If reviewers disagree on severity, examine the evidence quality of each 
@@ -735,12 +736,12 @@ Each reviewer has a tuned system prompt, a designated model, and a focused revie
 
 | Persona | Model (V1 Default) | Aspirational Model | Focus | Rationale |
 |---------|--------------------|--------------------|-------|-----------|
-| **SecOps** | Claude Sonnet 4 | Claude Sonnet 4.5 | Injection, auth flaws, secrets, dependency risks, input validation | Strong at pattern recognition and security reasoning |
-| **QA Engineer** | Claude Sonnet 4 | Gemini 2.5 Pro | Test coverage gaps, error handling, edge cases, assertion quality | Excellent at long-context analysis of test ↔ implementation relationships |
-| **Architect** | Claude Sonnet 4 | Claude Opus 4.5 | SOLID violations, coupling, complexity, API design, tech debt indicators | Deep reasoning about structural implications |
-| **Docs Reviewer** | Claude Sonnet 4 | Claude Haiku 4.5 | Docstring quality, README accuracy, comment usefulness | Fast, cheap — docs review doesn't need frontier reasoning |
+| **SecOps** | OpenAI GPT-5.2 | Claude Sonnet 4.6 | Injection, auth flaws, secrets, dependency risks, input validation | Strong at pattern recognition and security reasoning |
+| **QA Engineer** | OpenAI GPT-5.2 | Gemini 2.5 Pro | Test coverage gaps, error handling, edge cases, assertion quality | Excellent at long-context analysis of test ↔ implementation relationships |
+| **Architect** | OpenAI GPT-4o | Claude Opus 4.5 | SOLID violations, coupling, complexity, API design, tech debt indicators | Deep reasoning about structural implications |
+| **Docs Reviewer** | OpenAI GPT-4o-mini | Claude Haiku 4.5 | Docstring quality, README accuracy, comment usefulness | Fast, cheap — docs review doesn't need frontier reasoning |
 
-> **V1 Alpha Note:** All reviewers default to Claude Sonnet 4 (`anthropic/claude-sonnet-4-20250514`) for simplicity (single API key). The aspirational models are the intended per-persona assignments once multi-provider `response_format` compatibility is validated. Configure per-reviewer models in `.council.toml`.
+> **V1 Alpha Note:** Default reviewers now use an OpenAI-based mix (`gpt-5.2`, `gpt-4o`, `gpt-4o-mini`). Multi-provider configurations are supported via LiteLLM, and the Chair model is optional/configurable per repository.
 
 ### 5.2 Custom Personas
 
@@ -1007,35 +1008,35 @@ javascript = false    # not yet implemented
 [[reviewers]]
 id = "secops"
 name = "Security Operations Reviewer"
-model = "anthropic/claude-sonnet-4-20250514"
+model = "openai/gpt-5.2"
 prompt = "prompts/secops.md"
 enabled = true
 
 [[reviewers]]
 id = "qa"
 name = "QA Engineer"
-model = "anthropic/claude-sonnet-4-20250514"
+model = "openai/gpt-5.2"
 prompt = "prompts/qa.md"
 enabled = true
 
 [[reviewers]]
 id = "architect"
 name = "Solutions Architect"
-model = "anthropic/claude-sonnet-4-20250514"
+model = "openai/gpt-4o"
 prompt = "prompts/architecture.md"
 enabled = true
 
 [[reviewers]]
 id = "docs"
 name = "Documentation Reviewer"
-model = "anthropic/claude-sonnet-4-20250514"
+model = "openai/gpt-4o-mini"
 prompt = "prompts/docs.md"
 enabled = true
 
 [reporters]
 terminal = true
 markdown = true                     # writes .council-review.md
-json = false                        # for local mode; always forced ON when --ci is passed
+json_report = "ci"                   # auto-write in CI; configurable for local runs
 github_pr = false                    # not yet implemented — enable when reporter is added
 
 [cost]
@@ -1106,4 +1107,4 @@ Only after V2 proves the system is reliable:
 | v1.0 | 2025-02-27 | Initial design |
 | v1.1 | 2025-02-28 | Added ReviewPack schema, diff preprocessor, language-agnostic Gate Zero, CI-first enforcement, real-world cost/latency caveats. Incorporated feedback from GPT-4o comparative review. |
 | v1.2 | 2025-02-28 | 5 pre-build adjustments: evidence/policy-based Chair (not count-based), enriched Finding schemas with evidence_ref/symbol/confidence, forced JSON in CI mode, degraded-mode handling for reviewer timeouts, removed emergency bypass from V1. |
-| v1.3 | 2025-02-28 | Post-implementation update. Two rounds of peer review, 26 fixes applied. Key changes: Chair default GPT-4o (configurable), all reviewers default Claude Sonnet 4 (configurable), deleted symbol detection via hunk scanning, unified degraded-mode with `degraded_reasons`, linter integration implemented (`shlex.split`, `{files}` placeholder), `repo_policies` populated from config, file boundary headers in diff text, `warnings` as first-class ChairVerdict field, path traversal protection, honest truncation (not "chunking"). 62 tests. See SELF-REVIEW.md for remaining known limitations. |
+| v1.3 | 2025-02-28 | Post-implementation update. Two rounds of peer review, 26 fixes applied. Key changes: Chair default GPT-4o (configurable), reviewer defaults updated to OpenAI model mix (configurable), deleted symbol detection via hunk scanning, unified degraded-mode with `degraded_reasons`, linter integration implemented (`shlex.split`, `{files}` placeholder), `repo_policies` populated from config, file boundary headers in diff text, `warnings` as first-class ChairVerdict field, path traversal protection, honest truncation (not "chunking"). 62 tests. See SELF-REVIEW.md for remaining known limitations. |

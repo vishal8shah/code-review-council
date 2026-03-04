@@ -79,7 +79,7 @@ def _emit_annotations(verdict: ChairVerdict) -> None:
 
     if omitted_errors or omitted_warns:
         print(
-            f"::warning title=Council annotations capped::Omitted {omitted_errors} errors and {omitted_warns} warnings due to cap",
+            f"::warning title=Council annotations capped::Omitted {omitted_errors} errors and {omitted_warns} warnings due to cap. See council-report.json artifact for full findings.",
             file=sys.stderr,
         )
 

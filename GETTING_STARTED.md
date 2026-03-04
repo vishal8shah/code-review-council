@@ -122,6 +122,7 @@ Optional env tuning for flaky/rate-limited runners:
 - `COUNCIL_GITHUB_MAX_RETRIES` (default: `2`)
 - `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS` (default: `1.0`)
 - `COUNCIL_GITHUB_HTTP_TIMEOUT` (default: `10`)
+- If you hit model TPM/rate-limit errors, lower `[council].reviewer_concurrency` in `.council.toml` (for Anthropic, `1-2` is usually safest).
 
 **Generate an owner-friendly HTML report:**
 ```bash

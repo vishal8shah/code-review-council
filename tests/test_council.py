@@ -2521,6 +2521,23 @@ def test_integrity_policy_invalid_json_fail_mode():
     assert out.error and "Invalid JSON" in out.error
 
 
+
+
+def test_integrity_policy_accepts_fenced_json_payload():
+    r = BaseReviewer(reviewer_id="x", model="m", on_integrity_issue="fail")
+    raw = """```json
+{
+  "verdict": "PASS",
+  "confidence": 0.9,
+  "findings": [],
+  "reasoning": "ok"
+}
+```"""
+    out = r._parse_response(raw, 12)
+    assert out.verdict == "PASS"
+    assert out.integrity_error is False
+
+
 def test_integrity_policy_exception_fail_mode():
     r = BaseReviewer(reviewer_id="x", model="m", on_integrity_issue="fail")
 
@@ -3008,6 +3025,50 @@ async def test_orchestrator_uses_structured_integrity_flag():
         await run_council(config=cfg, diff_text="diff --git a/a.py b/a.py\n")
 
     assert mock_synth.await_args.kwargs["degraded"] is True
+
+
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_respects_reviewer_concurrency_limit():
+    from council.orchestrator import run_council
+
+    cfg = CouncilConfig()
+    cfg.reviewers = []
+    cfg.reviewer_concurrency = 1
+
+    diff_ctx = DiffContext(files=[], changed_files=[])
+    rp = ReviewPack(diff_text="+x", changed_files=["a.py"])
+
+    state = {"active": 0, "max_active": 0}
+
+    class _SlowReviewer:
+        reviewer_id = "slow"
+        model = "m"
+
+        async def review(self, _review_pack):
+            state["active"] += 1
+            state["max_active"] = max(state["max_active"], state["active"])
+            await asyncio.sleep(0.01)
+            state["active"] -= 1
+            return ReviewerOutput(reviewer_id="slow", model="m", verdict="PASS", confidence=0.9, findings=[])
+
+    with patch("council.orchestrator.parse_diff", return_value=diff_ctx), patch(
+        "council.orchestrator.gate_zero.check",
+        return_value=GateZeroResult(passed=True, hard_fail=False, findings=[]),
+    ), patch(
+        "council.orchestrator.diff_preprocessor.process",
+        return_value=(diff_ctx, [], []),
+    ), patch(
+        "council.orchestrator.rp_module.assemble", return_value=rp
+    ), patch(
+        "council.orchestrator._instantiate_reviewers", return_value=[_SlowReviewer(), _SlowReviewer()]
+    ), patch(
+        "council.orchestrator.chair_module.synthesize", new=AsyncMock(return_value=ChairVerdict(verdict="PASS", confidence=0.9, summary="ok", rationale="ok"))
+    ):
+        await run_council(repo_root=Path.cwd(), config=cfg, diff_text="+x")
+
+    assert state["max_active"] == 1
 
 
 def test_instantiate_reviewers_reraises_unrelated_typeerror():

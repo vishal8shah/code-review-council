@@ -229,6 +229,7 @@ _DEFAULT_CONFIG = """\
 chair_model = "openai/gpt-4o"
 fail_on = "FAIL"
 timeout_seconds = 60
+reviewer_concurrency = 2
 
 [council.enforcement]
 mode = "ci"

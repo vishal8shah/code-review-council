@@ -184,7 +184,14 @@ async def run_council(
             gate_result=gate_result,
         )
 
-    tasks = [reviewer.review(review_pack) for reviewer in reviewer_instances]
+    max_concurrency = max(1, min(config.reviewer_concurrency, len(reviewer_instances)))
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def _run_review(reviewer: BaseReviewer):
+        async with semaphore:
+            return await reviewer.review(review_pack)
+
+    tasks = [_run_review(reviewer) for reviewer in reviewer_instances]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     reviewer_outputs: list[ReviewerOutput] = []

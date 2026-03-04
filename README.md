@@ -119,6 +119,7 @@ Absence of this section defaults to `developer`. The CLI `--audience` flag alway
 [council]
 chair_model = "openai/gpt-4o"
 timeout_seconds = 60
+reviewer_concurrency = 2  # throttle parallel reviewer calls to avoid TPM/rate-limit failures
 
 [gate_zero]
 require_docs = true

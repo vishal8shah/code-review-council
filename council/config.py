@@ -116,6 +116,7 @@ class CouncilConfig(BaseModel):
     chair_model: str = "openai/gpt-4o"
     fail_on: Literal["FAIL", "PASS_WITH_WARNINGS"] = "FAIL"
     timeout_seconds: int = 60
+    reviewer_concurrency: int = 2
 
     enforcement: EnforcementConfig = EnforcementConfig()
     preprocessor: PreprocessorConfig = PreprocessorConfig()

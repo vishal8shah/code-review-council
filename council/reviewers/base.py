@@ -165,11 +165,52 @@ Respond with ONLY valid JSON:
                 integrity_error=True,
             )
 
-    def _parse_response(self, raw_json: str, tokens_used: int) -> ReviewerOutput:
-        """Parse LLM JSON into ReviewerOutput."""
+
+    def _extract_json_object(self, text: str) -> str | None:
+        """Best-effort JSON object extraction from model output."""
+        if not text:
+            return None
+
+        candidate = text.strip()
+
+        if candidate.startswith("```"):
+            lines = candidate.splitlines()
+            if lines and lines[0].strip().startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            candidate = "\n".join(lines).strip()
+
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return candidate[start : end + 1]
+
+        return None
+
+    def _load_json_payload(self, raw_json: str) -> dict | None:
+        """Parse model JSON with lenient fallback for fenced/wrapped outputs."""
         try:
             data = json.loads(raw_json)
+            return data if isinstance(data, dict) else None
         except json.JSONDecodeError:
+            pass
+
+        extracted = self._extract_json_object(raw_json)
+        if not extracted:
+            return None
+
+        try:
+            data = json.loads(extracted)
+        except json.JSONDecodeError:
+            return None
+
+        return data if isinstance(data, dict) else None
+
+    def _parse_response(self, raw_json: str, tokens_used: int) -> ReviewerOutput:
+        """Parse LLM JSON into ReviewerOutput."""
+        data = self._load_json_payload(raw_json)
+        if data is None:
             return ReviewerOutput(
                 reviewer_id=self.reviewer_id,
                 model=self.model,

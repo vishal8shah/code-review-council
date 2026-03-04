@@ -291,11 +291,24 @@ def assemble(
     test_map = _build_test_coverage_map(diff_context)
 
     # Mark symbols that have tests
+    def _is_test_path(path: str) -> bool:
+        lower = path.lower()
+        name = Path(path).name.lower()
+        return (
+            path.startswith("tests/")
+            or name.startswith("test_")
+            or name.endswith("_test.py")
+            or name == "conftest.py"
+        )
+
     for symbol in all_symbols:
         tests = test_map.get(symbol.file, [])
         if tests:
             symbol.has_tests = True
             symbol.test_file = tests[0]
+        elif _is_test_path(symbol.file):
+            symbol.has_tests = True
+            symbol.test_file = symbol.file
 
     # Build the diff text for reviewers with explicit file boundaries
     diff_sections = []

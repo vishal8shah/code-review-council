@@ -593,6 +593,37 @@ class TestReviewPack:
         m = _build_test_coverage_map(ctx)
         assert "tests/test_council.py" in m.get("council/cli.py", [])
 
+    def test_assemble_marks_test_symbols_as_self_covered(self):
+        """Changed symbols in test files should be treated as self-covered tests."""
+        ctx = DiffContext(
+            files=[
+                DiffFile(
+                    path="tests/test_sample.py",
+                    language="python",
+                    change_type="modified",
+                    source_content="class TestSample:\n    def test_case(self):\n        assert True\n",
+                    hunks=[
+                        DiffHunk(
+                            source_start=1,
+                            source_length=0,
+                            target_start=1,
+                            target_length=3,
+                            content="+class TestSample:\n+    def test_case(self):\n+        assert True\n",
+                        )
+                    ],
+                )
+            ],
+            changed_files=["tests/test_sample.py"],
+            branch="feature/test-self-coverage",
+        )
+        rp = assemble(ctx, gate_zero_findings=[], config=CouncilConfig())
+        assert rp.changed_symbols
+        for symbol in rp.changed_symbols:
+            assert symbol.file == "tests/test_sample.py"
+            assert symbol.has_tests is True
+            assert symbol.test_file == "tests/test_sample.py"
+
+
     def test_assemble_full(self):
         """Full assembly produces a complete ReviewPack."""
         ctx = DiffContext(
@@ -1325,15 +1356,19 @@ class TestWorkflowScaffold:
         assert "Resolve review base ref" in _DEFAULT_WORKFLOW_BYOK
         assert "UPSTREAM_REPO: ${{ inputs.upstream_repo }}" in _DEFAULT_WORKFLOW_BYOK
         assert "BASE_REF: ${{ inputs.base_ref }}" in _DEFAULT_WORKFLOW_BYOK
-        assert r"^[A-Za-z0-9_./-]+$" in _DEFAULT_WORKFLOW_BYOK
+        assert "set -euo pipefail" in _DEFAULT_WORKFLOW_BYOK
+        assert "fail() {" in _DEFAULT_WORKFLOW_BYOK
+        assert '[[ ! "$BASE_REF" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]]' in _DEFAULT_WORKFLOW_BYOK
+        assert '[[ "$BASE_REF" == *..* ]]' in _DEFAULT_WORKFLOW_BYOK
+        assert '[[ "$BASE_REF" == /* ]]' in _DEFAULT_WORKFLOW_BYOK
+        assert '[[ "$BASE_REF" == -* ]]' in _DEFAULT_WORKFLOW_BYOK
+        assert 'git check-ref-format --branch "$BASE_REF"' in _DEFAULT_WORKFLOW_BYOK
+        assert 'git check-ref-format "$BASE_REF"' in _DEFAULT_WORKFLOW_BYOK
         assert "invalid_base_ref" in _DEFAULT_WORKFLOW_BYOK
-        assert "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" in _DEFAULT_WORKFLOW_BYOK
         assert "invalid_upstream_repo" in _DEFAULT_WORKFLOW_BYOK
         assert "upstream_fetch_failed" in _DEFAULT_WORKFLOW_BYOK
-        assert "python - <<'PY'" in _DEFAULT_WORKFLOW_BYOK
-        assert 'if not re.fullmatch(r"^[A-Za-z0-9_./-]+$", base_ref) or base_ref.startswith("-"):' in _DEFAULT_WORKFLOW_BYOK
-        assert "fetch = subprocess.run(" in _DEFAULT_WORKFLOW_BYOK
-        assert '"git", "fetch", "--no-tags", "upstream", "--", base_ref' in _DEFAULT_WORKFLOW_BYOK
+        assert 'if [[ ! "$UPSTREAM_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then' in _DEFAULT_WORKFLOW_BYOK
+        assert 'if ! git fetch --no-tags upstream -- "$BASE_REF"; then' in _DEFAULT_WORKFLOW_BYOK
         assert "Warn if workflow is running on the base branch" in _DEFAULT_WORKFLOW_BYOK
         assert "TARGET_BRANCH: ${{ steps.review_base.outputs.target }}" in _DEFAULT_WORKFLOW_BYOK
         assert "AUDIENCE: ${{ inputs.audience }}" in _DEFAULT_WORKFLOW_BYOK

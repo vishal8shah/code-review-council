@@ -54,7 +54,8 @@ jobs:
           fi
 
       - name: Build MkDocs site
-        run: mkdocs build -f site/mkdocs.yml --site-dir site_out
+        working-directory: site
+        run: mkdocs build --site-dir ../site_out
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa

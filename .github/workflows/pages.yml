@@ -58,7 +58,7 @@ jobs:
         run: mkdocs build --site-dir ../site_out
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
+        uses: actions/upload-pages-artifact@v3
         with:
           path: site_out
 
@@ -71,4 +71,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@decd828da4f5b7d0b7e8b2f6ffb1fadb2a81ab2b
+        uses: actions/deploy-pages@v4

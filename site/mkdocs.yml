@@ -1,0 +1,49 @@
+site_name: Code Review Council
+site_description: Multi-agent AI review pipeline documentation
+site_url: https://vishal8shah.github.io/code-review-council/
+repo_url: https://github.com/vishal8shah/code-review-council
+repo_name: code-review-council
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Overview: overview.md
+  - Getting Started: getting-started.md
+  - Workflows: workflows.md
+  - Security: security.md
+  - Design: design.md
+  - Self Review: self-review.md
+  - FAQ: faq.md
+  - Contributing: contributing.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - stylesheets/extra.css

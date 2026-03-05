@@ -100,6 +100,21 @@ The markdown reporter also respects `--audience`. With `--audience owner`, the m
 council review --audience owner --output-md owner-review.md
 ```
 
+## Docs site
+
+Project docs are published via the GitHub Pages workflow.
+
+- Local docs preview:
+
+```bash
+pip install -r site/requirements-docs.txt
+mkdocs serve -f site/mkdocs.yml
+```
+
+Add your infographic PNGs under `site/docs/assets/infographics/`.
+
+- GitHub Pages URL: `https://vishal8shah.github.io/code-review-council/`. If you fork, update this URL.
+
 ### Configuring a default audience
 
 Add a `[presentation]` section to `.council.toml`:

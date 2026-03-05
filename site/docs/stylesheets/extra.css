@@ -1,52 +1,51 @@
+/* ── Layout ─────────────────────────────────────────── */
 .md-grid {
   max-width: 1100px;
 }
 
+/* ── Hero section ───────────────────────────────────── */
 .hero {
-  margin: 1.5rem 0 1.75rem;
+  margin: 1.5rem 0 2rem;
 }
 
 .hero-tagline {
-  font-size: 1.35rem;
+  font-size: 1.3rem;
   font-weight: 400;
-  opacity: 0.85;
   margin-bottom: 1.25rem;
-  letter-spacing: -0.01em;
+  opacity: 0.88;
 }
 
+/* ── Base button ────────────────────────────────────── */
 .hero-btn {
   display: inline-block;
   margin-right: 0.75rem;
   margin-bottom: 0.5rem;
-  padding: 0.6rem 1.1rem;
-  border-radius: 0.4rem;
-  border: 1.5px solid var(--md-default-fg-color--lightest);
-  text-decoration: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 0.35rem;
+  border: 1.5px solid #ccc;
+  text-decoration: none !important;
   font-weight: 500;
   font-size: 0.92rem;
-  transition: opacity 0.15s ease;
-}
-
-.hero-btn:hover {
-  opacity: 0.82;
-}
-
-/* Primary CTA — amber fill, dark text for maximum contrast */
-.hero-btn-primary {
-  background: #F59E0B;
-  color: #1a1a2e !important;
-  border-color: #F59E0B;
-  font-weight: 600;
-}
-
-.hero-btn-primary:hover {
-  background: #D97706;
-  border-color: #D97706;
-  opacity: 1;
-}
-
-/* Secondary button — outlined, no fill */
-.hero-btn:not(.hero-btn-primary) {
+  transition: all 0.15s ease;
   background: transparent;
-  color: var(--md-typeset-a-color);
+  color: inherit;
+}
+
+/* ── Primary CTA: orange fill, white text ───────────── */
+/* !important needed to beat MkDocs Material specificity */
+.hero-btn.hero-btn-primary {
+  background-color: #E65100 !important;
+  color: #ffffff !important;
+  border-color: #E65100 !important;
+  font-weight: 600 !important;
+}
+
+.hero-btn.hero-btn-primary:hover {
+  background-color: #BF360C !important;
+  border-color: #BF360C !important;
+}
+
+/* ── Secondary button ───────────────────────────────── */
+.hero-btn:not(.hero-btn-primary):hover {
+  border-color: #888;
 }

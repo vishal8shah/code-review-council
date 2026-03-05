@@ -7,14 +7,20 @@ repo_name: code-review-council
 theme:
   name: material
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: deep purple
+    - scheme: default
+      media: "(prefers-color-scheme: light)"
+      primary: indigo
       accent: amber
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      media: "(prefers-color-scheme: dark)"
+      primary: indigo
       accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
   features:
     - navigation.tabs
     - navigation.sections

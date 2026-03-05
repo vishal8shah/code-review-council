@@ -7,23 +7,46 @@
 }
 
 .hero-tagline {
-  font-size: 1.2rem;
-  opacity: 0.9;
-  margin-bottom: 1rem;
+  font-size: 1.35rem;
+  font-weight: 400;
+  opacity: 0.85;
+  margin-bottom: 1.25rem;
+  letter-spacing: -0.01em;
 }
 
 .hero-btn {
   display: inline-block;
-  margin-right: 0.6rem;
-  margin-bottom: 0.4rem;
-  padding: 0.55rem 0.9rem;
-  border-radius: 0.45rem;
-  border: 1px solid var(--md-default-fg-color--lightest);
+  margin-right: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 0.4rem;
+  border: 1.5px solid var(--md-default-fg-color--lightest);
   text-decoration: none;
+  font-weight: 500;
+  font-size: 0.92rem;
+  transition: opacity 0.15s ease;
 }
 
+.hero-btn:hover {
+  opacity: 0.82;
+}
+
+/* Primary CTA — amber fill, dark text for maximum contrast */
 .hero-btn-primary {
-  background: var(--md-primary-fg-color);
-  color: var(--md-primary-bg-color);
-  border-color: var(--md-primary-fg-color);
+  background: #F59E0B;
+  color: #1a1a2e !important;
+  border-color: #F59E0B;
+  font-weight: 600;
+}
+
+.hero-btn-primary:hover {
+  background: #D97706;
+  border-color: #D97706;
+  opacity: 1;
+}
+
+/* Secondary button — outlined, no fill */
+.hero-btn:not(.hero-btn-primary) {
+  background: transparent;
+  color: var(--md-typeset-a-color);
 }

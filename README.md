@@ -1,4 +1,4 @@
-# 🏛️ Code Review Council
+# 🏛️ Multi-LLM Code Review Council
 
 > **AI reviews AI-generated code** — a multi-agent quality gate for the era where bots write PRs and humans are the trust layer.
 

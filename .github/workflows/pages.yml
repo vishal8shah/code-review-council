@@ -1,0 +1,73 @@
+name: Docs (GitHub Pages)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Setup Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: '3.12'
+
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b
+
+      - name: Install docs dependencies
+        run: pip install -r site/requirements-docs.txt
+
+      - name: Validate infographic assets
+        run: |
+          set -euo pipefail
+          HERO="site/docs/assets/infographics/hero-ai-writing-whos-reviewing.png"
+          PIPELINE="site/docs/assets/infographics/pipeline-5-stage-two-outputs.png"
+
+          test -f "$HERO" || { echo "ERROR: Missing $HERO. Replace placeholder images before deploy."; exit 1; }
+          test -f "$PIPELINE" || { echo "ERROR: Missing $PIPELINE. Replace placeholder images before deploy."; exit 1; }
+
+          hero_size=$(wc -c < "$HERO")
+          pipeline_size=$(wc -c < "$PIPELINE")
+
+          [ "$hero_size" -ge 10240 ] || { echo "ERROR: $HERO is too small (${hero_size} bytes). Replace placeholder images before deploy."; exit 1; }
+          [ "$pipeline_size" -ge 10240 ] || { echo "ERROR: $PIPELINE is too small (${pipeline_size} bytes). Replace placeholder images before deploy."; exit 1; }
+
+          if cmp -s "$HERO" "$PIPELINE"; then
+            echo "ERROR: Infographic files are byte-identical. Replace placeholder images before deploy."
+            exit 1
+          fi
+
+      - name: Build MkDocs site
+        run: mkdocs build -f site/mkdocs.yml --site-dir site_out --strict
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
+        with:
+          path: site_out
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@decd828da4f5b7d0b7e8b2f6ffb1fadb2a81ab2b

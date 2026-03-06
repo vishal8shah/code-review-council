@@ -1,257 +1,169 @@
-# Design
+# 🧠 Design
 
-This page summarizes the system architecture and operating model in a web-friendly format.
-It is adapted from the full design document, with focus on practical implementation details.
-
-## Contents
-
-1. Architecture overview
-2. Why ReviewPack exists
-3. The 5-stage pipeline
-4. Output modes: developer vs owner
-5. Security posture summary
-6. CI + BYOK workflow model
-7. Cost and latency factors
-8. Design constraints and non-goals
+> Council is built as a staged pipeline, not a single LLM call. Each stage has a clear contract, a clear cost, and a clear failure mode. This page explains why.
 
 ---
 
-## 1) Architecture overview
+## 🏗️ Architecture at a Glance
 
-Code Review Council is built as a staged review pipeline rather than a single LLM call.
-That design provides two major benefits:
+The core insight is that most PR quality problems are cheap to detect deterministically. LLM analysis should only run after those checks pass.
 
-- **Deterministic checks first**: cheap, repeatable checks run before probabilistic analysis.
-- **Structured reviewer context**: reviewers consume curated context, not an unbounded raw diff.
+```
+PR opened
+    │
+    ▼
+┌───────────────────────┐
+│  Stage 0: Gate Zero       │  ← deterministic, zero LLM cost, < 2s
+└───────────────────────┘
+    │ (pass)
+    ▼
+┌───────────────────────┐
+│  Stage 1: Preprocessor    │  ← filter noise, enforce token budgets
+└───────────────────────┘
+    │
+    ▼
+┌───────────────────────┐
+│  Stage 2: ReviewPack      │  ← build structured reviewer context
+└───────────────────────┘
+    │
+    ▼
+┌───────────────────────┐
+│  Stage 3: Reviewer Panel  │  ← 4 specialists, parallel, evidence-required
+└───────────────────────┘
+    │
+    ▼
+┌───────────────────────┐
+│  Stage 4: Chair Synthesis │  ← adjudicate, render verdict
+└───────────────────────┘
+    │
+    ▼
+  PASS / FAIL / PASS WITH WARNINGS
+```
 
-At a high level, the system flow is:
-
-1. Deterministic static and policy checks.
-2. Diff filtering and token-budget preparation.
-3. Structured review package assembly.
-4. Parallel specialist reviewer analysis.
-5. Chair adjudication and final recommendation.
-
-This decomposition keeps responsibilities clear, improves debuggability, and allows individual
-stages to evolve without replacing the whole pipeline.
-
-### Stage boundaries as contracts
-
-Each stage emits explicit artifacts that are consumed by the next stage.
-Examples include:
-
-- filtered diff context,
-- policy findings,
-- reviewer findings and rationale,
-- chair-level accepted/dismissed decisions.
-
-By treating stage outputs as contracts, the pipeline is easier to test and reason about.
-
----
-
-## 2) Why ReviewPack exists
-
-A raw diff is not ideal LLM input by itself.
-It can be noisy, incomplete, and expensive to process.
-
-ReviewPack exists to improve reviewer quality by providing:
-
-- changed-file and changed-symbol context,
-- policy and gate results,
-- supporting snippets relevant to findings,
-- constrained, predictable structure across reviews.
-
-### Practical reasons this matters
-
-- **Lower noise**: generated files or lockfile churn can be de-prioritized.
-- **Better evidence quality**: reviewers can cite specific context consistently.
-- **More stable behavior**: structured prompts reduce random variation in outputs.
-- **Budget control**: context can be trimmed to fit model limits.
-
-ReviewPack is therefore a quality and reliability mechanism, not just a packaging convenience.
+Each stage emits an explicit artifact consumed by the next. That makes the pipeline testable, debuggable, and evolvable one stage at a time.
 
 ---
 
-## 3) The 5-stage pipeline
+## 📦 Why ReviewPack Exists
 
-## Stage 1 — Gate Zero
+A raw diff is poor LLM input. It's noisy, context-free, and expensive to process at scale.
 
-Gate Zero runs deterministic checks (for example, static policy and hygiene checks)
-that do not require model inference.
+ReviewPack transforms the diff into structured reviewer context before any model sees it:
 
-Purpose:
+| What ReviewPack Adds | Why It Matters |
+|----------------------|----------------|
+| Changed files + symbol index | Reviewers cite specific locations, not vague references |
+| Gate Zero findings | Reviewers don't re-derive known issues |
+| Policy violation pre-screen | Evidence is already anchored before model call |
+| Token budget enforcement | Predictable cost and latency regardless of diff size |
+| Lockfile/generated file exclusions | Reviewer attention goes to human-authored code only |
 
-- provide fast fail-fast signals,
-- capture objective baseline findings,
-- avoid paying model cost for obvious issues.
-
-## Stage 2 — Diff preprocessing
-
-Diff preprocessing reduces irrelevant or low-value input before model analysis.
-
-Typical actions include:
-
-- filtering noisy files,
-- handling oversized changes,
-- enforcing context/token budget strategy.
-
-Purpose:
-
-- focus reviewer attention on meaningful changes,
-- keep latency and token usage predictable.
-
-## Stage 3 — ReviewPack assembly
-
-The system transforms filtered input into structured reviewer context.
-
-ReviewPack can include:
-
-- changed files and symbols,
-- gate/policy findings,
-- contextual metadata useful to reviewer personas.
-
-Purpose:
-
-- standardize evidence inputs for all reviewers,
-- prevent each reviewer from independently re-deriving the same context.
-
-## Stage 4 — Reviewer panel
-
-Specialized reviewer personas (for example SecOps, QA, Architect, Docs)
-run in parallel against the same structured context.
-
-Purpose:
-
-- increase coverage through specialization,
-- isolate reasoning domains,
-- speed up review by parallelizing calls where configured.
-
-## Stage 5 — Chair synthesis
-
-The chair model evaluates panel findings and produces a final recommendation.
-The chair is evidence-oriented and can accept, downgrade, or dismiss findings.
-
-Purpose:
-
-- unify conflicting reviewer outputs,
-- enforce evidence thresholds,
-- produce a single decision artifact for users and CI.
+!!! info "ReviewPack is a quality mechanism, not just packaging"
+    Structured prompts produce more stable, auditable outputs than feeding raw diffs. The same ReviewPack format across all reviewers also makes it easier to compare and adjudicate findings.
 
 ---
 
-## 4) Output modes: developer vs owner
+## 🔬 The 5 Stages in Detail
 
-The underlying analysis is shared; output formatting differs by audience.
+### Stage 0 — Gate Zero
 
-### Developer output
+Fast, deterministic, zero LLM cost. Runs in under 2 seconds.
 
-Developer output emphasizes technical execution details:
+| Check Type | Examples |
+|------------|----------|
+| Secret detection | Hardcoded API keys, tokens, credentials |
+| Static analysis | Lint errors, type check failures |
+| Policy hygiene | Missing docstrings, banned imports, file-size limits |
+| Diff sanity | Empty diff detection, oversized PR warning |
 
-- file/line references,
-- finding rationale,
-- policy/evidence framing for implementation follow-up.
+Gate Zero findings are passed forward into ReviewPack so reviewers don't re-derive them.
 
-### Owner output
+### Stage 1 — Diff Preprocessor
 
-Owner output emphasizes business and product clarity:
+Filters the diff before any model sees it:
 
-- plain-English risk summaries,
-- likely impact framing,
-- actionable next-step communication.
+- Strips lockfiles (`package-lock.json`, `poetry.lock`, `Cargo.lock`, etc.)
+- Strips generated files (`*.pb.go`, `*_generated.py`, migration files)
+- Enforces per-reviewer token budgets via configurable truncation strategy
+- Emits a `--ci --branch` warning if `--branch` is missing (empty diff risk)
 
-The two output modes are presentation variants over the same core review results.
+### Stage 2 — ReviewPack Assembly
 
----
+Builds the structured context object passed to all reviewers. One assembly, four consumers.
 
-## 5) Security posture summary
+### Stage 3 — Reviewer Panel
 
-Security decisions are intentionally evidence-driven.
+Four specialist agents run in parallel against the same ReviewPack:
 
-### Secrets policy
+| Reviewer | Domain | Evidence Requirement |
+|----------|--------|-----------------------|
+| 🛡️ SecOps | Vulnerabilities, secrets, injection chains | Full exploit chain |
+| 🧪 QA | Test coverage, edge cases, error handling | Specific missing case |
+| 🏗️ Architect | Design, coupling, scalability | Concrete code reference |
+| 📝 Docs | Completeness, accuracy, clarity | Specific gap identified |
 
-When a hardcoded secret is identified with concrete code evidence,
-it is treated as a critical blocker.
+Each reviewer must provide file + line evidence for any finding it raises. Pattern-matching alone is not accepted.
 
-### Injection policy
+### Stage 4 — Chair Synthesis
 
-Injection findings require an exploitability chain, not just pattern matching.
-Expected chain elements include:
+The Chair is the adjudication layer. It doesn't just aggregate — it evaluates:
 
-1. untrusted input source,
-2. insufficient validation/sanitization,
-3. unsafe sink and realistic exploit path/payload.
+| Chair Action | When Applied | Effect on Verdict |
+|--------------|-------------|-------------------|
+| **Accept** | Finding has full evidence chain | Included in verdict, may block |
+| **Downgrade** | Finding is real but overstated | Becomes a warning, doesn't block |
+| **Dismiss** | Finding is speculative or duplicate | Removed from verdict |
 
-This posture reduces speculative blocker findings and keeps decisions tied to demonstrable risk.
+Only `FAIL`-level accepted findings block a merge. `PASS WITH WARNINGS` merges through.
 
----
-
-## 6) CI + BYOK workflow model
-
-The project supports two primary workflow modes in GitHub Actions.
-
-### PR workflow (repository workflow)
-
-- runs on pull request events,
-- can run `--github-pr` behavior when required secrets are available,
-- publishes `council-report.json` artifact output.
-
-### BYOK workflow (manual/fork-friendly)
-
-- triggered with workflow_dispatch inputs,
-- intended for bring-your-own-key execution in controlled contexts,
-- validates ref/repository inputs before review,
-- publishes both `council-report.json` and `council-review.md` artifacts.
-
-### Local workflow
-
-Local runs are typically advisory and can write markdown/json outputs to user-selected paths
-via CLI flags (for example `--output-md` and `--output-json`).
+!!! warning "Chair is not a majority-vote system"
+    One reviewer raising a valid critical finding can cause a `FAIL` even if the other three pass. Equally, three reviewers raising the same speculative finding can all be dismissed. Evidence quality, not reviewer count, determines the verdict.
 
 ---
 
-## 7) Cost and latency factors
+## 📄 Stage Outputs as Contracts
 
-Cost and latency are configuration- and workload-dependent.
-No universal fixed number is valid across all environments.
+| Stage | Emits | Consumed By |
+|-------|-------|-------------|
+| Gate Zero | `GateResult` (findings + pass/fail) | ReviewPack, Chair |
+| Preprocessor | Filtered diff, token metadata | ReviewPack |
+| ReviewPack | `ReviewPack` object | All 4 reviewers |
+| Reviewer Panel | 4 × `ReviewerFinding` | Chair |
+| Chair | `ChairVerdict` (verdict + rationale + per-reviewer decisions) | CI, artifacts, user |
 
-Primary factors:
-
-- **Model selection** (provider/model families differ),
-- **Diff size and complexity** (larger context usually means higher runtime/cost),
-- **Reviewer concurrency** (parallelism can reduce wall-clock time but affect burst usage),
-- **Retry/timeout behavior** (impacts tail latency and robustness).
-
-Operational guidance:
-
-- start with modest concurrency,
-- review smaller diffs when possible,
-- tune model mix to balance quality and budget.
+This contract model means any stage can be replaced, upgraded, or mocked independently.
 
 ---
 
-## 8) Design constraints and non-goals
+## 💰 Cost & Latency
 
-### Constraints
+No universal number is valid — cost and latency depend on configuration and workload. Primary factors:
 
-- deterministic and probabilistic stages must coexist cleanly,
-- artifact outputs should remain machine- and human-readable,
-- workflow behavior must remain explicit for forks and BYOK usage.
+| Factor | Lower Cost/Latency | Higher Cost/Latency |
+|--------|--------------------|---------------------|
+| Model selection | GPT-4o-mini for Docs/Arch | GPT-5.2 for all roles |
+| Diff size | Small focused PR | Large multi-file refactor |
+| Concurrency | Parallel reviewers (default) | Sequential (debugging mode) |
+| Retry behavior | Single attempt | Aggressive retry on timeout |
 
-### Non-goals
-
-- claiming bug-free guarantees,
-- replacing human code review,
-- asserting fixed cost/latency outcomes independent of configuration.
+Operational guidance: start with the default model mix, review focused diffs, tune `reviewer_timeout_seconds` if you see tail latency on large PRs.
 
 ---
 
-## Practical takeaway
+## 🚫 Design Non-Goals
 
-Code Review Council is designed as a layered quality gate:
+Council is deliberately scoped. These are explicit non-goals:
 
-- deterministic checks establish objective baseline quality,
-- structured context improves specialist reviewer signal,
-- evidence-based chair synthesis yields a single actionable result.
+- **No bug-free guarantee** — Council reviews the diff, not the full codebase
+- **No replacement for human judgment** — complex architectural decisions need human context
+- **No fixed cost/latency promise** — model selection and diff size dominate
+- **No full application security audit** — use a dedicated SAST/DAST tool for that layer
+- **No universal reviewer correctness** — degraded mode surfaces failures rather than hiding them
 
-This architecture supports both developer-depth and owner-readable outputs while keeping
-enforcement configurable for local and CI environments.
+---
+
+## ⏩ Related Pages
+
+- [Security](security.md) — evidence policies, BYOK model, merge gates
+- [Workflows](workflows.md) — PR workflow vs BYOK workflow, artifact locations
+- [Self Review](self-review.md) — the full pipeline in action on a real PR

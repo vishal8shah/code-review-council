@@ -37,16 +37,13 @@ theme:
 
 nav:
   - Home: index.md
-  - Learn:
-    - Overview: overview.md
-    - Getting Started: getting-started.md
-  - Reference:
-    - Design: design.md
-    - Security: security.md
-    - Workflows: workflows.md
-  - In Practice:
-    - Self Review: self-review.md
-    - FAQ: faq.md
+  - Overview: overview.md
+  - Getting Started: getting-started.md
+  - Design: design.md
+  - Security: security.md
+  - Workflows: workflows.md
+  - Self Review: self-review.md
+  - FAQ: faq.md
   - Contributing: contributing.md
 
 markdown_extensions:

@@ -1,8 +1,9 @@
 site_name: Code Review Council
-site_description: Multi-agent AI review pipeline documentation
+site_description: Multi-agent AI code review pipeline — evidence-based, BYOK, built for the age of AI-generated code.
 site_url: https://vishal8shah.github.io/code-review-council/
 repo_url: https://github.com/vishal8shah/code-review-council
-repo_name: code-review-council
+repo_name: vishal8shah/code-review-council
+copyright: Copyright &copy; 2026 Vishal Shah
 
 theme:
   name: material
@@ -25,31 +26,55 @@ theme:
     - navigation.tabs
     - navigation.sections
     - navigation.top
+    - navigation.instant
+    - navigation.footer
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - toc.follow
     - content.code.copy
+    - content.tooltips
 
 nav:
   - Home: index.md
-  - Overview: overview.md
-  - Getting Started: getting-started.md
-  - Workflows: workflows.md
-  - Security: security.md
-  - Design: design.md
-  - Self Review: self-review.md
-  - FAQ: faq.md
+  - Learn:
+    - Overview: overview.md
+    - Getting Started: getting-started.md
+  - Reference:
+    - Design: design.md
+    - Security: security.md
+    - Workflows: workflows.md
+  - In Practice:
+    - Self Review: self-review.md
+    - FAQ: faq.md
   - Contributing: contributing.md
 
 markdown_extensions:
   - admonition
   - attr_list
   - md_in_html
+  - tables
   - toc:
       permalink: true
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences
   - pymdownx.inlinehilite
+  - pymdownx.details
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/vishal8shah/code-review-council
+      name: Code Review Council on GitHub
 
 extra_css:
   - stylesheets/extra.css
+
+plugins:
+  - search

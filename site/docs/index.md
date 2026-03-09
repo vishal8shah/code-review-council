@@ -1,7 +1,7 @@
 # 🏛️ Code Review Council
 
 <div class="hero">
-  <p class="hero-tagline">AI reviews AI-generated code. Evidence required. No hallucinated blockers.</p>
+  <p class="hero-tagline">AI reviews AI-generated code. Evidence required. Every blocker must prove itself.</p>
   <p>
     <a class="hero-btn hero-btn-primary" href="getting-started/">Get Started →</a>
     <a class="hero-btn" href="https://github.com/vishal8shah/code-review-council">View on GitHub</a>
@@ -69,7 +69,7 @@ council review --branch main
 ```
 
 !!! warning "Quality gate, not a guarantee"
-    Council is not a substitute for human engineering judgment. Cost and latency vary by model and diff size. Use restricted BYOK keys on repos you control.
+    Council is not a substitute for human engineering judgment. LLM findings are evidence-backed but not infallible — hallucination risk is reduced by design (structured context, mandatory file/line references, exploit chain requirements) but not eliminated. Cost and latency vary by model and diff size. Use restricted BYOK keys on repos you control.
 
 ---
 

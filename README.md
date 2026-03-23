@@ -1,6 +1,8 @@
 # 🏛️ Code Review Council
 
 > **AI reviews AI-generated code** — a multi-agent quality gate for the era where bots write PRs and humans are the trust layer.
+> 
+> Designed for **agentic codebases** where AI writes most of the diff — the review loop is automated, auditable, and observable end-to-end.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)

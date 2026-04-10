@@ -262,8 +262,8 @@ python = "ruff check --diff"
 
 [gate_zero.analyzers]
 python = true
-typescript = false  # not yet implemented — enable when analyzer is added
-javascript = false  # not yet implemented — enable when analyzer is added
+typescript = false  # implemented — enable explicitly when ready for TS enforcement
+javascript = false  # implemented — enable explicitly when ready for JS enforcement
 
 [[reviewers]]
 id = "secops"

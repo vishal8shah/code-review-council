@@ -7,24 +7,9 @@ Checks docstrings and type annotations on public functions/classes.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
 from ..schemas import GateZeroFinding
-from .base import BaseAnalyzer
-
-
-def _is_test_file(file_path: str) -> bool:
-    """Return True when file path represents test/support-test code."""
-    p = Path(file_path)
-    posix = p.as_posix()
-    name = p.name
-    return (
-        posix.startswith("tests/")
-        or "/tests/" in f"/{posix}"
-        or name == "conftest.py"
-        or name.startswith("test_")
-        or name.endswith("_test.py")
-    )
+from .base import BaseAnalyzer, is_test_file
 
 
 
@@ -37,7 +22,7 @@ class PythonAnalyzer(BaseAnalyzer):
         """Check that all public functions and classes have docstrings."""
         findings: list[GateZeroFinding] = []
 
-        if _is_test_file(file_path):
+        if is_test_file(file_path):
             return findings
 
         try:
@@ -81,7 +66,7 @@ class PythonAnalyzer(BaseAnalyzer):
         """Check that public functions have type annotations."""
         findings: list[GateZeroFinding] = []
 
-        if _is_test_file(file_path):
+        if is_test_file(file_path):
             return findings
 
         try:

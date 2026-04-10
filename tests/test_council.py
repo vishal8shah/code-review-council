@@ -29,11 +29,19 @@ from council.schemas import (
 )
 from council.config import CouncilConfig, load_config
 from council.diff_parser import parse_diff, detect_language
-from council.gate_zero import check, check_secrets, check_readme_updated, check_file_size
+from council.gate_zero import (
+    check,
+    check_file_size,
+    check_language_specific,
+    check_readme_updated,
+    check_secrets,
+)
 from council.diff_preprocessor import process, _should_ignore, _is_generated, _file_priority
 from council.review_pack import assemble, _extract_python_symbols, _build_test_coverage_map, _filter_to_changed_symbols, _extract_deleted_symbols
+from council.analyzers.javascript import JavaScriptAnalyzer
 from council.analyzers.python import PythonAnalyzer
 from council.analyzers.registry import get_analyzer
+from council.analyzers.typescript import TypeScriptAnalyzer
 from council.reviewers.base import BaseReviewer
 from council.reviewers.secops import SecOpsReviewer
 from council.chair import synthesize, _build_chair_message
@@ -100,6 +108,58 @@ class MyClass:
         pass
 '''
 
+SAMPLE_TYPESCRIPT_SOURCE = '''\
+/** Documented exported function. */
+export function documentedThing(value: string): number {
+    return value.length;
+}
+
+export function undocumentedThing(value) {
+    return value.length;
+}
+
+/** Documented exported class. */
+export class DocumentedService {}
+
+export class MissingDocsService {}
+
+const localHelper = (value: string): string => value.trim();
+
+/** Documented exported function-valued constant. */
+export const documentedArrow = (name: string): string => name.toUpperCase();
+
+export const missingArrow = (name) => name.toUpperCase();
+
+export interface PublicShape {
+    value: string;
+}
+
+export type PublicAlias = string | number;
+'''
+
+SAMPLE_JAVASCRIPT_SOURCE = '''\
+/** Documented exported function. */
+export function documentedThing(value) {
+    return value;
+}
+
+export function undocumentedThing(value) {
+    return value;
+}
+
+/** Documented exported class. */
+export class DocumentedWidget {}
+
+export class MissingDocsWidget {}
+
+const localHelper = (value) => value.trim();
+
+/** Documented exported function-valued constant. */
+export const documentedArrow = (value) => value.trim();
+
+export const missingArrow = (value) => value.trim();
+'''
+
 # Build secret-like test values without embedding literal detector matches in repo text
 _AWS_KEY_EXAMPLE = "AKIA" + "IOSFODNN7EXAMPLE"
 _AWS_SECRET_EXAMPLE = "wJalrXUtnFEMI/K7MDENG/bPxRfiCY" + "EXAMPLEKEY"
@@ -149,6 +209,28 @@ def _make_diff_context(**overrides) -> DiffContext:
     }
     defaults.update(overrides)
     return DiffContext(**defaults)
+
+
+def _make_source_file(path: str, language: str, source: str) -> DiffFile:
+    """Create a DiffFile fixture with source content and a single added hunk."""
+    line_count = max(len(source.splitlines()), 1)
+    return DiffFile(
+        path=path,
+        language=language,
+        change_type="added",
+        additions=line_count,
+        deletions=0,
+        hunks=[
+            DiffHunk(
+                source_start=0,
+                source_length=0,
+                target_start=1,
+                target_length=line_count,
+                content=source,
+            )
+        ],
+        source_content=source,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +547,52 @@ class TestGateZero:
         result = check(ctx, config)
         assert result.hard_fail is True
 
+    def test_check_language_specific_emits_typescript_findings_when_enabled(self):
+        """TypeScript Gate Zero findings appear only when its analyzer is enabled."""
+        config = CouncilConfig()
+        config.gate_zero.analyzers["typescript"] = True
+        ctx = DiffContext(
+            files=[_make_source_file("src/example.ts", "typescript", SAMPLE_TYPESCRIPT_SOURCE)],
+            changed_files=["src/example.ts"],
+            added_files=["src/example.ts"],
+        )
+
+        findings = check_language_specific(ctx, config.gate_zero)
+        messages = " ".join(f.message for f in findings)
+
+        assert "undocumentedThing" in messages
+        assert "missingArrow" in messages
+
+    def test_check_language_specific_emits_javascript_findings_when_enabled(self):
+        """JavaScript Gate Zero doc findings appear when its analyzer is enabled."""
+        config = CouncilConfig()
+        config.gate_zero.analyzers["javascript"] = True
+        ctx = DiffContext(
+            files=[_make_source_file("src/example.js", "javascript", SAMPLE_JAVASCRIPT_SOURCE)],
+            changed_files=["src/example.js"],
+            added_files=["src/example.js"],
+        )
+
+        findings = check_language_specific(ctx, config.gate_zero)
+        messages = " ".join(f.message for f in findings)
+
+        assert "undocumentedThing" in messages
+        assert "MissingDocsWidget" in messages
+
+    def test_check_language_specific_python_behavior_remains_unchanged(self):
+        """Python Gate Zero findings still work after adding TS/JS analyzers."""
+        config = CouncilConfig()
+        ctx = DiffContext(
+            files=[_make_source_file("src/example.py", "python", SAMPLE_PYTHON_SOURCE)],
+            changed_files=["src/example.py"],
+            added_files=["src/example.py"],
+        )
+
+        findings = check_language_specific(ctx, config.gate_zero)
+        messages = " ".join(f.message for f in findings)
+
+        assert "undocumented_function" in messages
+
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +639,76 @@ class TestPythonAnalyzer:
         """Registry returns PythonAnalyzer for .py files."""
         analyzer = get_analyzer("app.py")
         assert isinstance(analyzer, PythonAnalyzer)
+        assert isinstance(get_analyzer("app.ts"), TypeScriptAnalyzer)
+        assert isinstance(get_analyzer("component.tsx"), TypeScriptAnalyzer)
+        assert isinstance(get_analyzer("app.js"), JavaScriptAnalyzer)
+        assert isinstance(get_analyzer("component.jsx"), JavaScriptAnalyzer)
         assert get_analyzer("style.css") is None
+
+
+class TestTypeScriptAnalyzer:
+    """TypeScript-specific Gate Zero analysis."""
+
+    def test_docstring_detection(self):
+        """Finds missing JSDoc on exported functions, classes, and const arrows."""
+        analyzer = TypeScriptAnalyzer()
+        findings = analyzer.check_docs(SAMPLE_TYPESCRIPT_SOURCE, "src/example.ts")
+        messages = [f.message for f in findings]
+        assert any("`undocumentedThing()`" in message for message in messages)
+        assert any("`MissingDocsService`" in message for message in messages)
+        assert any("`missingArrow()`" in message for message in messages)
+        assert not any("`documentedThing()`" in message for message in messages)
+        assert not any("`DocumentedService`" in message for message in messages)
+        assert not any("`documentedArrow()`" in message for message in messages)
+        assert not any("`localHelper()`" in message for message in messages)
+
+    def test_type_hint_detection(self):
+        """Finds missing TypeScript parameter and return annotations."""
+        analyzer = TypeScriptAnalyzer()
+        findings = analyzer.check_types(SAMPLE_TYPESCRIPT_SOURCE, "src/example.ts")
+        messages = " ".join(f.message for f in findings)
+        assert "`undocumentedThing()`" in messages
+        assert "`missingArrow()`" in messages
+        assert "Parameter `value`" in messages
+        assert "Parameter `name`" in messages
+        assert "`documentedThing()`" not in messages
+        assert "`documentedArrow()`" not in messages
+        assert "PublicShape" not in messages
+        assert "PublicAlias" not in messages
+
+    def test_detection_skips_test_files(self):
+        """TypeScript analyzer ignores common TS/JS test paths."""
+        analyzer = TypeScriptAnalyzer()
+        assert analyzer.check_docs(SAMPLE_TYPESCRIPT_SOURCE, "src/__tests__/example.spec.ts") == []
+        assert analyzer.check_types(SAMPLE_TYPESCRIPT_SOURCE, "src/component.test.tsx") == []
+
+
+class TestJavaScriptAnalyzer:
+    """JavaScript-specific Gate Zero analysis."""
+
+    def test_docstring_detection(self):
+        """Finds missing JSDoc on exported JS functions, classes, and const arrows."""
+        analyzer = JavaScriptAnalyzer()
+        findings = analyzer.check_docs(SAMPLE_JAVASCRIPT_SOURCE, "src/example.js")
+        messages = [f.message for f in findings]
+        assert any("`undocumentedThing()`" in message for message in messages)
+        assert any("`MissingDocsWidget`" in message for message in messages)
+        assert any("`missingArrow()`" in message for message in messages)
+        assert not any("`documentedThing()`" in message for message in messages)
+        assert not any("`DocumentedWidget`" in message for message in messages)
+        assert not any("`documentedArrow()`" in message for message in messages)
+        assert not any("`localHelper()`" in message for message in messages)
+
+    def test_type_hint_detection_returns_no_findings(self):
+        """JavaScript Phase 1 leaves type-hint checks disabled."""
+        analyzer = JavaScriptAnalyzer()
+        assert analyzer.check_types(SAMPLE_JAVASCRIPT_SOURCE, "src/example.js") == []
+
+    def test_detection_skips_test_files(self):
+        """JavaScript analyzer ignores common JS test paths."""
+        analyzer = JavaScriptAnalyzer()
+        assert analyzer.check_docs(SAMPLE_JAVASCRIPT_SOURCE, "src/__tests__/example.spec.js") == []
+        assert analyzer.check_types(SAMPLE_JAVASCRIPT_SOURCE, "src/component.test.jsx") == []
 
 
 # ---------------------------------------------------------------------------

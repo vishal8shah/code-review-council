@@ -13,6 +13,7 @@ import re
 import time
 from pathlib import Path
 
+from .analyzers.base import is_test_file
 from .analyzers.registry import get_analyzer
 from .config import CouncilConfig, GateZeroConfig
 from .schemas import DiffContext, GateZeroFinding, GateZeroResult
@@ -35,28 +36,13 @@ PROMPT_INJECTION_PATTERNS: list[re.Pattern] = [
     re.compile(r"developer\s+message", re.IGNORECASE),
 ]
 
-
-def _is_test_path(path: str) -> bool:
-    p = Path(path)
-    posix = p.as_posix()
-    name = p.name
-    return (
-        posix.startswith("tests/")
-        or "/tests/" in f"/{posix}"
-        or name == "conftest.py"
-        or name.startswith("test_")
-        or name.endswith("_test.py")
-    )
-
-
-
 def check_prompt_injection(diff_context: DiffContext) -> list[GateZeroFinding]:
     """Detect prompt-injection strings in ADDED lines."""
     findings: list[GateZeroFinding] = []
     for diff_file in diff_context.files:
         if diff_file.change_type == "deleted":
             continue
-        if _is_test_path(diff_file.path):
+        if is_test_file(diff_file.path):
             continue
         for hunk in diff_file.hunks:
             target_line = hunk.target_start
@@ -147,7 +133,7 @@ def check_file_size(diff_context: DiffContext, config: GateZeroConfig) -> list[G
     for diff_file in diff_context.files:
         if diff_file.change_type == "deleted":
             continue
-        if _is_test_path(diff_file.path):
+        if is_test_file(diff_file.path):
             continue
         if diff_file.additions > config.max_file_lines:
             findings.append(GateZeroFinding(
@@ -187,7 +173,7 @@ def check_language_specific(diff_context: DiffContext, config: GateZeroConfig) -
     for diff_file in diff_context.files:
         if diff_file.change_type == "deleted":
             continue
-        if _is_test_path(diff_file.path):
+        if is_test_file(diff_file.path):
             continue
         if diff_file.source_content is None:
             continue
@@ -261,7 +247,7 @@ def check_linters(
     for diff_file in diff_context.files:
         if diff_file.change_type == "deleted":
             continue
-        if _is_test_path(diff_file.path):
+        if is_test_file(diff_file.path):
             continue
         lang = diff_file.language
         if lang and lang in linter_cmds:

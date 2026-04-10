@@ -55,7 +55,7 @@ This creates two things:
 | `.github/workflows/council-*.yml` | CI workflow scaffolding (PR gate + BYOK variants) |
 
 !!! tip "Check `.council.toml` before your first review"
-    The defaults are sensible, but you'll want to confirm the `chair_model` and reviewer model assignments match your available keys. See [Configuration](configuration.md) for all options.
+    The defaults are sensible, but you'll want to confirm the `chair_model` and reviewer model assignments match your available keys. The generated `.council.toml` includes the current user-facing options inline.
 
 ---
 

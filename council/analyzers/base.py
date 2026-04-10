@@ -8,7 +8,6 @@ Parser-backed analysis can be added later if needed.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 
 from ..schemas import GateZeroFinding
 
@@ -25,16 +24,22 @@ _TEST_FILE_SUFFIXES = (
 )
 
 
+def _normalized_path_parts(file_path: str) -> tuple[str, ...]:
+    """Return lowercase path segments for repo-relative paths across slash styles."""
+    normalized = file_path.replace("\\", "/").strip("/")
+    return tuple(part.lower() for part in normalized.split("/") if part and part != ".")
+
+
 def is_test_file(file_path: str) -> bool:
-    """Return True when file path represents test or support-test code."""
-    path = Path(file_path)
-    posix = path.as_posix()
-    name = path.name.lower()
+    """Return True for explicit test-file conventions, not arbitrary nested folders."""
+    parts = _normalized_path_parts(file_path)
+    if not parts:
+        return False
+
+    name = parts[-1]
     return (
-        posix.startswith("tests/")
-        or "/tests/" in f"/{posix}"
-        or posix.startswith("__tests__/")
-        or "/__tests__/" in f"/{posix}"
+        parts[0] == "tests"
+        or "__tests__" in parts[:-1]
         or name == "conftest.py"
         or name.startswith("test_")
         or name.endswith(_TEST_FILE_SUFFIXES)

@@ -38,6 +38,8 @@ from council.gate_zero import (
 )
 from council.diff_preprocessor import process, _should_ignore, _is_generated, _file_priority
 from council.review_pack import assemble, _extract_python_symbols, _build_test_coverage_map, _filter_to_changed_symbols, _extract_deleted_symbols
+from council.analyzers.base import is_test_file
+from council.analyzers.ecmascript import split_parameters
 from council.analyzers.javascript import JavaScriptAnalyzer
 from council.analyzers.python import PythonAnalyzer
 from council.analyzers.registry import get_analyzer
@@ -646,6 +648,39 @@ class TestPythonAnalyzer:
         assert get_analyzer("style.css") is None
 
 
+class TestAnalyzerPathDetection:
+    """Shared file-path classification for test-only analyzer exemptions."""
+
+    def test_is_test_file_matches_explicit_conventions(self):
+        """Recognizes the supported test file and directory conventions."""
+        positive_paths = [
+            "tests/test_sample.py",
+            "./tests/unit/test_sample.py",
+            "src/__tests__/example.spec.ts",
+            r"src\__tests__\example.spec.js",
+            "conftest.py",
+            "pkg/test_widget.py",
+            "src/component.test.tsx",
+            "src/component.spec.jsx",
+        ]
+
+        for path in positive_paths:
+            assert is_test_file(path) is True, path
+
+    def test_is_test_file_rejects_non_test_nested_paths(self):
+        """Does not exempt arbitrary nested folders or unrelated names."""
+        negative_paths = [
+            "src/tests/support/helper.ts",
+            "pkg/tests/helper.py",
+            "src/contest_utils.py",
+            "src/components/testimonials.tsx",
+            "src/specimen.js",
+        ]
+
+        for path in negative_paths:
+            assert is_test_file(path) is False, path
+
+
 class TestTypeScriptAnalyzer:
     """TypeScript-specific Gate Zero analysis."""
 
@@ -709,6 +744,34 @@ class TestJavaScriptAnalyzer:
         analyzer = JavaScriptAnalyzer()
         assert analyzer.check_docs(SAMPLE_JAVASCRIPT_SOURCE, "src/__tests__/example.spec.js") == []
         assert analyzer.check_types(SAMPLE_JAVASCRIPT_SOURCE, "src/component.test.jsx") == []
+
+
+class TestECMAScriptHelpers:
+    """Low-level parser-free helpers shared by TS and JS analyzers."""
+
+    def test_split_parameters_handles_nested_delimiters(self):
+        """Nested object, array, and generic types do not split top-level params."""
+        params = (
+            "value: string, "
+            "options: { retry: number, tags: string[] }, "
+            "transform: (input: Foo<Bar, Baz>) => Result"
+        )
+
+        assert split_parameters(params) == [
+            "value: string",
+            "options: { retry: number, tags: string[] }",
+            "transform: (input: Foo<Bar, Baz>) => Result",
+        ]
+
+    def test_split_parameters_keeps_commas_inside_string_defaults(self):
+        """String defaults with commas stay attached to the containing parameter."""
+        params = "label = 'a,b', message = \"x,y\", template = `left,right`"
+
+        assert split_parameters(params) == [
+            "label = 'a,b'",
+            'message = "x,y"',
+            "template = `left,right`",
+        ]
 
 
 # ---------------------------------------------------------------------------

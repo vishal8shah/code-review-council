@@ -1035,6 +1035,35 @@ class TestReporters:
         assert "SQL injection" in content
         assert "Evidence clear" in content
 
+    def test_markdown_report_is_windows_readable(self, tmp_path):
+        """Markdown report stays readable under the default Windows cp1252 codec."""
+        from council.reporters.markdown import write_markdown_report
+
+        verdict = ChairVerdict(
+            verdict="FAIL",
+            confidence=0.9,
+            summary="Security issue found.",
+            accepted_blockers=[
+                ChairFinding(
+                    severity="CRITICAL",
+                    category="security",
+                    file="auth.py",
+                    line_start=23,
+                    description="SQL injection",
+                    suggestion="Use parameterized queries",
+                    chair_action="accepted",
+                    chair_reasoning="Evidence clear",
+                )
+            ],
+            rationale="Confirmed vulnerability.",
+        )
+        out = tmp_path / "review.md"
+        write_markdown_report(verdict, out)
+        content = out.read_text(encoding="cp1252")
+        assert "[FAIL]" in content
+        assert "SQL injection" in content
+        assert "Use parameterized queries" in content
+
 
 # ---------------------------------------------------------------------------
 # Round 2 Regression Tests
@@ -1910,6 +1939,18 @@ class TestHTMLReporter:
         assert "SQL injection" in content
         assert "auth.py" in content
 
+    def test_developer_html_is_windows_readable(self, tmp_path):
+        """Developer HTML stays readable under the default Windows cp1252 codec."""
+        from council.reporters.html_report import write_html_report
+
+        verdict = self._make_fail_verdict()
+        out = tmp_path / "report.html"
+        write_html_report(verdict, out, audience="developer")
+        content = out.read_text(encoding="cp1252")
+        assert "<!DOCTYPE html>" in content
+        assert "Accepted Blockers" in content
+        assert "Use parameterized queries" in content
+
     def test_owner_html_uses_owner_presentation(self, tmp_path):
         """Owner HTML report uses OwnerPresentation when available."""
         from council.reporters.html_report import write_html_report
@@ -1940,6 +1981,39 @@ class TestHTMLReporter:
         assert "Login can be bypassed by attackers" in content
         assert "The login is vulnerable to attack." in content
         assert "Fix the query in auth.py" in content
+
+    def test_owner_html_is_windows_readable(self, tmp_path):
+        """Owner HTML stays readable under the default Windows cp1252 codec."""
+        from council.reporters.html_report import write_html_report
+        from council.schemas import OwnerFindingView, OwnerPresentation
+
+        verdict = self._make_fail_verdict()
+        verdict.owner_presentation = OwnerPresentation(
+            headline="Critical issue - do not merge.",
+            merge_recommendation="FIX_BEFORE_MERGE",
+            risk_level="critical",
+            confidence_label="High confidence",
+            short_summary="The login is vulnerable to attack.",
+            findings=[
+                OwnerFindingView(
+                    title="Login can be bypassed by attackers",
+                    severity_label="Critical Security Issue",
+                    urgency="fix_before_merge",
+                    plain_explanation="Anyone can log in as any user.",
+                    why_it_matters="Account takeover is possible.",
+                    fix_prompt="Fix the query in auth.py to use parameterized queries.",
+                    test_after_fix="Try the login with a SQL injection payload.",
+                    involve_engineer="Have a developer review the auth fix before merge.",
+                )
+            ],
+        )
+        out = tmp_path / "owner.html"
+        write_html_report(verdict, out, audience="owner")
+        content = out.read_text(encoding="cp1252")
+        assert "Issues Found" in content
+        assert "Technical Appendix" in content
+        assert "Copy fix prompt" in content
+        assert "Developer involvement needed" in content
 
     def test_owner_html_has_technical_appendix(self, tmp_path):
         """Owner HTML includes a technical appendix with original findings."""

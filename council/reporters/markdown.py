@@ -28,7 +28,14 @@ def write_markdown_report(
     reviewer_outputs: list[ReviewerOutput] | None = None,
     audience: str = "developer",
 ) -> None:
-    """Write the council review as a markdown file."""
+    """Write the council review as a markdown file.
+
+    Writes the standard developer report by default. When ``audience`` is
+    ``"owner"`` and ``verdict.owner_presentation`` is available, writes the
+    plain-English owner report plus the technical appendix that mirrors the
+    underlying accepted findings. Falls back to the developer layout when an
+    owner presentation is not available.
+    """
     if audience == "owner" and verdict.owner_presentation is not None:
         _write_owner_markdown(verdict, output_path, review_pack, reviewer_outputs)
     else:

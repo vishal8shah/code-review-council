@@ -11,6 +11,8 @@ from pathlib import Path
 from .config import CouncilConfig, load_config
 from .llm_transport import classify_model_json_support, provider_env_var_for_model
 
+_GIT_TIMEOUT_SECONDS = 10.0
+
 
 @dataclass(slots=True)
 class DoctorCheck:
@@ -46,14 +48,29 @@ def _run_git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         "SSH_ASKPASS": "",
         "GIT_PAGER": "cat",
     })
-    return subprocess.run(
-        ["git", *args],
-        cwd=repo_root,
-        env=env,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-    )
+    command = ["git", *args]
+    try:
+        return subprocess.run(
+            command,
+            cwd=repo_root,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=124,
+            stdout="",
+            stderr=f"git command timed out after {_GIT_TIMEOUT_SECONDS:.0f} seconds",
+        )
+
+
+def _git_timed_out(result: subprocess.CompletedProcess[str]) -> bool:
+    """Return True when a git subprocess exceeded the safety timeout."""
+    return result.returncode == 124 and "timed out" in (result.stderr or "").lower()
 
 
 def _is_valid_branch_name(repo_root: Path, branch: str) -> bool:
@@ -136,7 +153,16 @@ def run_doctor(
     git_root_result = _run_git(root, "rev-parse", "--show-toplevel")
     in_git_repo = git_root_result.returncode == 0
 
-    if in_git_repo:
+    if _git_timed_out(git_root_result):
+        checks.append(
+            DoctorCheck(
+                "git_repo",
+                "FAIL",
+                "Git probing timed out for the target repository.",
+                remediation="Retry in a healthy local clone or use `--repo` only with trusted, responsive repositories.",
+            )
+        )
+    elif in_git_repo:
         repo_path = git_root_result.stdout.strip()
         checks.append(DoctorCheck("git_repo", "PASS", f"Git repository detected at {repo_path}."))
     else:

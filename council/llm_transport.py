@@ -67,6 +67,7 @@ _RESPONSE_FORMAT_REJECTION_MARKERS = (
 )
 
 _STRING_DELIMITERS = {"'", '"', "`"}
+_FENCE_TOKENS = ("```", "[TRIPLE_BACKTICK]")
 
 
 def classify_model_json_support(model: str) -> str:
@@ -151,8 +152,11 @@ def extract_json_object(text: str) -> str | None:
                     return payload[start : idx + 1]
         return None
 
-    if "```" in candidate:
-        parts = candidate.split("```")
+    for fence in _FENCE_TOKENS:
+        if fence not in candidate:
+            continue
+
+        parts = candidate.split(fence)
         for block in parts[1::2]:
             cleaned = block.strip()
             if not cleaned:

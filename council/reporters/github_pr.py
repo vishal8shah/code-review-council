@@ -23,11 +23,27 @@ DEFAULT_HTTP_TIMEOUT_SECONDS = 10
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_BACKOFF_SECONDS = 1.0
 MAX_BACKOFF_SECONDS = 8.0
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def _sanitize_annotation_message(message: str) -> str:
     """Sanitize message text for GitHub workflow command format."""
     return message.replace("\r", " ").replace("\n", " ").replace("::", ";;")
+
+
+def _sanitize_comment_text(text: str | None, *, max_len: int = 400) -> str:
+    """Normalize untrusted text before embedding it in markdown comments."""
+    cleaned = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = _CONTROL_CHARS_RE.sub("", cleaned)
+    cleaned = " ".join(part for part in cleaned.split())
+    cleaned = cleaned.replace("`", "'")
+    cleaned = cleaned.replace("<", "&lt;").replace(">", "&gt;")
+    cleaned = cleaned.replace("[", r"\[").replace("]", r"\]")
+    cleaned = cleaned.replace("|", r"\|")
+    cleaned = cleaned.strip()
+    if len(cleaned) > max_len:
+        return cleaned[: max_len - 1].rstrip() + "…"
+    return cleaned
 
 
 def _normalize_inline_key_text(text: str | None) -> str:
@@ -58,10 +74,10 @@ def _build_inline_comment_body(finding: ChairFinding, key: str) -> str:
         f"{INLINE_MARKER_PREFIX}{key} -->",
         f"**Council {finding.severity} [{finding.category}]** at `{location}`",
         "",
-        finding.description,
+        _sanitize_comment_text(finding.description, max_len=500),
     ]
     if finding.suggestion:
-        lines.extend(["", f"Suggested fix: {finding.suggestion}"])
+        lines.extend(["", f"Suggested fix: {_sanitize_comment_text(finding.suggestion, max_len=400)}"])
     if finding.source_reviewers:
         lines.extend(["", f"Source: {', '.join(finding.source_reviewers)}"])
     return "\n".join(lines)
@@ -76,7 +92,7 @@ def _build_comment_body(
         "## Code Review Council",
         f"**Overall verdict:** `{verdict.verdict}` (confidence: {verdict.confidence:.2f})",
         "",
-        verdict.summary,
+        f"Model-generated summary: {_sanitize_comment_text(verdict.summary, max_len=600)}",
     ]
 
     notes = transport_notes(verdict, reviewer_outputs)
@@ -88,21 +104,35 @@ def _build_comment_body(
     if verdict.degraded and verdict.degraded_reasons:
         lines.extend(["", "### Degraded integrity signals"])
         for reason in verdict.degraded_reasons:
-            lines.append(f"- {reason}")
+            lines.append(f"- {_sanitize_comment_text(reason, max_len=300)}")
 
     if verdict.accepted_blockers:
         lines.extend(["", "### Accepted blockers"])
         for finding in verdict.accepted_blockers:
             loc = f"`{finding.file}:{finding.line_start}`" if finding.line_start else f"`{finding.file}`"
-            suggestion = f" - _Suggestion_: {finding.suggestion}" if finding.suggestion else ""
-            lines.append(f"- **[{finding.severity}]** {loc} {finding.description}{suggestion}")
+            suggestion = (
+                f" - _Suggestion_: {_sanitize_comment_text(finding.suggestion, max_len=250)}"
+                if finding.suggestion
+                else ""
+            )
+            lines.append(
+                f"- **[{finding.severity}]** {loc} "
+                f"{_sanitize_comment_text(finding.description, max_len=350)}{suggestion}"
+            )
 
     if verdict.warnings:
         lines.extend(["", "### Accepted warnings"])
         for finding in verdict.warnings:
             loc = f"`{finding.file}:{finding.line_start}`" if finding.line_start else f"`{finding.file}`"
-            suggestion = f" - _Suggestion_: {finding.suggestion}" if finding.suggestion else ""
-            lines.append(f"- **[{finding.severity}]** {loc} {finding.description}{suggestion}")
+            suggestion = (
+                f" - _Suggestion_: {_sanitize_comment_text(finding.suggestion, max_len=250)}"
+                if finding.suggestion
+                else ""
+            )
+            lines.append(
+                f"- **[{finding.severity}]** {loc} "
+                f"{_sanitize_comment_text(finding.description, max_len=350)}{suggestion}"
+            )
 
     if reviewer_outputs:
         lines.extend(
@@ -116,7 +146,7 @@ def _build_comment_body(
         for reviewer in reviewer_outputs:
             lines.append(
                 f"| `{reviewer.reviewer_id}` | {reviewer.verdict} | {len(reviewer.findings)} | "
-                f"{reviewer_output_mode(reviewer)} | {reviewer.error or ''} |"
+                f"{reviewer_output_mode(reviewer)} | {_sanitize_comment_text(reviewer.error or '', max_len=160)} |"
             )
 
     return "\n".join(lines) + "\n"

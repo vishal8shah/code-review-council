@@ -109,7 +109,7 @@ def check_readme_updated(diff_context: DiffContext, config: GateZeroConfig) -> l
         f for f in diff_context.added_files
         if not Path(f).name.startswith("_")
         and Path(f).suffix in code_extensions
-        and "test" not in f.lower()
+        and not is_test_file(f)
     ]
 
     if not new_public_modules:

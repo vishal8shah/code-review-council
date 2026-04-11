@@ -122,7 +122,17 @@ class ChangedSymbol(BaseModel):
     """A function, class, or export that was modified in the diff."""
 
     name: str
-    kind: Literal["function", "class", "method", "export", "route", "schema", "other"]
+    kind: Literal[
+        "function",
+        "class",
+        "method",
+        "interface",
+        "type",
+        "export",
+        "route",
+        "schema",
+        "other",
+    ]
     file: str
     line_start: int
     line_end: int

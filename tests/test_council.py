@@ -37,7 +37,14 @@ from council.gate_zero import (
     check_secrets,
 )
 from council.diff_preprocessor import process, _should_ignore, _is_generated, _file_priority
-from council.review_pack import assemble, _extract_python_symbols, _build_test_coverage_map, _filter_to_changed_symbols, _extract_deleted_symbols
+from council.review_pack import (
+    assemble,
+    _build_test_coverage_map,
+    _extract_deleted_symbols,
+    _extract_ecmascript_symbols,
+    _extract_python_symbols,
+    _filter_to_changed_symbols,
+)
 from council.analyzers.base import is_test_file
 from council.analyzers.ecmascript import split_parameters
 from council.analyzers.javascript import JavaScriptAnalyzer
@@ -160,6 +167,40 @@ const localHelper = (value) => value.trim();
 export const documentedArrow = (value) => value.trim();
 
 export const missingArrow = (value) => value.trim();
+'''
+
+SAMPLE_REVIEWPACK_TYPESCRIPT_SOURCE = '''\
+export default function namedDefaultThing(value: string): number {
+    return value.length;
+}
+
+export function publicThing(id: string): string {
+    return id.trim();
+}
+
+export class ReviewPackService {}
+
+export const buildThing = (flag: boolean): string => flag ? "yes" : "no";
+
+export interface ReviewPackShape {
+    value: string;
+}
+
+export type ReviewPackAlias = string | number;
+'''
+
+SAMPLE_REVIEWPACK_JAVASCRIPT_SOURCE = '''\
+export default function () {
+    return "default";
+}
+
+export function publicThing(value) {
+    return value;
+}
+
+export class ReviewPackWidget {}
+
+export const buildThing = (value) => value.trim();
 '''
 
 # Build secret-like test values without embedding literal detector matches in repo text
@@ -521,6 +562,35 @@ class TestGateZero:
         findings = check_readme_updated(ctx, gc)
         assert len(findings) == 0
 
+    def test_readme_check_skips_explicit_typescript_and_javascript_tests(self):
+        """Shared test-path rules exempt explicit TS/JS test files from README updates."""
+        from council.config import GateZeroConfig
+        gc = GateZeroConfig()
+        ctx = DiffContext(
+            files=[
+                DiffFile(path="src/__tests__/widget.spec.ts", change_type="added", additions=20),
+                DiffFile(path="src/components/widget.test.jsx", change_type="added", additions=12),
+            ],
+            changed_files=["src/__tests__/widget.spec.ts", "src/components/widget.test.jsx"],
+            added_files=["src/__tests__/widget.spec.ts", "src/components/widget.test.jsx"],
+        )
+
+        assert check_readme_updated(ctx, gc) == []
+
+    def test_readme_check_does_not_exempt_non_test_names(self):
+        """Files that merely contain 'test' in the name still require README review."""
+        from council.config import GateZeroConfig
+        gc = GateZeroConfig()
+        ctx = DiffContext(
+            files=[DiffFile(path="src/components/testimonials.tsx", change_type="added", additions=40)],
+            changed_files=["src/components/testimonials.tsx"],
+            added_files=["src/components/testimonials.tsx"],
+        )
+
+        findings = check_readme_updated(ctx, gc)
+        assert len(findings) == 1
+        assert "testimonials.tsx" in findings[0].message
+
     def test_file_size_check(self):
         """Oversized file triggers finding."""
         from council.config import GateZeroConfig
@@ -872,6 +942,37 @@ class TestReviewPack:
         assert "x: int" in pub_fn.signature
         assert "-> str" in pub_fn.signature
 
+    def test_extract_ecmascript_symbols_typescript(self):
+        """TypeScript symbol extraction preserves API kinds and line numbers."""
+        symbols = _extract_ecmascript_symbols(
+            SAMPLE_REVIEWPACK_TYPESCRIPT_SOURCE,
+            "src/review-pack.ts",
+            "typescript",
+        )
+        by_name = {symbol.name: symbol for symbol in symbols}
+
+        assert by_name["namedDefaultThing"].kind == "function"
+        assert by_name["namedDefaultThing"].line_start == 1
+        assert by_name["ReviewPackService"].kind == "class"
+        assert by_name["buildThing"].kind == "function"
+        assert by_name["ReviewPackShape"].kind == "interface"
+        assert by_name["ReviewPackAlias"].kind == "type"
+        assert by_name["namedDefaultThing"].signature.startswith("export default function")
+
+    def test_extract_ecmascript_symbols_javascript_anonymous_default(self):
+        """Anonymous default exports become stable ReviewPack symbols."""
+        symbols = _extract_ecmascript_symbols(
+            SAMPLE_REVIEWPACK_JAVASCRIPT_SOURCE,
+            "src/review-pack.js",
+            "javascript",
+        )
+        by_name = {symbol.name: symbol for symbol in symbols}
+
+        assert by_name["default export"].kind == "function"
+        assert by_name["default export"].line_start == 1
+        assert by_name["ReviewPackWidget"].line_start == 9
+        assert by_name["buildThing"].line_start == 11
+
     def test_test_coverage_map(self):
         """Maps source files to test files by naming convention."""
         ctx = DiffContext(files=[
@@ -895,6 +996,51 @@ class TestReviewPack:
         ])
         m = _build_test_coverage_map(ctx)
         assert "tests/test_council.py" in m.get("council/cli.py", [])
+
+    def test_test_coverage_map_matches_ecmascript_relative_imports(self):
+        """TS/JS tests map to changed sources through relative import heuristics."""
+        test_path = "src/components/__tests__/button.spec.tsx"
+        ctx = DiffContext(files=[
+            DiffFile(path="src/components/button.tsx", change_type="modified"),
+            DiffFile(path="src/components/card/index.ts", change_type="modified"),
+            DiffFile(
+                path=test_path,
+                change_type="modified",
+                source_content=(
+                    'import { Button } from "../button"\n'
+                    'export { Card } from "../card"\n'
+                    'const moduleRef = require("../card/index")\n'
+                ),
+            ),
+        ])
+
+        m = _build_test_coverage_map(ctx)
+        assert test_path in m.get("src/components/button.tsx", [])
+        assert test_path in m.get("src/components/card/index.ts", [])
+
+    def test_test_coverage_map_falls_back_for_ecmascript_test_names(self):
+        """When imports are absent, spec/test naming still maps related TS files."""
+        test_path = "src/utils/__tests__/format.spec.ts"
+        ctx = DiffContext(files=[
+            DiffFile(path="src/utils/format.ts", change_type="modified"),
+            DiffFile(path=test_path, change_type="modified"),
+        ])
+
+        m = _build_test_coverage_map(ctx)
+        assert test_path in m.get("src/utils/format.ts", [])
+
+    def test_test_coverage_map_avoids_non_test_false_positives(self):
+        """Fallback naming no longer treats unrelated 'test*' source names as covered."""
+        test_path = "src/components/__tests__/specimen.spec.tsx"
+        ctx = DiffContext(files=[
+            DiffFile(path="src/components/testimonials.tsx", change_type="modified"),
+            DiffFile(path="src/components/specimen.tsx", change_type="modified"),
+            DiffFile(path=test_path, change_type="modified"),
+        ])
+
+        m = _build_test_coverage_map(ctx)
+        assert m.get("src/components/testimonials.tsx") == []
+        assert test_path in m.get("src/components/specimen.tsx", [])
 
     def test_assemble_marks_test_symbols_as_self_covered(self):
         """Changed symbols in test files should be treated as self-covered tests."""
@@ -926,6 +1072,114 @@ class TestReviewPack:
             assert symbol.has_tests is True
             assert symbol.test_file == "tests/test_sample.py"
 
+    def test_assemble_marks_typescript_test_symbols_as_self_covered(self):
+        """Shared test-file detection also self-covers TS/JS ReviewPack symbols."""
+        source = "export const reviewPackSpec = () => true;\n"
+        ctx = DiffContext(
+            files=[
+                DiffFile(
+                    path="src/__tests__/review_pack.spec.ts",
+                    language="typescript",
+                    change_type="modified",
+                    source_content=source,
+                    hunks=[
+                        DiffHunk(
+                            source_start=1,
+                            source_length=0,
+                            target_start=1,
+                            target_length=1,
+                            content="+export const reviewPackSpec = () => true;\n",
+                        )
+                    ],
+                )
+            ],
+            changed_files=["src/__tests__/review_pack.spec.ts"],
+            branch="feature/ts-test-self-coverage",
+        )
+
+        rp = assemble(ctx, gate_zero_findings=[], config=CouncilConfig())
+        assert len(rp.changed_symbols) == 1
+        assert rp.changed_symbols[0].name == "reviewPackSpec"
+        assert rp.changed_symbols[0].has_tests is True
+        assert rp.changed_symbols[0].test_file == "src/__tests__/review_pack.spec.ts"
+
+    def test_assemble_typescript_review_pack_symbols(self):
+        """ReviewPack extracts exported TS symbols, including interfaces and type aliases."""
+        line_count = len(SAMPLE_REVIEWPACK_TYPESCRIPT_SOURCE.splitlines())
+        ctx = DiffContext(
+            files=[
+                DiffFile(
+                    path="src/review-pack.ts",
+                    language="typescript",
+                    change_type="added",
+                    additions=line_count,
+                    source_content=SAMPLE_REVIEWPACK_TYPESCRIPT_SOURCE,
+                    hunks=[
+                        DiffHunk(
+                            source_start=0,
+                            source_length=0,
+                            target_start=1,
+                            target_length=line_count,
+                            content=SAMPLE_REVIEWPACK_TYPESCRIPT_SOURCE,
+                        )
+                    ],
+                ),
+            ],
+            changed_files=["src/review-pack.ts"],
+            added_files=["src/review-pack.ts"],
+            branch="feature/ts-review-pack",
+        )
+
+        rp = assemble(ctx, gate_zero_findings=[], config=CouncilConfig())
+        by_name = {symbol.name: symbol for symbol in rp.changed_symbols}
+
+        assert "typescript" in rp.languages_detected
+        assert by_name["namedDefaultThing"].change_type == "added"
+        assert by_name["namedDefaultThing"].line_start == 1
+        assert by_name["publicThing"].line_start == 5
+        assert by_name["ReviewPackService"].kind == "class"
+        assert by_name["buildThing"].kind == "function"
+        assert by_name["ReviewPackShape"].kind == "interface"
+        assert by_name["ReviewPackShape"].line_start == 13
+        assert by_name["ReviewPackAlias"].kind == "type"
+        assert by_name["ReviewPackAlias"].line_start == 17
+
+    def test_assemble_javascript_review_pack_symbols(self):
+        """ReviewPack extracts JavaScript exports, including anonymous defaults."""
+        line_count = len(SAMPLE_REVIEWPACK_JAVASCRIPT_SOURCE.splitlines())
+        ctx = DiffContext(
+            files=[
+                DiffFile(
+                    path="src/review-pack.js",
+                    language="javascript",
+                    change_type="added",
+                    additions=line_count,
+                    source_content=SAMPLE_REVIEWPACK_JAVASCRIPT_SOURCE,
+                    hunks=[
+                        DiffHunk(
+                            source_start=0,
+                            source_length=0,
+                            target_start=1,
+                            target_length=line_count,
+                            content=SAMPLE_REVIEWPACK_JAVASCRIPT_SOURCE,
+                        )
+                    ],
+                ),
+            ],
+            changed_files=["src/review-pack.js"],
+            added_files=["src/review-pack.js"],
+            branch="feature/js-review-pack",
+        )
+
+        rp = assemble(ctx, gate_zero_findings=[], config=CouncilConfig())
+        by_name = {symbol.name: symbol for symbol in rp.changed_symbols}
+
+        assert "javascript" in rp.languages_detected
+        assert by_name["default export"].change_type == "added"
+        assert by_name["default export"].line_start == 1
+        assert by_name["publicThing"].line_start == 5
+        assert by_name["ReviewPackWidget"].kind == "class"
+        assert by_name["buildThing"].kind == "function"
 
     def test_assemble_full(self):
         """Full assembly produces a complete ReviewPack."""
@@ -1395,6 +1649,48 @@ class TestDeletedSymbolExtraction:
         symbols = _extract_deleted_symbols(diff_file)
         assert len(symbols) == 1
         assert symbols[0].name == "handle_request"
+
+    def test_detects_deleted_exported_typescript_function(self):
+        """Removed TS exported functions are captured as deleted symbols."""
+        diff_file = DiffFile(
+            path="src/client.ts",
+            change_type="modified",
+            hunks=[DiffHunk(
+                source_start=3, source_length=3,
+                target_start=3, target_length=1,
+                content=(
+                    '-export function requestThing(value: string) {\n'
+                    "-    return value;\n"
+                    " }\n"
+                ),
+            )],
+        )
+
+        symbols = _extract_deleted_symbols(diff_file)
+        assert len(symbols) == 1
+        assert symbols[0].name == "requestThing"
+        assert symbols[0].kind == "function"
+        assert symbols[0].change_type == "deleted"
+
+    def test_detects_deleted_exported_javascript_class(self):
+        """Removed JS exported classes are captured as deleted symbols."""
+        diff_file = DiffFile(
+            path="src/widget.js",
+            change_type="modified",
+            hunks=[DiffHunk(
+                source_start=8, source_length=2,
+                target_start=8, target_length=0,
+                content=(
+                    "-export class WidgetController {\n"
+                    "-}\n"
+                ),
+            )],
+        )
+
+        symbols = _extract_deleted_symbols(diff_file)
+        assert len(symbols) == 1
+        assert symbols[0].name == "WidgetController"
+        assert symbols[0].kind == "class"
 
     def test_no_false_positives_on_added_lines(self):
         """Lines starting with + should not be detected as deleted."""

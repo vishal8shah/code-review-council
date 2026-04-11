@@ -66,7 +66,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 | 14 | `--ci` without `--branch` empty diff risk | Warning emitted |
 | 15 | Stray brace-expansion directory in repo | Removed |
 | 16 | Linter integration config-only, not implemented | Implemented with `shlex.split`, `{files}` placeholder, timeout/error handling |
-| 17 | TS/JS analyzers enabled but not implemented | Disabled in default config with honest note |
+| 17 | TS/JS analyzer placeholders existed without implementation | Shipped dependency-free TS/JS Gate Zero analyzers and kept them disabled by default for an explicit rollout |
 | 18 | `council init` missing workflow scaffold | Now creates `.github/workflows/council-review.yml` |
 | 19 | "Chunking" naming implied splitting — actually truncation | Documented honestly as truncation |
 
@@ -104,7 +104,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 - **Changed AND deleted symbol detection** — reviewers see what was removed, not just what was added
 - **Policy context flows end-to-end** — config settings reach reviewers and Chair
 - **Path traversal protection** and CI safety warnings built in
-- **44 tests across all modules, all passing**
+- **171 tests across all modules, all passing**
 
 ---
 

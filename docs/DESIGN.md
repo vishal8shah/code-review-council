@@ -112,8 +112,8 @@ Given the goal of vibe-coding this quickly, the stack should minimize boilerplat
 | **Structured Output** | **Pydantic v2** | Define strict review schemas; use with `response_format` / tool calling for guaranteed JSON from all models |
 | **Diff Parsing** | **`unidiff`** (Python lib) + `git` subprocess | Parse unified diffs into per-file, per-hunk structured objects |
 | **Diff Preprocessing** | **Custom filter/chunker** | Ignore patterns (like `.gitignore` for review scope), token budget management, generated file detection, chunking for large diffs |
-| **Static Analysis (Gate Zero)** | **`tree-sitter`** (multi-lang) + **`ast`** (Python fallback) | Language-agnostic AST checks via tree-sitter grammars. Plugin system for per-language rules (Python docstrings, TSDoc, JSDoc, etc.) |
-| **Symbol Extraction** | **`tree-sitter`** queries | Extract changed functions, classes, exports, routes from diffs to build the ReviewPack's symbol map |
+| **Static Analysis (Gate Zero)** | **Python `ast`** + **dependency-free TS/JS heuristics** | Plugin system for per-language rules. Python uses `ast.parse()`; TypeScript/JavaScript scan exported symbols line-by-line without extra parser dependencies. |
+| **Symbol Extraction** | **Python `ast`** + deleted-symbol regex heuristics | Current ReviewPack symbol extraction is Python-first with deleted-symbol heuristics across languages. Multi-language parser dispatch remains future work. |
 | **CLI Interface** | **`typer`** | Beautiful CLI with minimal code; auto-generates `--help` |
 | **Configuration** | **TOML** (`.council.toml` in repo root) | Human-readable, git-committable config for reviewer personas, thresholds, model assignments |
 | **Git Integration** | **GitHub Action** (primary gate) + optional **`pre-push` hook** (advisory) | CI blocks merge on FAIL; local hook provides fast advisory feedback |
@@ -142,8 +142,8 @@ code-review-council/
 │   │   ├── docs.py            # Documentation completeness reviewer
 │   │   └── custom.py          # User-defined persona loader
 │   ├── analyzers/             # Language-specific Gate Zero plugins
-│   │   ├── base.py            # BaseAnalyzer ABC (tree-sitter interface)
-│   │   ├── python.py          # Python: docstrings, type hints via ast/tree-sitter
+│   │   ├── base.py            # BaseAnalyzer ABC + shared test-path helper
+│   │   ├── python.py          # Python: docstrings, type hints via ast
 │   │   ├── typescript.py      # TypeScript: TSDoc, exports, route docs
 │   │   ├── javascript.py      # JavaScript: JSDoc, exports
 │   │   └── registry.py        # Maps file extensions → analyzer
@@ -180,7 +180,7 @@ The key insight is: **don't waste LLM tokens on issues a linter can catch.** The
 
 This is the fastest, cheapest quality gate. It runs in <2 seconds and catches the most common vibe-coding sins before any API call is made.
 
-**Language-Agnostic Design**: Gate Zero uses a plugin-based analyzer system. Each language has a tree-sitter grammar and a set of rules. The `analyzers/registry.py` maps file extensions to the appropriate analyzer. Python uses `ast.parse()` as a fast path; TypeScript/JavaScript use tree-sitter queries.
+**Language-Aware Design**: Gate Zero uses a plugin-based analyzer system. The `analyzers/registry.py` maps file extensions to the appropriate analyzer. Python uses `ast.parse()`, while TypeScript/JavaScript use dependency-free exported-symbol heuristics for JSDoc and TypeScript function-signature checks.
 
 **What it checks:**
 
@@ -212,11 +212,11 @@ class TypeScriptAnalyzer(BaseAnalyzer):
     extensions = [".ts", ".tsx"]
     
     def check_docs(self, source: str, file_path: str) -> list[Finding]:
-        # tree-sitter query for exported functions/classes lacking TSDoc
+        # Line-based detection for exported functions/classes lacking JSDoc
         # Only enforces on `export` declarations, not internal helpers
     
     def check_types(self, source: str, file_path: str) -> list[Finding]:
-        # TS has mandatory types; check for `any` abuse instead
+        # Flag exported functions missing explicit return or parameter annotations
 ```
 
 **Fail behavior:** Gate Zero failures produce an immediate, actionable error message with exact file:line references and skip all LLM stages. This is critical — it means a missing docstring costs the developer 0 API tokens and <1 second of wait time.
@@ -247,7 +247,7 @@ The Diff Preprocessor runs after Gate Zero and before ReviewPack assembly:
 | **Generated file detection** | Header comment patterns (`// @generated`, `# auto-generated`) + known paths | Exclude from LLM review; flag in report as "skipped" |
 | **Token budget enforcement** | tiktoken estimation per file | If total diff exceeds `max_review_tokens` (default: 30,000), truncate lowest-priority files first |
 | **File prioritization** | Security-sensitive files first (auth, crypto, API routes), then business logic, then tests, then config/docs | Ensures token budget is spent on highest-risk code |
-| **Chunking** | For files exceeding `max_file_tokens` (default: 8,000), truncate to the token limit | V1 truncates at the token boundary. Future versions may split at function/class boundaries via tree-sitter. Truncated files are labeled in the ReviewPack |
+| **Chunking** | For files exceeding `max_file_tokens` (default: 8,000), truncate to the token limit | V1 truncates at the token boundary. Future versions may split at parser-aware function/class boundaries. Truncated files are labeled in the ReviewPack |
 
 **Configuration in `.council.toml`:**
 
@@ -563,7 +563,7 @@ Documentation enforcement operates at **two layers**, which is the key design de
 
 ### Layer 1: Gate Zero (Deterministic, Zero Cost)
 
-This is the hard gate. It's AST-based, not LLM-based, which means it's fast, free, and un-gameable. The analyzer plugin system makes it language-agnostic.
+This is the hard gate. It's static-analysis-based, not LLM-based, which means it's fast, free, and un-gameable. The analyzer plugin system keeps the policy interface consistent across languages, even though the current implementations use different parsing strategies.
 
 ```python
 # analyzers/base.py — All analyzers implement this interface
@@ -625,15 +625,14 @@ class TypeScriptAnalyzer(BaseAnalyzer):
     
     def check_docs(self, source: str, file_path: str) -> list[Finding]:
         """Check that exported functions/classes have TSDoc comments."""
-        # Uses tree-sitter TypeScript grammar
+        # Uses line-based export detection
         # Only enforces on `export` declarations — internal helpers are exempt
-        # Checks for /** TSDoc */ preceding export function/class/interface
+        # Checks for /** JSDoc */ preceding export function/class
         ...
     
     def check_types(self, source: str, file_path: str) -> list[Finding]:
-        """Check for `any` type abuse in exported interfaces."""
-        # TS has mandatory types; check for explicit `any` usage instead
-        # Flag: `export function handle(req: any)` → "Use specific type"
+        """Check for missing exported function annotations."""
+        # Flags exported functions missing explicit parameter or return types
         ...
 
 # analyzers/registry.py — Routes files to the right analyzer
@@ -723,7 +722,19 @@ flag_any_abuse = true                 # flag explicit `any` types on exports
 
 [documentation.exemptions]
 paths = ["tests/", "scripts/", "migrations/", "fixtures/"]
-patterns = ["test_*", "conftest.py", "*.spec.ts", "*.test.ts"]
+patterns = [
+    "test_*",
+    "conftest.py",
+    "__tests__/",
+    "*.spec.ts",
+    "*.spec.tsx",
+    "*.test.ts",
+    "*.test.tsx",
+    "*.spec.js",
+    "*.spec.jsx",
+    "*.test.js",
+    "*.test.jsx",
+]
 ```
 
 ---
@@ -781,7 +792,7 @@ Since you're vibe-coding this, here's a realistic timeline:
 | Phase | Effort | What You Get |
 |-------|--------|-------------|
 | **MVP (Weekend sprint)** | 8-12 hours | CLI that parses diffs, calls 2 reviewers in parallel, Chair synthesizes, terminal output |
-| **Gate Zero + Analyzers** | 4-6 hours | Static checks with Python + TypeScript analyzer plugins via tree-sitter |
+| **Gate Zero + Analyzers** | 4-6 hours | Static checks with Python AST analysis plus dependency-free TypeScript/JavaScript analyzer plugins |
 | **Diff Preprocessor** | 3-4 hours | Ignore patterns, token budgets, chunking, generated file detection |
 | **ReviewPack Assembly** | 3-4 hours | Symbol extraction, test map, policy context — the structured reviewer input |
 | **Polish** | 4-6 hours | Rich terminal UI, markdown report output, `.council.toml` config |
@@ -813,7 +824,7 @@ At $0.20-0.30 per typical review, running this 20 times a day costs roughly $4-6
 |-------|-----------------|
 | Gate Zero (static) | < 2 seconds |
 | Diff Preprocessing | < 1 second |
-| ReviewPack Assembly | < 2 seconds (symbol extraction via tree-sitter) |
+| ReviewPack Assembly | < 2 seconds (Python AST + deleted-symbol heuristics) |
 | Reviewer Panel (parallel) | 8-15 seconds (bounded by slowest model) |
 | Chair Synthesis | 5-10 seconds |
 | Report Generation | < 1 second |
@@ -1002,8 +1013,8 @@ javascript = "eslint --format json"
 [gate_zero.analyzers]
 # Enable/disable per-language analyzers
 python = true
-typescript = false    # not yet implemented
-javascript = false    # not yet implemented
+typescript = false    # implemented — enable explicitly when ready
+javascript = false    # implemented — enable explicitly when ready
 
 [[reviewers]]
 id = "secops"
@@ -1053,7 +1064,7 @@ budget_daily_usd = 20.00            # hard stop for daily spend
 Everything described in this document up to this point. The core deliverable:
 
 1. **Typer CLI** with `council init`, `council review`, `council review --ci`
-2. **Gate Zero** with language-agnostic analyzer plugins (Python + TypeScript)
+2. **Gate Zero** with language-aware analyzer plugins (Python + TypeScript + JavaScript)
 3. **Diff Preprocessor** with ignore patterns, token budgets, chunking
 4. **ReviewPack** assembly from enriched diff context
 5. **4 reviewer personas** (SecOps, QA, Architect, Docs) running in parallel
@@ -1089,10 +1100,10 @@ Only after V2 proves the system is reliable:
 | Decision | Rationale | Trade-off |
 |----------|-----------|-----------|
 | **Gate Zero before LLM** | Saves 100% of LLM cost on trivially fixable issues | Requires maintaining static analysis rules per language |
-| **ReviewPack over raw diff** | Reviewers get structured context (symbols, tests, policies) — produces evidence-backed findings instead of opinion-based ones | Extra assembly step (~2s); requires tree-sitter setup per language |
+| **ReviewPack over raw diff** | Reviewers get structured context (symbols, tests, policies) — produces evidence-backed findings instead of opinion-based ones | Extra assembly step (~2s); cross-language symbol extraction beyond Python still needs future work |
 | **CI as primary gate, local as advisory** | CI cannot be bypassed with `--no-verify`; local advisory keeps dev experience frictionless | Findings surface later (at PR time vs push time); requires CI secrets setup |
 | **Diff preprocessor with token budgets** | Prevents cost blowup from lockfiles, generated code, vendored deps; ensures token budget spent on highest-risk files | May miss issues in truncated/skipped files; requires tuning ignore patterns |
-| **Language-agnostic analyzer plugins** | Same architecture works for Python, TS, JS, Go, Rust; tree-sitter provides unified AST interface | More upfront work per language; tree-sitter grammars add dependencies |
+| **Language-aware analyzer plugins** | Same policy interface works for Python, TS, JS, Go, Rust without forcing one parser strategy on every language | More upfront work per language; heuristic analyzers trade parser precision for zero extra dependencies |
 | **Parallel reviewers** | ~4x faster than sequential | Higher burst API usage; need rate limit handling |
 | **Structured JSON output** | Deterministic parsing; no regex on natural language | Slightly more complex prompts; some models less reliable at strict JSON |
 | **Chair as separate stage** | Clean separation; Chair sees all context; adjudicates rather than summarizes | Extra API call adds ~5-10s latency and ~$0.08 cost |

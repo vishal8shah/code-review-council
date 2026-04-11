@@ -144,6 +144,16 @@ class ChangedSymbol(BaseModel):
     test_file: str | None = None
 
 
+class SupportFileSummary(BaseModel):
+    """Bounded evidence for skipped or truncated test/docs/config files."""
+
+    path: str
+    kind: Literal["test", "docs", "config"]
+    status: Literal["skipped", "truncated"]
+    related_files: list[str] = []
+    summary: str
+
+
 class ReviewPack(BaseModel):
     """Structured context assembled once, consumed by all reviewers.
 
@@ -161,6 +171,7 @@ class ReviewPack(BaseModel):
     changed_symbols: list[ChangedSymbol] = []
     test_coverage_map: dict[str, list[str]] = {}  # {source_file: [test_files]}
     languages_detected: list[str] = []
+    support_files_outside_budget: list[SupportFileSummary] = []
 
     # Policy context
     gate_zero_results: list[GateZeroFinding] = []

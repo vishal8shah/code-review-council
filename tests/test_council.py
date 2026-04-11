@@ -4447,7 +4447,7 @@ async def test_chair_invalid_json_error_is_sanitized():
         verdict = await synthesize(review_pack, reviews)
 
     assert verdict.verdict == "FAIL"
-    assert "Invalid JSON returned by chair model" in verdict.summary
+    assert verdict.summary == "Chair synthesis failed; review failed closed for safety."
     assert "secret raw chair output" not in verdict.summary
     assert "secret raw chair output" not in verdict.rationale
     assert all("secret raw chair output" not in reason for reason in verdict.degraded_reasons)

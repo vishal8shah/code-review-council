@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from council.chair import synthesize
+from council.chair import _chair_failure_verdict, synthesize
 from council.llm_transport import JSONCompletionResult
 from council.schemas import Finding, ReviewerOutput, ReviewPack
 
@@ -54,4 +54,22 @@ async def test_synthesize_invalid_json_fails_closed():
         verdict = await synthesize(review_pack, reviews)
 
     assert verdict.verdict == "FAIL"
-    assert "Invalid JSON returned by chair model" in verdict.summary
+    assert verdict.summary == "Chair synthesis failed; review failed closed for safety."
+    assert verdict.rationale == (
+        "Chair synthesis transport or parsing failed. The review failed closed for safety."
+    )
+    assert verdict.degraded_reasons == [
+        "Chair synthesis failed due to an internal transport or parsing error."
+    ]
+
+
+def test_chair_failure_verdict_does_not_leak_exception_text():
+    verdict = _chair_failure_verdict(
+        RuntimeError("secret token 123"),
+        degraded_reasons=["existing"],
+    )
+
+    assert verdict.summary == "Chair synthesis failed; review failed closed for safety."
+    assert "secret token 123" not in verdict.summary
+    assert "secret token 123" not in verdict.rationale
+    assert all("secret token 123" not in reason for reason in verdict.degraded_reasons)

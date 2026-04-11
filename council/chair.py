@@ -11,6 +11,7 @@ import uuid
 
 import litellm
 
+from .llm_transport import invoke_json_completion, load_json_object
 from .schemas import ChairFinding, ChairVerdict, OwnerFindingView, OwnerPresentation, ReviewerOutput, ReviewPack
 
 
@@ -203,6 +204,7 @@ async def synthesize(
         return ChairVerdict(
             verdict="PASS_WITH_WARNINGS",
             confidence=0.7,
+            chair_output_mode=None,
             degraded=True,
             degraded_reasons=degraded_reasons or [],
             summary="No accepted findings, but reviewer integrity issues were detected.",
@@ -218,6 +220,7 @@ async def synthesize(
         return ChairVerdict(
             verdict="PASS",
             confidence=0.95,
+            chair_output_mode=None,
             degraded=False,
             degraded_reasons=[],
             summary="All reviewers passed with no findings.",
@@ -230,20 +233,21 @@ async def synthesize(
         )
 
     try:
-        response = await litellm.acompletion(
+        response = await invoke_json_completion(
             model=chair_model,
             messages=[
                 {"role": "system", "content": CHAIR_SYSTEM_PROMPT},
                 {"role": "user", "content": _build_chair_message(review_pack, reviews)},
             ],
-            response_format={"type": "json_object"},
             timeout=timeout,
             temperature=0.1,
             num_retries=2,
+            acompletion_func=litellm.acompletion,
         )
 
-        content = response.choices[0].message.content or "{}"
-        parsed = json.loads(content)
+        parsed = load_json_object(response.raw_content)
+        if parsed is None:
+            raise ValueError(f"Invalid JSON: {response.raw_content[:200]}")
 
         accepted = []
         for f in parsed.get("accepted_blockers", []):
@@ -276,6 +280,7 @@ async def synthesize(
         return ChairVerdict(
             verdict=parsed.get("verdict", "PASS"),
             confidence=parsed.get("confidence", 0.5),
+            chair_output_mode=response.output_mode,
             degraded=degraded or parsed.get("degraded", False),
             degraded_reasons=degraded_reasons or [],
             summary=parsed.get("summary", ""),
@@ -291,6 +296,7 @@ async def synthesize(
         return ChairVerdict(
             verdict="FAIL",
             confidence=0.0,
+            chair_output_mode="failed",
             degraded=True,
             degraded_reasons=(degraded_reasons or []) + [f"Chair synthesis failed: {e}"],
             summary=f"Chair synthesis failed: {e}",
@@ -453,7 +459,10 @@ def _build_fallback_owner_finding(f: ChairFinding) -> OwnerFindingView:
     )
 
 
-def _build_fallback_owner_presentation(verdict: ChairVerdict) -> OwnerPresentation:
+def _build_fallback_owner_presentation(
+    verdict: ChairVerdict,
+    output_mode: str | None = "failed",
+) -> OwnerPresentation:
     """Build a fully deterministic owner presentation from technical findings.
 
     Used when LLM translation fails, times out, or returns an incomplete /
@@ -521,6 +530,7 @@ def _build_fallback_owner_presentation(verdict: ChairVerdict) -> OwnerPresentati
         risk_level=risk,  # type: ignore[arg-type]
         confidence_label=confidence_label,
         short_summary=short_summary,
+        output_mode=output_mode,
         findings=findings,
         degraded_warning=(
             "Owner-friendly explanation generation was incomplete, so this report uses a "
@@ -613,6 +623,7 @@ async def generate_owner_presentation(
             risk_level="low",
             confidence_label=confidence_label,
             short_summary=verdict.summary or "No issues found. All reviewers passed.",
+            output_mode=None,
             findings=[],
             degraded_warning=(
                 "Note: one or more reviewers had issues during this run. "
@@ -625,20 +636,21 @@ async def generate_owner_presentation(
     expected_count = len(verdict.accepted_blockers) + len(verdict.warnings)
 
     try:
-        response = await litellm.acompletion(
+        response = await invoke_json_completion(
             model=chair_model,
             messages=[
                 {"role": "system", "content": OWNER_PRESENTATION_SYSTEM_PROMPT},
                 {"role": "user", "content": _build_owner_message(verdict)},
             ],
-            response_format={"type": "json_object"},
             timeout=timeout,
             temperature=0.2,
             num_retries=2,
+            acompletion_func=litellm.acompletion,
         )
 
-        content = response.choices[0].message.content or "{}"
-        parsed = json.loads(content)
+        parsed = load_json_object(response.raw_content)
+        if parsed is None:
+            return _build_fallback_owner_presentation(verdict)
 
         # Validate required top-level fields and enum values.
         _valid_merge_recs = {"SAFE_TO_MERGE", "MERGE_WITH_CAUTION", "FIX_BEFORE_MERGE"}
@@ -671,6 +683,7 @@ async def generate_owner_presentation(
             risk_level=parsed["risk_level"],
             confidence_label=parsed.get("confidence_label", "Moderate confidence"),
             short_summary=parsed["short_summary"],
+            output_mode=response.output_mode,
             findings=findings,
             degraded_warning=parsed.get("degraded_warning"),
         )

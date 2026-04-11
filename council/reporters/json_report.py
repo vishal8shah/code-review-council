@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .transport import transport_notes
 from ..schemas import ChairVerdict, ReviewerOutput, ReviewPack
 
 
@@ -18,6 +19,7 @@ def write_json_report(
     report = {
         "verdict": verdict.verdict,
         "confidence": verdict.confidence,
+        "chair_output_mode": verdict.chair_output_mode,
         "degraded": verdict.degraded,
         "degraded_reasons": verdict.degraded_reasons,
         "summary": verdict.summary,
@@ -45,12 +47,24 @@ def write_json_report(
                 "verdict": r.verdict,
                 "findings_count": len(r.findings),
                 "confidence": r.confidence,
+                "output_mode": r.output_mode,
                 "error": r.error,
                 "integrity_error": r.integrity_error,
                 "tokens_used": r.tokens_used,
             }
             for r in reviewer_outputs
         ]
+
+    notes = transport_notes(verdict, reviewer_outputs)
+    if notes:
+        report["transport"] = {
+            "chair_output_mode": verdict.chair_output_mode,
+            "owner_output_mode": (
+                verdict.owner_presentation.output_mode
+                if verdict.owner_presentation is not None else None
+            ),
+            "notes": notes,
+        }
 
     path = Path(output_path)
     path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")

@@ -104,7 +104,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 - **Changed AND deleted symbol detection** — reviewers see what was removed, not just what was added
 - **Policy context flows end-to-end** — config settings reach reviewers and Chair
 - **Path traversal protection** and CI safety warnings built in
-- **171 tests across all modules, all passing**
+- **204 tests across all modules** covering legacy flow plus Phase 3 transport fallback, doctor checks, and GitHub reporting behavior
 
 ---
 
@@ -123,9 +123,9 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 ### Not Yet Implemented
 
 - **Logical chunking** — large files are truncated, not split at function boundaries. Documented as truncation.
-- **`response_format` fallback** — no fallback for models that don't support JSON mode (e.g. some Gemini variants).
-- **GitHub PR inline annotations** — disabled by default. Scoped to V2.
-- **Editable prompts without code changes** — prompts are in code. V2 scope.
+- **Full-repo test coverage discovery** — coverage mapping still works from the diff, not a repository-wide index.
+- **GitHub reporting remains best-effort** — sticky summaries, workflow annotations, and inline PR comments should not fail the review if the GitHub API is flaky.
+- **Editable prompts without code changes** — prompts are still in code rather than repo-editable assets. Future scope.
 
 ### Design Note
 

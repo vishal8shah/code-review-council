@@ -90,7 +90,7 @@ class ReportersConfig(BaseModel):
     terminal: bool = True
     markdown: bool = True
     json_report: str | bool = "ci"  # "ci" = auto-enabled with --ci; true = always; false = never
-    github_pr: bool = False  # not yet implemented — enable when reporter is added
+    github_pr: bool = False  # sticky summary + inline GitHub reporting (best effort)
 
 
 class CostConfig(BaseModel):

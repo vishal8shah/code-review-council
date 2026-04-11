@@ -25,6 +25,14 @@ app = typer.Typer(
 console = Console()
 
 
+def _status_style(status: str) -> str:
+    if status == "PASS":
+        return "green"
+    if status == "WARN":
+        return "yellow"
+    return "red"
+
+
 @app.command()
 def review(
     ci: bool = typer.Option(False, "--ci", help="CI mode: exit 1 on FAIL, force JSON output"),
@@ -176,6 +184,49 @@ def review(
     if not ci:
         if verdict.verdict == "FAIL":
             console.print("  💡 These findings will be enforced in CI.", style="yellow")
+
+
+@app.command()
+def doctor(
+    branch: str = typer.Option(None, "--branch", "-b", help="Validate this diff target branch/ref"),
+    audience: str = typer.Option(
+        None,
+        "--audience",
+        help="Validate this audience override (`developer` or `owner`) instead of the config default.",
+    ),
+    github_pr: bool = typer.Option(
+        False,
+        "--github-pr",
+        help="Also validate GitHub pull-request reporting environment variables.",
+    ),
+    repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),
+) -> None:
+    """Run practical preflight checks before a full council review."""
+    from .config import load_config
+    from .doctor import run_doctor
+
+    root = Path(repo_root) if repo_root else Path.cwd()
+    config = load_config(root)
+    report = run_doctor(
+        repo_root=root,
+        config=config,
+        branch=branch,
+        audience=audience,
+        github_pr=github_pr,
+    )
+
+    console.print("\n[bold]Code Review Council Doctor[/]")
+    for check in report.checks:
+        style = _status_style(check.status)
+        console.print(f"  [{style}]{check.status:4}[/] {check.name}: {check.detail}")
+        if check.remediation:
+            console.print(f"        -> {check.remediation}", style="dim")
+
+    if report.exit_code != 0:
+        console.print("\n  Doctor found blocking setup issues.", style="bold red")
+        raise typer.Exit(code=1)
+
+    console.print("\n  Doctor completed with no blocking issues.", style="bold green")
 
 
 @app.command()

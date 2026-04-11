@@ -209,6 +209,7 @@ async def run_council(
                     confidence=0.0,
                     reasoning="",
                     tokens_used=0,
+                    output_mode="failed",
                     error=f"reviewer_task_exception: {type(result).__name__}: {result}",
                     integrity_error=True,
                 )

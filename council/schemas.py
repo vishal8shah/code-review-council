@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+OutputMode = Literal["response_format", "prompt_json_fallback", "failed"]
+
 
 # ---------------------------------------------------------------------------
 # Gate Zero / Static Analysis
@@ -207,6 +209,7 @@ class ReviewerOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str = ""
     tokens_used: int = 0
+    output_mode: OutputMode | None = None
     error: str | None = None  # set if reviewer timed out or failed
     integrity_error: bool = False  # structured integrity signal for orchestrator
 
@@ -243,6 +246,7 @@ class ChairVerdict(BaseModel):
 
     verdict: Literal["PASS", "PASS_WITH_WARNINGS", "FAIL"]
     confidence: float = Field(ge=0.0, le=1.0)
+    chair_output_mode: OutputMode | None = None
     degraded: bool = False  # true if any reviewer failed/timed out/had parse errors
     degraded_reasons: list[str] = []  # specific integrity issues that caused degraded state
     summary: str
@@ -290,5 +294,6 @@ class OwnerPresentation(BaseModel):
     risk_level: Literal["low", "medium", "high", "critical"]
     confidence_label: str  # e.g. "High confidence", "Moderate confidence"
     short_summary: str  # 2-3 sentence plain-English executive summary
+    output_mode: OutputMode | None = None
     findings: list[OwnerFindingView] = []
     degraded_warning: str | None = None  # Set if the review run was degraded

@@ -50,6 +50,7 @@ Yes — if you run with `--github-pr` and provide a `GITHUB_TOKEN` with write pe
 
 - Posts a sticky PR comment with the review summary
 - Emits inline workflow annotations for file/line findings
+- Posts best-effort inline PR review comments for accepted findings that have file/line evidence
 
 The default `council-review.yml` workflow runs with `--github-pr` only when LLM secrets are available. Fork PRs skip this step.
 
@@ -139,6 +140,18 @@ Council enters degraded mode for that reviewer. It:
 - Records `error` and `integrity_error` fields in the JSON artifact
 
 It never silently passes. The degraded state is always visible in CI logs and the JSON report.
+
+### Some models reject JSON mode. Is that still a blocker?
+
+Usually no. Council now tries native JSON mode first and retries with prompt-only JSON fallback when a provider/model rejects `response_format`.
+
+If you're unsure about a model or key setup, run:
+
+```bash
+council doctor --branch main
+```
+
+The doctor command flags missing provider keys, likely fallback-only models, invalid diff targets, and missing GitHub PR context.
 
 ---
 

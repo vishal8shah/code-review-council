@@ -8,7 +8,7 @@
 
 | Requirement | Minimum | Notes |
 |-------------|---------|-------|
-| Python | 3.11+ | Tested on 3.11 and 3.12 |
+| Python | 3.12+ | Current development and CI run on 3.13; use 3.12+ locally |
 | Git | Any recent | Used for diff extraction |
 | API key | At least one | OpenAI, Anthropic, or Google |
 | GitHub Actions | Optional | Required for CI gate only |
@@ -55,7 +55,7 @@ This creates two things:
 | `.github/workflows/council-*.yml` | CI workflow scaffolding (PR gate + BYOK variants) |
 
 !!! tip "Check `.council.toml` before your first review"
-    The defaults are sensible, but you'll want to confirm the `chair_model` and reviewer model assignments match your available keys. The generated `.council.toml` includes the current user-facing options inline.
+    The defaults are sensible, but you'll want to confirm the `chair_model` and reviewer model assignments match your available keys. The generated `.council.toml` includes the current user-facing options inline. Run `council doctor --branch main` before the first real review if you want a quick setup check.
 
 ---
 
@@ -158,7 +158,7 @@ Council will automatically review the next PR opened against your default branch
 | Reviewer timeouts | Model API slow or rate-limited | Increase `reviewer_timeout_seconds` in `.council.toml` |
 | `ANTHROPIC_API_KEY not found` | Secret not set | Check `Settings → Secrets` or your local `export` |
 | Fork PR review skipped | Expected — not a bug | Use `council-byok.yml` for fork contributors |
-| `integrity_error` in JSON report | A reviewer returned unparseable output | Check model assignment in `.council.toml` — some models need explicit `response_format` |
+| `integrity_error` in JSON report | A reviewer returned unparseable output | Run `council doctor --branch main`; some models use prompt-only JSON fallback and Council now reports that transport mode explicitly |
 
 ---
 

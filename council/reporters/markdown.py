@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .transport import reviewer_output_mode, transport_notes
 from ..schemas import ChairFinding, ChairVerdict, OwnerFindingView, ReviewerOutput, ReviewPack
 
 VERDICT_ICONS = {"PASS": "[PASS]", "PASS_WITH_WARNINGS": "[WARN]", "FAIL": "[FAIL]"}
@@ -51,6 +52,7 @@ def _write_owner_markdown(
     """Write an owner-audience markdown report."""
     op = verdict.owner_presentation
     assert op is not None
+    notes = transport_notes(verdict, reviewer_outputs)
 
     icon = VERDICT_ICONS.get(verdict.verdict, "?")
     lines: list[str] = []
@@ -66,6 +68,13 @@ def _write_owner_markdown(
 
     if op.degraded_warning:
         lines.append(f"> [WARN] **Note**: {op.degraded_warning}")
+        lines.append("")
+
+    if notes:
+        lines.append("## Transport Notes")
+        lines.append("")
+        for note in notes:
+            lines.append(f"- {note}")
         lines.append("")
 
     if op.findings:
@@ -112,13 +121,13 @@ def _write_owner_markdown(
 
         if reviewer_outputs:
             lines.append("### Reviewer Panel")
-            lines.append("| Reviewer | Model | Verdict | Findings | Error |")
-            lines.append("|----------|-------|---------|----------|-------|")
+            lines.append("| Reviewer | Model | Verdict | Findings | Output mode | Error |")
+            lines.append("|----------|-------|---------|----------|-------------|-------|")
             for reviewer in reviewer_outputs:
                 err = reviewer.error[:40] if reviewer.error else ""
                 lines.append(
                     f"| {reviewer.reviewer_id} | {reviewer.model} | {reviewer.verdict} | "
-                    f"{len(reviewer.findings)} | {err} |"
+                    f"{len(reviewer.findings)} | {reviewer_output_mode(reviewer)} | {err} |"
                 )
             lines.append("")
 
@@ -182,6 +191,7 @@ def _write_developer_markdown(
 ) -> None:
     """Write the standard developer-audience markdown report."""
     icon = VERDICT_ICONS.get(verdict.verdict, "?")
+    notes = transport_notes(verdict, reviewer_outputs)
     lines: list[str] = []
 
     lines.append(f"# Code Review Council - {icon} {verdict.verdict}")
@@ -197,6 +207,13 @@ def _write_developer_markdown(
         lines.append(f"**Summary**: {verdict.summary}")
         lines.append("")
 
+    if notes:
+        lines.append("## Transport Notes")
+        lines.append("")
+        for note in notes:
+            lines.append(f"- {note}")
+        lines.append("")
+
     if review_pack:
         lines.append("## Review Metadata")
         lines.append(f"- **Files changed**: {len(review_pack.changed_files)}")
@@ -209,13 +226,13 @@ def _write_developer_markdown(
 
     if reviewer_outputs:
         lines.append("## Reviewer Panel")
-        lines.append("| Reviewer | Model | Verdict | Findings | Error |")
-        lines.append("|----------|-------|---------|----------|-------|")
+        lines.append("| Reviewer | Model | Verdict | Findings | Output mode | Error |")
+        lines.append("|----------|-------|---------|----------|-------------|-------|")
         for reviewer in reviewer_outputs:
             err = reviewer.error[:40] if reviewer.error else ""
             lines.append(
                 f"| {reviewer.reviewer_id} | {reviewer.model} | {reviewer.verdict} | "
-                f"{len(reviewer.findings)} | {err} |"
+                f"{len(reviewer.findings)} | {reviewer_output_mode(reviewer)} | {err} |"
             )
         lines.append("")
 

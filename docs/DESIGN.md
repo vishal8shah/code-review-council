@@ -113,7 +113,7 @@ Given the goal of vibe-coding this quickly, the stack should minimize boilerplat
 | **Diff Parsing** | **`unidiff`** (Python lib) + `git` subprocess | Parse unified diffs into per-file, per-hunk structured objects |
 | **Diff Preprocessing** | **Custom filter/chunker** | Ignore patterns (like `.gitignore` for review scope), token budget management, generated file detection, chunking for large diffs |
 | **Static Analysis (Gate Zero)** | **Python `ast`** + **dependency-free TS/JS heuristics** | Plugin system for per-language rules. Python uses `ast.parse()`; TypeScript/JavaScript scan exported symbols line-by-line without extra parser dependencies. |
-| **Symbol Extraction** | **Python `ast`** + deleted-symbol regex heuristics | Current ReviewPack symbol extraction is Python-first with deleted-symbol heuristics across languages. Multi-language parser dispatch remains future work. |
+| **Symbol Extraction** | **Python `ast`** + **dependency-free TS/JS export heuristics** + deleted-symbol regex heuristics | ReviewPack extracts Python definitions with `ast.parse()`, TypeScript/JavaScript exports with line-based heuristics, and deleted symbols from diff hunks across languages. |
 | **CLI Interface** | **`typer`** | Beautiful CLI with minimal code; auto-generates `--help` |
 | **Configuration** | **TOML** (`.council.toml` in repo root) | Human-readable, git-committable config for reviewer personas, thresholds, model assignments |
 | **Git Integration** | **GitHub Action** (primary gate) + optional **`pre-push` hook** (advisory) | CI blocks merge on FAIL; local hook provides fast advisory feedback |
@@ -276,7 +276,7 @@ This is the critical architectural improvement: **reviewers do not receive raw d
 class ChangedSymbol(BaseModel):
     """A function, class, or export that was modified."""
     name: str
-    kind: Literal["function", "class", "method", "export", "route", "schema"]
+    kind: Literal["function", "class", "method", "interface", "type", "export", "route", "schema"]
     file: str
     line_start: int
     line_end: int
@@ -303,8 +303,8 @@ class ReviewPack(BaseModel):
     deleted_files: list[str]           # removed files
     
     # Enriched context (the key differentiator vs. raw diff)
-    changed_symbols: list[ChangedSymbol]   # functions/classes/exports touched
-    test_coverage_map: dict[str, list[str]]  # {source_file: [test_files]}
+    changed_symbols: list[ChangedSymbol]   # functions/classes/exports/interfaces/types touched
+    test_coverage_map: dict[str, list[str]]  # {source_file: [test_files in this diff]}
     languages_detected: list[str]          # ["python", "typescript", ...]
     
     # Policy context
@@ -461,7 +461,7 @@ class Finding(BaseModel):
     line_start: int | None = None
     line_end: int | None = None
     symbol_name: str | None = None          # e.g., "parse_node"
-    symbol_kind: Literal["function", "class", "method", "export", "route", "schema"] | None = None
+    symbol_kind: Literal["function", "class", "method", "interface", "type", "export", "route", "schema"] | None = None
     diff_hunk_id: int | None = None         # index into ReviewPack diff hunks
     description: str
     suggestion: str
@@ -824,7 +824,7 @@ At $0.20-0.30 per typical review, running this 20 times a day costs roughly $4-6
 |-------|-----------------|
 | Gate Zero (static) | < 2 seconds |
 | Diff Preprocessing | < 1 second |
-| ReviewPack Assembly | < 2 seconds (Python AST + deleted-symbol heuristics) |
+| ReviewPack Assembly | < 2 seconds (Python AST + parser-free TS/JS exports + deleted-symbol heuristics) |
 | Reviewer Panel (parallel) | 8-15 seconds (bounded by slowest model) |
 | Chair Synthesis | 5-10 seconds |
 | Report Generation | < 1 second |
@@ -1100,7 +1100,7 @@ Only after V2 proves the system is reliable:
 | Decision | Rationale | Trade-off |
 |----------|-----------|-----------|
 | **Gate Zero before LLM** | Saves 100% of LLM cost on trivially fixable issues | Requires maintaining static analysis rules per language |
-| **ReviewPack over raw diff** | Reviewers get structured context (symbols, tests, policies) — produces evidence-backed findings instead of opinion-based ones | Extra assembly step (~2s); cross-language symbol extraction beyond Python still needs future work |
+| **ReviewPack over raw diff** | Reviewers get structured context (symbols, tests, policies) — produces evidence-backed findings instead of opinion-based ones | Extra assembly step (~2s); TS/JS coverage mapping still relies on diff-local import and filename heuristics |
 | **CI as primary gate, local as advisory** | CI cannot be bypassed with `--no-verify`; local advisory keeps dev experience frictionless | Findings surface later (at PR time vs push time); requires CI secrets setup |
 | **Diff preprocessor with token budgets** | Prevents cost blowup from lockfiles, generated code, vendored deps; ensures token budget spent on highest-risk files | May miss issues in truncated/skipped files; requires tuning ignore patterns |
 | **Language-aware analyzer plugins** | Same policy interface works for Python, TS, JS, Go, Rust without forcing one parser strategy on every language | More upfront work per language; heuristic analyzers trade parser precision for zero extra dependencies |

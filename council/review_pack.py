@@ -8,9 +8,14 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
+from .analyzers.base import is_test_file
+from .analyzers.ecmascript import (
+    collect_javascript_exports,
+    collect_typescript_exports,
+)
 from .config import CouncilConfig
 from .schemas import (
     ChangedSymbol,
@@ -18,6 +23,106 @@ from .schemas import (
     GateZeroFinding,
     ReviewPack,
 )
+
+_ECMASCRIPT_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx")
+_ECMASCRIPT_IMPORT_PATTERNS = (
+    re.compile(r"""\b(?:import|export)\b[^'"\n]*?\bfrom\s*["'](?P<path>\.[^"']+)["']"""),
+    re.compile(r"""\bimport\s*["'](?P<path>\.[^"']+)["']"""),
+    re.compile(r"""\bimport\(\s*["'](?P<path>\.[^"']+)["']\s*\)"""),
+    re.compile(r"""\brequire\(\s*["'](?P<path>\.[^"']+)["']\s*\)"""),
+)
+
+
+def _normalize_repo_path(path: str) -> str:
+    """Normalize repo-relative paths across slash styles without touching disk."""
+    parts: list[str] = []
+    for part in path.replace("\\", "/").split("/"):
+        if not part or part == ".":
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    return "/".join(parts)
+
+
+def _join_repo_path(base_dir: PurePosixPath, relative_path: str) -> str:
+    """Resolve a relative repo path against a repo-relative parent directory."""
+    base = "/".join(part for part in base_dir.parts if part and part != ".")
+    if base:
+        return _normalize_repo_path(f"{base}/{relative_path}")
+    return _normalize_repo_path(relative_path)
+
+
+def _normalized_stem(path: str) -> str:
+    """Return a lowercase filename stem for repo-relative matching."""
+    return Path(_normalize_repo_path(path)).stem.lower()
+
+
+def _candidate_test_stems(path: str) -> set[str]:
+    """Return normalized test stems after stripping common test affixes."""
+    stem = _normalized_stem(path)
+    candidates = {stem}
+
+    if stem.startswith("test_"):
+        candidates.add(stem[5:])
+    if stem.endswith("_test"):
+        candidates.add(stem[:-5])
+
+    for suffix in (".test", ".spec"):
+        if stem.endswith(suffix):
+            candidates.add(stem[:-len(suffix)])
+
+    return {candidate for candidate in candidates if candidate}
+
+
+def _extract_ecmascript_symbols(
+    source: str,
+    file_path: str,
+    language: str,
+) -> list[ChangedSymbol]:
+    """Extract exported TypeScript/JavaScript symbols from raw source text."""
+    collector = (
+        collect_typescript_exports
+        if language == "typescript"
+        else collect_javascript_exports
+    )
+    lines = source.splitlines()
+    symbols: list[ChangedSymbol] = []
+
+    for symbol in collector(source):
+        signature = symbol.name
+        if 0 < symbol.line_no <= len(lines):
+            signature = lines[symbol.line_no - 1].strip()
+
+        symbols.append(ChangedSymbol(
+            name=symbol.name,
+            kind=symbol.kind,
+            file=file_path,
+            line_start=symbol.line_no,
+            line_end=symbol.line_no,
+            change_type="added",  # refined by _filter_to_changed_symbols
+            signature=signature,
+        ))
+
+    return symbols
+
+
+def _extract_symbols_for_review_pack(diff_file) -> list[ChangedSymbol]:
+    """Dispatch symbol extraction by file language for ReviewPack assembly."""
+    if not diff_file.source_content:
+        return []
+
+    if diff_file.language == "python":
+        return _extract_python_symbols(diff_file.source_content, diff_file.path)
+    if diff_file.language in {"typescript", "javascript"}:
+        return _extract_ecmascript_symbols(
+            diff_file.source_content,
+            diff_file.path,
+            diff_file.language,
+        )
+    return []
 
 
 def _extract_python_symbols(source: str, file_path: str) -> list[ChangedSymbol]:
@@ -94,7 +199,6 @@ def _extract_deleted_symbols(diff_file) -> list[ChangedSymbol]:
     patterns but won't detect multiline signatures. Good enough for catching
     deleted auth checks, removed validation, and breaking API removals.
     """
-    import re
     symbols: list[ChangedSymbol] = []
     seen: set[str] = set()
 
@@ -178,66 +282,114 @@ def _filter_to_changed_symbols(
 
 def _build_test_coverage_map(diff_context: DiffContext) -> dict[str, list[str]]:
     """Map source files to test files using imports and naming conventions."""
-
-    def _is_test_file(path: str) -> bool:
-        low = path.lower()
-        name = Path(path).name.lower()
-        return (
-            path.startswith("tests/")
-            or name.startswith("test_")
-            or name.endswith("_test.py")
-            or name == "conftest.py"
-            or "test" in low
-        )
-
-    test_entries = [f for f in diff_context.files if _is_test_file(f.path)]
-    source_entries = [f for f in diff_context.files if not _is_test_file(f.path)]
+    test_entries = [f for f in diff_context.files if is_test_file(f.path)]
+    source_entries = [f for f in diff_context.files if not is_test_file(f.path)]
 
     coverage_map: dict[str, list[str]] = {f.path: [] for f in source_entries}
 
     # Module path map for changed Python source files (e.g. council/cli.py -> council.cli)
     source_modules: dict[str, str] = {}
+    ecmascript_sources: dict[str, str] = {}
     for src in source_entries:
-        if src.path.endswith('.py'):
-            source_modules[src.path] = src.path[:-3].replace('/', '.')
+        normalized = _normalize_repo_path(src.path)
+        suffix = Path(normalized).suffix.lower()
+        if suffix == ".py":
+            source_modules[src.path] = normalized[:-3].replace("/", ".")
+        elif suffix in _ECMASCRIPT_EXTENSIONS:
+            ecmascript_sources[normalized] = src.path
 
-    for test in test_entries:
-        if not test.path.endswith('.py'):
-            continue
+    def _append_match(source_path: str, test_path: str) -> None:
+        if test_path not in coverage_map[source_path]:
+            coverage_map[source_path].append(test_path)
+
+    def _python_import_matches(test_source: str | None) -> list[str]:
+        if not test_source:
+            return []
 
         imports: set[str] = set()
         tree = None
-        if test.source_content:
-            try:
-                tree = ast.parse(test.source_content)
-            except Exception:
-                # ast.parse can also fail with RecursionError; safely fall back.
-                tree = None
+        try:
+            tree = ast.parse(test_source)
+        except Exception:
+            tree = None
 
-        if tree is not None:
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        imports.add(alias.name)
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    imports.add(node.module)
-                    for alias in node.names:
-                        if alias.name != '*':
-                            imports.add(f"{node.module}.{alias.name}")
+        if tree is None:
+            return []
 
-        matched_by_import = False
-        if imports:
-            for src_path, module in source_modules.items():
-                if any(imp == module or imp.startswith(f"{module}.") for imp in imports):
-                    coverage_map[src_path].append(test.path)
-                    matched_by_import = True
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.add(alias.name)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module)
+                for alias in node.names:
+                    if alias.name != '*':
+                        imports.add(f"{node.module}.{alias.name}")
+
+        matches: list[str] = []
+        for src_path, module in source_modules.items():
+            if any(imp == module or imp.startswith(f"{module}.") for imp in imports):
+                matches.append(src_path)
+        return matches
+
+    def _ecmascript_import_matches(test_path: str, test_source: str | None) -> list[str]:
+        if not test_source:
+            return []
+
+        imports: set[str] = set()
+        for pattern in _ECMASCRIPT_IMPORT_PATTERNS:
+            for match in pattern.finditer(test_source):
+                imports.add(match.group("path"))
+
+        if not imports:
+            return []
+
+        test_parent = PurePosixPath(_normalize_repo_path(test_path)).parent
+        matched_paths: list[str] = []
+
+        for import_path in imports:
+            resolved = _join_repo_path(test_parent, import_path)
+            suffix = Path(resolved).suffix.lower()
+            candidates: list[str]
+            if suffix in _ECMASCRIPT_EXTENSIONS:
+                candidates = [resolved]
+            else:
+                candidates = []
+                for ext in _ECMASCRIPT_EXTENSIONS:
+                    candidates.append(f"{resolved}{ext}")
+                    candidates.append(f"{resolved}/index{ext}")
+
+            for candidate in candidates:
+                source_path = ecmascript_sources.get(candidate)
+                if source_path and source_path not in matched_paths:
+                    matched_paths.append(source_path)
+
+        return matched_paths
+
+    def _fallback_matches(test_path: str) -> list[str]:
+        test_stems = _candidate_test_stems(test_path)
+        matches: list[str] = []
+        for src in source_entries:
+            if _normalized_stem(src.path) in test_stems:
+                matches.append(src.path)
+        return matches
+
+    for test in test_entries:
+        normalized_test_path = _normalize_repo_path(test.path)
+        suffix = Path(normalized_test_path).suffix.lower()
+
+        matched_paths: list[str] = []
+        if suffix == ".py":
+            matched_paths = _python_import_matches(test.source_content)
+        elif suffix in _ECMASCRIPT_EXTENSIONS:
+            matched_paths = _ecmascript_import_matches(test.path, test.source_content)
 
         # Fallback to filename-stem convention when imports are absent or do not match.
-        if not matched_by_import:
-            test_stem = Path(test.path).stem
-            for src in source_entries:
-                if Path(src.path).stem in test_stem:
-                    coverage_map[src.path].append(test.path)
+        if not matched_paths:
+            matched_paths = _fallback_matches(test.path)
+
+        for source_path in matched_paths:
+            _append_match(source_path, test.path)
 
     return coverage_map
 
@@ -277,37 +429,25 @@ def assemble(
         if diff_file.change_type == "deleted" or not diff_file.source_content:
             continue
 
-        if diff_file.language == "python":
-            file_symbols = _extract_python_symbols(diff_file.source_content, diff_file.path)
-            # Filter to only symbols that overlap with changed line ranges
+        file_symbols = _extract_symbols_for_review_pack(diff_file)
+        if file_symbols:
             changed = _filter_to_changed_symbols(
                 file_symbols,
                 diff_file,
                 is_new_file=(diff_file.change_type == "added"),
             )
             all_symbols.extend(changed)
-        # Future: add TypeScript, JavaScript extractors here
 
     # Build test coverage map
     test_map = _build_test_coverage_map(diff_context)
 
     # Mark symbols that have tests
-    def _is_test_path(path: str) -> bool:
-        lower = path.lower()
-        name = Path(path).name.lower()
-        return (
-            path.startswith("tests/")
-            or name.startswith("test_")
-            or name.endswith("_test.py")
-            or name == "conftest.py"
-        )
-
     for symbol in all_symbols:
         tests = test_map.get(symbol.file, [])
         if tests:
             symbol.has_tests = True
             symbol.test_file = tests[0]
-        elif _is_test_path(symbol.file):
+        elif is_test_file(symbol.file):
             symbol.has_tests = True
             symbol.test_file = symbol.file
 

@@ -30,6 +30,7 @@ class DoctorReport:
 
     @property
     def exit_code(self) -> int:
+        """Return `1` when any doctor check failed, else `0`."""
         return 1 if any(check.status == "FAIL" for check in self.checks) else 0
 
 
@@ -70,6 +71,8 @@ def _extract_pr_number(event_path: str) -> int | None:
         return None
 
     number = pr.get("number")
+    if isinstance(number, bool):
+        return None
     if isinstance(number, int) and number > 0:
         return number
     if isinstance(number, str) and number.isdigit():

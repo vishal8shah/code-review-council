@@ -4274,3 +4274,12 @@ def test_run_doctor_fails_when_github_pr_context_missing(monkeypatch):
     github_check = next(check for check in report.checks if check.name == "github_pr")
 
     assert github_check.status == "FAIL"
+
+
+def test_doctor_extract_pr_number_ignores_boolean(tmp_path):
+    from council.doctor import _extract_pr_number
+
+    event_path = tmp_path / "event.json"
+    event_path.write_text('{"pull_request": {"number": true}}', encoding="utf-8")
+
+    assert _extract_pr_number(str(event_path)) is None

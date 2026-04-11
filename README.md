@@ -329,7 +329,7 @@ Add your infographic PNGs under `site/docs/assets/infographics/`. If you fork, u
 ## ⚠️ Known Limitations (V1 Alpha)
 
 - **Model compatibility**: V1 uses `response_format={"type": "json_object"}` which is supported by OpenAI and Anthropic models via LiteLLM. Gemini and other providers may not support this parameter. If using non-OpenAI/Anthropic models, test compatibility first. A fallback mechanism is planned.
-- **Language support**: Gate Zero analyzers (docstrings, type hints) are implemented for Python only. TypeScript/JavaScript analyzers are disabled by default pending implementation. The diff preprocessor, reviewer panel, and Chair work with any language.
+- **Language support**: Gate Zero analyzers now cover Python, TypeScript, and JavaScript. TypeScript uses dependency-free exported-symbol checks for JSDoc plus explicit function parameter/return types; JavaScript enforces exported JSDoc only. TypeScript/JavaScript analyzers remain disabled by default until explicitly enabled in `[gate_zero.analyzers]`. The diff preprocessor, reviewer panel, and Chair work with any language.
 - **Test coverage map**: Only detects test files present in the current diff, not the full repo. The QA reviewer is informed this is a weak signal.
 - **Large file handling**: Files exceeding the token budget are truncated, not split at logical boundaries. Truncated files are labeled in the ReviewPack.
 - **GitHub API variability**: `--github-pr` supports sticky PR comments and workflow annotations, but still runs in best-effort mode. You can tune retries/timeouts with `COUNCIL_GITHUB_MAX_RETRIES`, `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS`, and `COUNCIL_GITHUB_HTTP_TIMEOUT` for noisy CI networks.

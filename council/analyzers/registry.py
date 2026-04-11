@@ -5,12 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from .base import BaseAnalyzer
+from .javascript import JavaScriptAnalyzer
 from .python import PythonAnalyzer
+from .typescript import TypeScriptAnalyzer
 
 # Register all available analyzers
 _ANALYZERS: list[type[BaseAnalyzer]] = [
     PythonAnalyzer,
-    # TypeScriptAnalyzer and JavaScriptAnalyzer will be added in future
+    TypeScriptAnalyzer,
+    JavaScriptAnalyzer,
 ]
 
 # Build extension → analyzer mapping

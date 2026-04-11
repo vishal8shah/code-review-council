@@ -319,12 +319,12 @@ class ReviewPack(BaseModel):
     branch: str
     commit_range: str                  # e.g., "abc123..def456"
     total_lines_changed: int
-    token_estimate: int                # estimated tokens this pack will consume
-    files_truncated: list[str]         # files that were chunked or budget-trimmed
-    files_skipped: list[str]           # files excluded by ignore patterns
+    token_estimate: int                # estimated tokens in the reviewer-visible diff text
+    files_truncated: list[str]         # files whose hunks were truncated to fit per-file limits
+    files_skipped: list[str]           # files filtered or dropped from diff text before reviewer calls
 ```
 
-**Why this matters:** Without a ReviewPack, even excellent prompts degrade fast. A SecOps reviewer seeing raw diff text has to infer which functions are public, whether tests exist, and what the repo's security policies are. With a ReviewPack, those facts are explicit. The reviewer can focus on judgment, not context reconstruction.
+**Why this matters:** Without a ReviewPack, even excellent prompts degrade fast. A SecOps reviewer seeing raw diff text has to infer which functions are public, whether tests exist, and what the repo's security policies are. With a ReviewPack, those facts are explicit. The reviewer can focus on judgment, not context reconstruction. The diff text remains budgeted for model safety, but ReviewPack metadata now comes from the full filtered PR diff so changed tests/docs/config still inform review even when their hunks fall outside the token budget.
 
 ### Stage 1 — Reviewer Panel (Parallel LLM Calls)
 

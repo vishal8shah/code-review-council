@@ -37,6 +37,7 @@ from council.gate_zero import (
     check_secrets,
 )
 from council.diff_preprocessor import (
+    filter_context,
     process,
     _should_ignore,
     _is_generated,
@@ -4342,3 +4343,218 @@ def test_effective_review_token_budget_caps_gpt4o_models():
     assert effective_review_token_budget(config, ["openai/gpt-5.2"]) == 30_000
     assert effective_review_token_budget(config, ["openai/gpt-4o"]) == 20_000
     assert effective_review_token_budget(config, ["openai/gpt-5.2", "openai/gpt-4o-mini"]) == 20_000
+
+
+def test_llm_transport_helper_classification_and_provider_mapping():
+    from council.llm_transport import classify_model_json_support, provider_env_var_for_model
+
+    assert classify_model_json_support("openai/gpt-4o") == "native"
+    assert classify_model_json_support("google/gemini-2.5-pro") == "fallback_likely"
+    assert classify_model_json_support("custom/model") == "unknown"
+
+    assert provider_env_var_for_model("openai/gpt-5.2") == "OPENAI_API_KEY"
+    assert provider_env_var_for_model("anthropic/claude-sonnet-4-20250514") == "ANTHROPIC_API_KEY"
+    assert provider_env_var_for_model("google/gemini-2.5-pro") == "GOOGLE_API_KEY"
+    assert provider_env_var_for_model("custom/model") is None
+
+
+def test_llm_transport_helper_json_detection_and_loading():
+    from council.llm_transport import (
+        extract_json_object,
+        is_response_format_unsupported_error,
+        load_json_object,
+    )
+
+    payload = "prefix ```json\n{\"verdict\":\"PASS\",\"confidence\":0.8}\n``` suffix"
+
+    assert extract_json_object(payload) == '{"verdict":"PASS","confidence":0.8}'
+    assert load_json_object(payload) == {"verdict": "PASS", "confidence": 0.8}
+    assert is_response_format_unsupported_error(
+        RuntimeError("response_format json_object is not supported by this model")
+    ) is True
+    assert is_response_format_unsupported_error(RuntimeError("temporary timeout")) is False
+
+
+def test_doctor_run_git_uses_hardened_env():
+    import os
+    import subprocess
+
+    from council.doctor import _run_git
+
+    completed = MagicMock(returncode=0, stdout="ok", stderr="")
+
+    with patch("council.doctor.subprocess.run", return_value=completed) as mock_run:
+        result = _run_git(Path.cwd(), "rev-parse", "HEAD")
+
+    assert result is completed
+    _, kwargs = mock_run.call_args
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+    assert kwargs["cwd"] == Path.cwd()
+    assert kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert kwargs["env"]["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert kwargs["env"]["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert kwargs["env"]["GIT_CONFIG_SYSTEM"] == os.devnull
+    assert kwargs["env"]["GIT_ASKPASS"] == ""
+    assert kwargs["env"]["SSH_ASKPASS"] == ""
+    assert kwargs["env"]["GIT_PAGER"] == "cat"
+
+
+def test_reviewer_invalid_json_error_is_sanitized():
+    reviewer = BaseReviewer(reviewer_id="qa", model="test")
+
+    output = reviewer._parse_response("secret raw model output", tokens_used=5)
+
+    assert output.integrity_error is True
+    assert output.error == "integrity issue: Invalid JSON returned by reviewer model"
+    assert "secret raw model output" not in output.error
+
+
+@pytest.mark.asyncio
+async def test_chair_invalid_json_error_is_sanitized():
+    from council.llm_transport import JSONCompletionResult
+
+    review_pack = ReviewPack(diff_text="+x", changed_files=["a.py"])
+    reviews = [
+        ReviewerOutput(
+            reviewer_id="secops",
+            model="m",
+            verdict="FAIL",
+            confidence=0.9,
+            findings=[
+                Finding(
+                    severity="HIGH",
+                    category="security",
+                    file="a.py",
+                    description="issue",
+                    suggestion="fix",
+                )
+            ],
+        )
+    ]
+
+    with patch(
+        "council.chair.invoke_json_completion",
+        new=AsyncMock(
+            return_value=JSONCompletionResult(
+                raw_content="secret raw chair output",
+                tokens_used=3,
+                output_mode="response_format",
+            )
+        ),
+    ):
+        verdict = await synthesize(review_pack, reviews)
+
+    assert verdict.verdict == "FAIL"
+    assert "Invalid JSON returned by chair model" in verdict.summary
+    assert "secret raw chair output" not in verdict.summary
+    assert "secret raw chair output" not in verdict.rationale
+    assert all("secret raw chair output" not in reason for reason in verdict.degraded_reasons)
+
+
+def test_review_pack_retains_full_diff_metadata_when_budget_skips_tests_and_docs():
+    source_content = (
+        "def important_fn() -> bool:\n"
+        "    return True\n"
+    )
+    test_content = (
+        "from src.app import important_fn\n\n"
+        + "\n\n".join(
+            f"def test_case_{i}() -> None:\n    assert important_fn() is True"
+            for i in range(40)
+        )
+        + "\n"
+    )
+    readme_content = "\n".join(f"# note {i}" for i in range(60)) + "\n"
+
+    diff_context = DiffContext(
+        files=[
+            DiffFile(
+                path="src/app.py",
+                language="python",
+                change_type="added",
+                additions=2,
+                hunks=[
+                    DiffHunk(
+                        source_start=0,
+                        source_length=0,
+                        target_start=1,
+                        target_length=2,
+                        content=source_content,
+                    )
+                ],
+                source_content=source_content,
+            ),
+            DiffFile(
+                path="tests/test_app.py",
+                language="python",
+                change_type="modified",
+                additions=80,
+                hunks=[
+                    DiffHunk(
+                        source_start=1,
+                        source_length=0,
+                        target_start=1,
+                        target_length=80,
+                        content=test_content,
+                    )
+                ],
+                source_content=test_content,
+            ),
+            DiffFile(
+                path="README.md",
+                language="markdown",
+                change_type="modified",
+                additions=60,
+                hunks=[
+                    DiffHunk(
+                        source_start=1,
+                        source_length=0,
+                        target_start=1,
+                        target_length=60,
+                        content=readme_content,
+                    )
+                ],
+                source_content=readme_content,
+            ),
+        ],
+        changed_files=["src/app.py", "tests/test_app.py", "README.md"],
+        added_files=["src/app.py"],
+        deleted_files=[],
+        branch="feature/full-diff-metadata",
+        total_additions=142,
+        total_deletions=0,
+    )
+
+    preprocessor_config = CouncilConfig().preprocessor.model_copy(
+        update={"max_review_tokens": 40, "max_file_tokens": 1_000}
+    )
+
+    filtered_full_diff, filtered_skipped = filter_context(diff_context, preprocessor_config)
+    processed_diff, budget_skipped, truncated_files = process(
+        filtered_full_diff,
+        preprocessor_config,
+        reviewer_models=["openai/gpt-4o"],
+    )
+    skipped_files = filtered_skipped + budget_skipped
+
+    review_pack = assemble(
+        diff_context=processed_diff,
+        gate_zero_findings=[],
+        config=CouncilConfig(),
+        skipped_files=skipped_files,
+        truncated_files=truncated_files,
+        metadata_context=filtered_full_diff,
+    )
+
+    assert [file.path for file in processed_diff.files] == ["src/app.py"]
+    assert "tests/test_app.py" in review_pack.changed_files
+    assert "README.md" in review_pack.changed_files
+    assert "tests/test_app.py" in review_pack.files_skipped
+    assert "README.md" in review_pack.files_skipped
+    assert "tests/test_app.py" in review_pack.test_coverage_map["src/app.py"]
+    assert any(
+        symbol.name == "important_fn" and symbol.has_tests and symbol.test_file == "tests/test_app.py"
+        for symbol in review_pack.changed_symbols
+    )

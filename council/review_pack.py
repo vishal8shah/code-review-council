@@ -410,16 +410,20 @@ def assemble(
     config: CouncilConfig,
     skipped_files: list[str] | None = None,
     truncated_files: list[str] | None = None,
+    metadata_context: DiffContext | None = None,
 ) -> ReviewPack:
     """Assemble a ReviewPack from the preprocessed diff context."""
+    metadata_source = metadata_context or diff_context
+
     # Extract symbols from all non-deleted files with source content
     all_symbols: list[ChangedSymbol] = []
-    languages: set[str] = set()
+    languages: set[str] = {
+        diff_file.language
+        for diff_file in metadata_source.files
+        if diff_file.language
+    }
 
     for diff_file in diff_context.files:
-        if diff_file.language:
-            languages.add(diff_file.language)
-
         # Extract deleted symbols from removed lines in hunks
         # (works for any language — regex-based, doesn't need source_content)
         if diff_file.change_type in ("deleted", "modified") and diff_file.hunks:
@@ -439,7 +443,7 @@ def assemble(
             all_symbols.extend(changed)
 
     # Build test coverage map
-    test_map = _build_test_coverage_map(diff_context)
+    test_map = _build_test_coverage_map(metadata_source)
 
     # Mark symbols that have tests
     for symbol in all_symbols:
@@ -477,17 +481,17 @@ def assemble(
 
     return ReviewPack(
         diff_text=diff_text,
-        changed_files=diff_context.changed_files,
-        added_files=diff_context.added_files,
-        deleted_files=diff_context.deleted_files,
+        changed_files=metadata_source.changed_files,
+        added_files=metadata_source.added_files,
+        deleted_files=metadata_source.deleted_files,
         changed_symbols=all_symbols,
         test_coverage_map=test_map,
         languages_detected=sorted(languages - {"markdown", "toml", "yaml", "json"}),
         gate_zero_results=gate_zero_findings,
         repo_policies=repo_policies,
-        branch=diff_context.branch,
-        commit_range=diff_context.commit_range,
-        total_lines_changed=diff_context.total_additions + diff_context.total_deletions,
+        branch=metadata_source.branch,
+        commit_range=metadata_source.commit_range,
+        total_lines_changed=metadata_source.total_additions + metadata_source.total_deletions,
         token_estimate=_estimate_tokens(diff_text),
         files_truncated=truncated_files or [],
         files_skipped=skipped_files or [],

@@ -151,15 +151,22 @@ async def run_council(
     if gate_result.hard_fail:
         return CouncilResult(verdict=gate_result.as_early_exit(), gate_result=gate_result)
 
-    processed_diff, skipped_files, truncated_files = diff_preprocessor.process(
+    filtered_full_diff, filtered_skipped = diff_preprocessor.filter_context(
         diff_context,
+        config=config.preprocessor,
+        repo_root=repo_root,
+    )
+    processed_diff, budget_skipped, truncated_files = diff_preprocessor.process(
+        filtered_full_diff,
         config=config.preprocessor,
         repo_root=repo_root,
         reviewer_models=[reviewer.model for reviewer in config.active_reviewers],
     )
+    skipped_files = filtered_skipped + budget_skipped
 
     review_pack = rp_module.assemble(
         diff_context=processed_diff,
+        metadata_context=filtered_full_diff,
         gate_zero_findings=gate_result.findings,
         config=config,
         skipped_files=skipped_files,

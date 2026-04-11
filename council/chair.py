@@ -8,11 +8,39 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
 
 import litellm
 
+from .analyzers.base import is_test_file
 from .llm_transport import invoke_json_completion, load_json_object
 from .schemas import ChairFinding, ChairVerdict, OwnerFindingView, OwnerPresentation, ReviewerOutput, ReviewPack
+
+_DOC_EXTENSIONS = {".md", ".rst", ".txt"}
+_CONFIG_EXTENSIONS = {".cfg", ".ini", ".json", ".toml", ".yaml", ".yml"}
+
+
+def _support_files_outside_budget(paths: list[str]) -> str:
+    """Summarize skipped test, docs, and config files that still changed."""
+    buckets: dict[str, list[str]] = {"Tests": [], "Docs": [], "Config": []}
+
+    for path in paths:
+        normalized = path.replace("\\", "/").lower()
+        suffix = Path(normalized).suffix.lower()
+
+        if is_test_file(path):
+            buckets["Tests"].append(path)
+        elif normalized.startswith("docs/") or suffix in _DOC_EXTENSIONS:
+            buckets["Docs"].append(path)
+        elif normalized.startswith(".github/workflows/") or suffix in _CONFIG_EXTENSIONS:
+            buckets["Config"].append(path)
+
+    lines = [
+        f"- {label}: {', '.join(entries)}"
+        for label, entries in buckets.items()
+        if entries
+    ]
+    return "\n".join(lines)
 
 
 CHAIR_SYSTEM_PROMPT = """You are the Council Chair of a Code Review Council. You receive independent
@@ -139,6 +167,12 @@ def _build_chair_message(review_pack: ReviewPack, reviews: list[ReviewerOutput])
     skipped_text = ""
     if review_pack.files_skipped:
         skipped_text = f"\n### Files Skipped by Preprocessor\n{', '.join(review_pack.files_skipped)}\n"
+        support_summary = _support_files_outside_budget(review_pack.files_skipped)
+        if support_summary:
+            skipped_text += (
+                "\n### Changed Support Files Outside Review Budget\n"
+                f"{support_summary}\n"
+            )
     if review_pack.files_truncated:
         skipped_text += f"\n### Files Truncated\n{', '.join(review_pack.files_truncated)}\n"
 
@@ -247,7 +281,7 @@ async def synthesize(
 
         parsed = load_json_object(response.raw_content)
         if parsed is None:
-            raise ValueError(f"Invalid JSON: {response.raw_content[:200]}")
+            raise ValueError("Invalid JSON returned by chair model")
 
         accepted = []
         for f in parsed.get("accepted_blockers", []):

@@ -36,9 +36,21 @@ class DoctorReport:
 
 def _run_git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run a git command in the target repo and capture text output."""
+    env = os.environ.copy()
+    env.update({
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_ASKPASS": "",
+        "SSH_ASKPASS": "",
+        "GIT_PAGER": "cat",
+    })
     return subprocess.run(
         ["git", *args],
         cwd=repo_root,
+        env=env,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
     )

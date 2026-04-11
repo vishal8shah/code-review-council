@@ -159,6 +159,45 @@ def effective_review_token_budget(
     return budget
 
 
+def _build_context(diff_context: DiffContext, files: list[DiffFile]) -> DiffContext:
+    """Rebuild a DiffContext after filtering or budget trimming."""
+    return DiffContext(
+        files=files,
+        changed_files=[f.path for f in files],
+        added_files=[f.path for f in files if f.change_type == "added"],
+        deleted_files=[f.path for f in files if f.change_type == "deleted"],
+        branch=diff_context.branch,
+        commit_range=diff_context.commit_range,
+        total_additions=sum(f.additions for f in files),
+        total_deletions=sum(f.deletions for f in files),
+    )
+
+
+def filter_context(
+    diff_context: DiffContext,
+    config: PreprocessorConfig,
+    repo_root: Path | None = None,
+) -> tuple[DiffContext, list[str]]:
+    """Remove ignored and generated files while preserving full diff metadata."""
+    if repo_root is None:
+        repo_root = Path.cwd()
+
+    ignore_patterns = _load_ignore_patterns(repo_root, config.ignore_file)
+    skipped_files: list[str] = []
+    kept_files: list[DiffFile] = []
+
+    for diff_file in diff_context.files:
+        if _should_ignore(diff_file.path, ignore_patterns):
+            skipped_files.append(diff_file.path)
+            continue
+        if config.detect_generated and _is_generated(diff_file):
+            skipped_files.append(diff_file.path)
+            continue
+        kept_files.append(diff_file)
+
+    return _build_context(diff_context, kept_files), skipped_files
+
+
 def process(
     diff_context: DiffContext,
     config: PreprocessorConfig,
@@ -173,20 +212,10 @@ def process(
     if repo_root is None:
         repo_root = Path.cwd()
 
-    ignore_patterns = _load_ignore_patterns(repo_root, config.ignore_file)
-    skipped_files: list[str] = []
+    filtered_context, filtered_skipped = filter_context(diff_context, config, repo_root=repo_root)
+    skipped_files: list[str] = list(filtered_skipped)
     truncated_files: list[str] = []
-
-    # Step 1: Filter out ignored and generated files
-    kept_files: list[DiffFile] = []
-    for f in diff_context.files:
-        if _should_ignore(f.path, ignore_patterns):
-            skipped_files.append(f.path)
-            continue
-        if config.detect_generated and _is_generated(f):
-            skipped_files.append(f.path)
-            continue
-        kept_files.append(f)
+    kept_files = list(filtered_context.files)
 
     # Step 2: Sort by priority (highest first)
     kept_files.sort(key=lambda f: _file_priority(f, config.priorities), reverse=True)
@@ -229,16 +258,6 @@ def process(
         total_tokens += file_tokens
         budget_files.append(f)
 
-    # Build filtered DiffContext
-    processed = DiffContext(
-        files=budget_files,
-        changed_files=[f.path for f in budget_files],
-        added_files=[f.path for f in budget_files if f.change_type == "added"],
-        deleted_files=[f.path for f in budget_files if f.change_type == "deleted"],
-        branch=diff_context.branch,
-        commit_range=diff_context.commit_range,
-        total_additions=sum(f.additions for f in budget_files),
-        total_deletions=sum(f.deletions for f in budget_files),
-    )
+    processed = _build_context(filtered_context, budget_files)
 
     return processed, skipped_files, truncated_files

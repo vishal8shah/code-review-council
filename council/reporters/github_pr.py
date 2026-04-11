@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import time
+from urllib.parse import urlparse
 from urllib import error, request
 
 from .transport import reviewer_output_mode, transport_notes
@@ -251,6 +252,41 @@ def _read_int_env(name: str, default: int, minimum: int) -> int:
     return max(minimum, parsed)
 
 
+def _resolve_github_api_url(raw_url: str | None) -> str:
+    """Return a strictly validated GitHub API base URL.
+
+    Accepts the public GitHub API default and strict GitHub Enterprise-style
+    `https://host/api/v3` URLs. Anything else falls back to the public default.
+    """
+    default_url = "https://api.github.com"
+    if not raw_url:
+        return default_url
+
+    parsed = urlparse(raw_url.strip())
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        return default_url
+
+    path = parsed.path.rstrip("/")
+    if parsed.hostname.lower() == "api.github.com" and path in {"", "/"}:
+        return default_url
+
+    if path != "/api/v3":
+        return default_url
+
+    netloc = parsed.hostname
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    return f"https://{netloc}/api/v3"
+
+
 def _build_inline_comment_candidates(verdict: ChairVerdict) -> list[dict]:
     """Return deduped inline comment payloads for accepted findings with file/line info."""
     candidates: list[dict] = []
@@ -379,7 +415,7 @@ def post_github_pr_review(
     repo = os.getenv("GITHUB_REPOSITORY")
     token = os.getenv("GITHUB_TOKEN")
     event_path = os.getenv("GITHUB_EVENT_PATH")
-    api_url = os.getenv("GITHUB_API_URL", "https://api.github.com")
+    api_url = _resolve_github_api_url(os.getenv("GITHUB_API_URL"))
     http_timeout = _read_float_env("COUNCIL_GITHUB_HTTP_TIMEOUT", DEFAULT_HTTP_TIMEOUT_SECONDS, minimum=1.0)
     max_retries = _read_int_env("COUNCIL_GITHUB_MAX_RETRIES", DEFAULT_MAX_RETRIES, minimum=0)
     backoff_seconds = _read_float_env("COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS", DEFAULT_BACKOFF_SECONDS, minimum=0.0)

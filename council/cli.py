@@ -296,7 +296,7 @@ local_mode = "advisory"
 on_integrity_issue = "fail"
 
 [preprocessor]
-max_review_tokens = 30000
+max_review_tokens = 20000
 max_file_tokens = 8000
 ignore_file = ".councilignore"
 detect_generated = true

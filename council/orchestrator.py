@@ -155,6 +155,7 @@ async def run_council(
         diff_context,
         config=config.preprocessor,
         repo_root=repo_root,
+        reviewer_models=[reviewer.model for reviewer in config.active_reviewers],
     )
 
     review_pack = rp_module.assemble(

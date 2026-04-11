@@ -35,6 +35,7 @@ class DoctorReport:
 
 
 def _run_git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run a git command in the target repo and capture text output."""
     return subprocess.run(
         ["git", *args],
         cwd=repo_root,
@@ -43,12 +44,31 @@ def _run_git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _is_valid_branch_name(repo_root: Path, branch: str) -> bool:
+    """Return True when `branch` is a valid branch-style ref name."""
+    if not branch:
+        return False
+    result = _run_git(repo_root, "check-ref-format", "--branch", branch)
+    return result.returncode == 0
+
+
 def _git_ref_exists(repo_root: Path, ref_name: str) -> bool:
-    result = _run_git(repo_root, "rev-parse", "--verify", "--quiet", f"{ref_name}^{{commit}}")
+    """Return True when `ref_name` resolves to a commit in this repo."""
+    result = _run_git(
+        repo_root,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "--end-of-options",
+        f"{ref_name}^{{commit}}",
+    )
     return result.returncode == 0
 
 
 def _resolve_branch_target(repo_root: Path, branch: str) -> str | None:
+    """Resolve a validated branch name to a local or remote-tracking ref."""
+    if not _is_valid_branch_name(repo_root, branch):
+        return None
     if _git_ref_exists(repo_root, branch):
         return branch
     remote_ref = f"origin/{branch}"

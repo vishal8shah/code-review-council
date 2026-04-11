@@ -45,7 +45,7 @@ class PreprocessorPriorities(BaseModel):
 class PreprocessorConfig(BaseModel):
     """Diff preprocessor settings."""
 
-    max_review_tokens: int = 30_000
+    max_review_tokens: int = 20_000
     max_file_tokens: int = 8_000
     ignore_file: str = ".councilignore"
     detect_generated: bool = True

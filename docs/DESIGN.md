@@ -249,7 +249,7 @@ The Diff Preprocessor runs after Gate Zero and before ReviewPack assembly:
 |----------|-----------|-----------------|
 | **Ignore patterns** | `.councilignore` file (gitignore syntax) | Skip `package-lock.json`, `*.lock`, `*.min.js`, `*.generated.*`, `vendor/`, `dist/`, `node_modules/` |
 | **Generated file detection** | Header comment patterns (`// @generated`, `# auto-generated`) + known paths | Exclude from LLM review; flag in report as "skipped" |
-| **Token budget enforcement** | tiktoken estimation per file | If total diff exceeds `max_review_tokens` (default: 30,000), truncate lowest-priority files first |
+| **Token budget enforcement** | tiktoken estimation per file | If total diff exceeds `max_review_tokens` (default: 20,000), truncate lowest-priority files first. Some model mixes may be capped more aggressively in practice to stay below provider request-size limits |
 | **File prioritization** | Security-sensitive files first (auth, crypto, API routes), then business logic, then tests, then config/docs | Ensures token budget is spent on highest-risk code |
 | **Chunking** | For files exceeding `max_file_tokens` (default: 8,000), truncate to the token limit | V1 truncates at the token boundary. Future versions may split at parser-aware function/class boundaries. Truncated files are labeled in the ReviewPack |
 
@@ -257,7 +257,7 @@ The Diff Preprocessor runs after Gate Zero and before ReviewPack assembly:
 
 ```toml
 [preprocessor]
-max_review_tokens = 30000          # total token budget for LLM reviewers
+max_review_tokens = 20000          # total token budget for LLM reviewers
 max_file_tokens = 8000             # per-file limit before chunking
 ignore_file = ".councilignore"     # gitignore-style exclusion patterns
 
@@ -874,7 +874,7 @@ $ council review
 
 🏛️  Code Review Council — Reviewing 7 files, 342 lines changed
   ℹ️  Skipped 2 files (package-lock.json, dist/bundle.min.js)
-  ℹ️  Token budget: 12,400 / 30,000
+  ℹ️  Token budget: 12,400 / 20,000
 
   Stage 0: Gate Zero ........... ✅ PASSED (1.2s)
   ReviewPack assembled: 5 changed symbols, 2 with tests
@@ -989,7 +989,7 @@ local_mode = "advisory"            # advisory (never blocks) | gate (blocks push
 # CI is the primary enforcement point; local is for fast feedback
 
 [preprocessor]
-max_review_tokens = 30000          # total token budget for LLM reviewers
+max_review_tokens = 20000          # total token budget for LLM reviewers
 max_file_tokens = 8000             # per-file limit before chunking
 ignore_file = ".councilignore"     # gitignore-style exclusion patterns
 detect_generated = true            # auto-skip files with @generated headers

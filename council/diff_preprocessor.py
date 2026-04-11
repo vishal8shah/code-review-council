@@ -38,6 +38,11 @@ SECURITY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_MODEL_REVIEW_TOKEN_CAPS: tuple[tuple[str, int], ...] = (
+    ("gpt-4o-mini", 20_000),
+    ("gpt-4o", 20_000),
+)
+
 
 def _load_ignore_patterns(repo_root: Path, ignore_file: str) -> list[str]:
     """Load ignore patterns from .councilignore or use defaults."""
@@ -133,10 +138,32 @@ def _file_priority(diff_file: DiffFile, priorities: PreprocessorPriorities | Non
     return priorities.business  # default for source code
 
 
+def effective_review_token_budget(
+    config: PreprocessorConfig,
+    reviewer_models: list[str] | None = None,
+) -> int:
+    """Return the effective total review budget for the configured reviewer mix.
+
+    Some models have tighter practical request-size limits than the global
+    default budget once prompts, symbol summaries, and metadata are added.
+    Cap the diff budget conservatively for those models so required CI checks
+    fail less often on large PRs.
+    """
+    budget = config.max_review_tokens
+    for model in reviewer_models or []:
+        normalized = (model or "").strip().lower()
+        for marker, cap in _MODEL_REVIEW_TOKEN_CAPS:
+            if marker in normalized:
+                budget = min(budget, cap)
+                break
+    return budget
+
+
 def process(
     diff_context: DiffContext,
     config: PreprocessorConfig,
     repo_root: Path | None = None,
+    reviewer_models: list[str] | None = None,
 ) -> tuple[DiffContext, list[str], list[str]]:
     """Filter, prioritize, and budget-manage a diff.
 
@@ -165,6 +192,7 @@ def process(
     kept_files.sort(key=lambda f: _file_priority(f, config.priorities), reverse=True)
 
     # Step 3: Token budget enforcement
+    max_review_tokens = effective_review_token_budget(config, reviewer_models)
     total_tokens = 0
     budget_files: list[DiffFile] = []
 
@@ -193,7 +221,7 @@ def process(
             )
             file_tokens = config.max_file_tokens
 
-        if total_tokens + file_tokens > config.max_review_tokens:
+        if total_tokens + file_tokens > max_review_tokens:
             # Budget exhausted — skip remaining lower-priority files
             skipped_files.append(f.path)
             continue

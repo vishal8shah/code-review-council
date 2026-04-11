@@ -36,7 +36,13 @@ from council.gate_zero import (
     check_readme_updated,
     check_secrets,
 )
-from council.diff_preprocessor import process, _should_ignore, _is_generated, _file_priority
+from council.diff_preprocessor import (
+    process,
+    _should_ignore,
+    _is_generated,
+    _file_priority,
+    effective_review_token_budget,
+)
 from council.review_pack import (
     assemble,
     _build_test_coverage_map,
@@ -4179,6 +4185,29 @@ def test_github_pr_comment_body_includes_transport_notes():
     assert "prompt_json_fallback" in body
 
 
+def test_transport_report_helpers_have_direct_coverage():
+    from council.reporters.transport import reviewer_output_mode, transport_notes
+
+    verdict = ChairVerdict(
+        verdict="PASS_WITH_WARNINGS",
+        confidence=0.7,
+        chair_output_mode="prompt_json_fallback",
+        summary="summary",
+        rationale="rationale",
+    )
+    reviewer = ReviewerOutput(
+        reviewer_id="architect",
+        model="m",
+        verdict="PASS",
+        confidence=0.8,
+        output_mode="prompt_json_fallback",
+    )
+
+    notes = transport_notes(verdict, [reviewer])
+    assert notes
+    assert reviewer_output_mode(reviewer) == "prompt_json_fallback"
+
+
 def test_github_pr_inline_comment_candidates_dedupe_and_skip_missing_lines():
     from council.reporters.github_pr import _build_inline_comment_candidates
 
@@ -4218,6 +4247,14 @@ def test_github_pr_inline_comment_candidates_dedupe_and_skip_missing_lines():
     assert candidates[0]["line"] == 9
 
 
+def test_github_api_url_is_strictly_validated(monkeypatch):
+    from council.reporters.github_pr import _resolve_github_api_url
+
+    monkeypatch.setenv("GITHUB_API_URL", "http://169.254.169.254/latest/meta-data")
+    assert _resolve_github_api_url("http://169.254.169.254/latest/meta-data") == "https://api.github.com"
+    assert _resolve_github_api_url("https://ghe.example.com/api/v3") == "https://ghe.example.com/api/v3"
+
+
 def test_doctor_command_help_mentions_new_options():
     from typer.testing import CliRunner
     from council.cli import app
@@ -4242,6 +4279,18 @@ def test_run_doctor_fails_for_missing_keys_and_invalid_branch(monkeypatch):
 
     assert report.exit_code == 1
     assert statuses["api_keys"] == "FAIL"
+    assert statuses["diff_target"] == "FAIL"
+
+
+def test_run_doctor_rejects_option_like_branch(monkeypatch):
+    from council.doctor import run_doctor
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    report = run_doctor(repo_root=Path.cwd(), config=load_config(Path.cwd()), branch="--help")
+    statuses = {check.name: check.status for check in report.checks}
+
+    assert report.exit_code == 1
     assert statuses["diff_target"] == "FAIL"
 
 
@@ -4283,3 +4332,13 @@ def test_doctor_extract_pr_number_ignores_boolean(tmp_path):
     event_path.write_text('{"pull_request": {"number": true}}', encoding="utf-8")
 
     assert _extract_pr_number(str(event_path)) is None
+
+
+def test_effective_review_token_budget_caps_gpt4o_models():
+    from council.config import PreprocessorConfig
+
+    config = PreprocessorConfig(max_review_tokens=30_000)
+
+    assert effective_review_token_budget(config, ["openai/gpt-5.2"]) == 30_000
+    assert effective_review_token_budget(config, ["openai/gpt-4o"]) == 20_000
+    assert effective_review_token_budget(config, ["openai/gpt-5.2", "openai/gpt-4o-mini"]) == 20_000

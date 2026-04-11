@@ -220,19 +220,16 @@ If a reviewer finding reinforces a Gate Zero finding, it carries more weight.
 Render your final verdict as JSON."""
 
 
-async def synthesize(
-    review_pack: ReviewPack,
+def _chair_fast_path_verdict(
     reviews: list[ReviewerOutput],
-    chair_model: str = "openai/gpt-4o",
-    degraded: bool = False,
-    degraded_reasons: list[str] | None = None,
-    timeout: float = 120.0,
-) -> ChairVerdict:
-    """Run the Chair synthesis to produce a final verdict."""
-    all_findings = [f for r in reviews for f in r.findings]
-    all_errored = bool(reviews) and all(r.error is not None for r in reviews)
-    all_pass = bool(reviews) and all(r.verdict == "PASS" for r in reviews)
-    all_clean = bool(reviews) and all(r.error is None for r in reviews)
+    degraded: bool,
+    degraded_reasons: list[str] | None,
+) -> ChairVerdict | None:
+    """Return a deterministic Chair verdict when no synthesis call is needed."""
+    all_findings = [finding for review in reviews for finding in review.findings]
+    all_errored = bool(reviews) and all(review.error is not None for review in reviews)
+    all_pass = bool(reviews) and all(review.verdict == "PASS" for review in reviews)
+    all_clean = bool(reviews) and all(review.error is None for review in reviews)
 
     if not all_findings and degraded:
         return ChairVerdict(
@@ -266,6 +263,77 @@ async def synthesize(
             rationale="No findings from any reviewer. Code passes review.",
         )
 
+    return None
+
+
+def _parse_chair_findings(raw_findings) -> list[ChairFinding]:
+    """Convert model finding payloads into ChairFinding objects, dropping malformed items."""
+    findings: list[ChairFinding] = []
+    if not isinstance(raw_findings, list):
+        return findings
+
+    for finding in raw_findings:
+        try:
+            findings.append(ChairFinding(**finding))
+        except Exception:
+            continue
+    return findings
+
+
+def _chair_verdict_from_payload(
+    parsed: dict,
+    output_mode: str | None,
+    degraded: bool,
+    degraded_reasons: list[str] | None,
+) -> ChairVerdict:
+    """Build a ChairVerdict from parsed model JSON."""
+    return ChairVerdict(
+        verdict=parsed.get("verdict", "PASS"),
+        confidence=parsed.get("confidence", 0.5),
+        chair_output_mode=output_mode,
+        degraded=degraded or parsed.get("degraded", False),
+        degraded_reasons=degraded_reasons or [],
+        summary=parsed.get("summary", ""),
+        accepted_blockers=_parse_chair_findings(parsed.get("accepted_blockers", [])),
+        warnings=_parse_chair_findings(parsed.get("warnings", [])),
+        dismissed_findings=_parse_chair_findings(parsed.get("dismissed_findings", [])),
+        all_findings=_parse_chair_findings(parsed.get("all_findings", [])),
+        reviewer_agreement_score=parsed.get("reviewer_agreement_score", 0.5),
+        rationale=parsed.get("rationale", ""),
+    )
+
+
+def _chair_failure_verdict(error: Exception, degraded_reasons: list[str] | None) -> ChairVerdict:
+    """Return the fail-closed Chair verdict for synthesis transport or parsing failures."""
+    return ChairVerdict(
+        verdict="FAIL",
+        confidence=0.0,
+        chair_output_mode="failed",
+        degraded=True,
+        degraded_reasons=(degraded_reasons or []) + [f"Chair synthesis failed: {error}"],
+        summary=f"Chair synthesis failed: {error}",
+        accepted_blockers=[],
+        warnings=[],
+        dismissed_findings=[],
+        all_findings=[],
+        reviewer_agreement_score=0.0,
+        rationale=f"Chair LLM call failed. Failing closed for safety. Error: {error}",
+    )
+
+
+async def synthesize(
+    review_pack: ReviewPack,
+    reviews: list[ReviewerOutput],
+    chair_model: str = "openai/gpt-4o",
+    degraded: bool = False,
+    degraded_reasons: list[str] | None = None,
+    timeout: float = 120.0,
+) -> ChairVerdict:
+    """Run the Chair synthesis to produce a final verdict."""
+    fast_path = _chair_fast_path_verdict(reviews, degraded, degraded_reasons)
+    if fast_path is not None:
+        return fast_path
+
     try:
         response = await invoke_json_completion(
             model=chair_model,
@@ -283,64 +351,15 @@ async def synthesize(
         if parsed is None:
             raise ValueError("Invalid JSON returned by chair model")
 
-        accepted = []
-        for f in parsed.get("accepted_blockers", []):
-            try:
-                accepted.append(ChairFinding(**f))
-            except Exception:
-                continue
-
-        warnings = []
-        for f in parsed.get("warnings", []):
-            try:
-                warnings.append(ChairFinding(**f))
-            except Exception:
-                continue
-
-        dismissed = []
-        for f in parsed.get("dismissed_findings", []):
-            try:
-                dismissed.append(ChairFinding(**f))
-            except Exception:
-                continue
-
-        all_chair_findings = []
-        for f in parsed.get("all_findings", []):
-            try:
-                all_chair_findings.append(ChairFinding(**f))
-            except Exception:
-                continue
-
-        return ChairVerdict(
-            verdict=parsed.get("verdict", "PASS"),
-            confidence=parsed.get("confidence", 0.5),
-            chair_output_mode=response.output_mode,
-            degraded=degraded or parsed.get("degraded", False),
-            degraded_reasons=degraded_reasons or [],
-            summary=parsed.get("summary", ""),
-            accepted_blockers=accepted,
-            warnings=warnings,
-            dismissed_findings=dismissed,
-            all_findings=all_chair_findings,
-            reviewer_agreement_score=parsed.get("reviewer_agreement_score", 0.5),
-            rationale=parsed.get("rationale", ""),
+        return _chair_verdict_from_payload(
+            parsed=parsed,
+            output_mode=response.output_mode,
+            degraded=degraded,
+            degraded_reasons=degraded_reasons,
         )
 
     except Exception as e:
-        return ChairVerdict(
-            verdict="FAIL",
-            confidence=0.0,
-            chair_output_mode="failed",
-            degraded=True,
-            degraded_reasons=(degraded_reasons or []) + [f"Chair synthesis failed: {e}"],
-            summary=f"Chair synthesis failed: {e}",
-            accepted_blockers=[],
-            warnings=[],
-            dismissed_findings=[],
-            all_findings=[],
-            reviewer_agreement_score=0.0,
-            rationale=f"Chair LLM call failed. Failing closed for safety. Error: {e}",
-        )
+        return _chair_failure_verdict(e, degraded_reasons)
 
 
 # ---------------------------------------------------------------------------

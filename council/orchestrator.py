@@ -162,7 +162,7 @@ async def run_council(
         repo_root=repo_root,
         reviewer_models=[reviewer.model for reviewer in config.active_reviewers],
     )
-    skipped_files = filtered_skipped + budget_skipped
+    skipped_files = list(dict.fromkeys(filtered_skipped + budget_skipped))
 
     review_pack = rp_module.assemble(
         diff_context=processed_diff,

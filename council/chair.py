@@ -279,12 +279,15 @@ def _parse_chair_findings(raw_findings) -> list[ChairFinding]:
     if not isinstance(raw_findings, list):
         return findings
 
+    dropped = 0
     for finding in raw_findings:
         try:
             findings.append(ChairFinding(**finding))
         except Exception as exc:
             _log.debug("Dropping malformed chair finding: %s", exc)
-            continue
+            dropped += 1
+    if dropped:
+        _log.warning("Dropped %d malformed chair finding(s); schema mismatch may indicate model drift.", dropped)
     return findings
 
 

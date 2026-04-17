@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from council.config import load_config
-from council.doctor import DoctorCheck, DoctorReport, _is_valid_branch_name, _run_git, run_doctor
+from council.doctor import DoctorCheck, DoctorReport, _git_timed_out, _is_valid_branch_name, _run_git, run_doctor
 
 
 def test_run_git_uses_timeout_and_hardened_env():
@@ -79,3 +79,34 @@ def test_doctor_report_exit_code_reflects_fail_status():
         DoctorCheck(name="y", status="FAIL", detail="broken"),
     ])
     assert with_fail.exit_code == 1
+
+
+def test_run_git_returns_timeout_result_when_subprocess_times_out():
+    with patch(
+        "council.doctor.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd=["git", "rev-parse"], timeout=10.0),
+    ):
+        result = _run_git(Path.cwd(), "rev-parse", "HEAD")
+
+    assert result.returncode == 124
+    assert "timed out" in result.stderr.lower()
+
+
+def test_git_timed_out_returns_true_for_timeout_result():
+    result = subprocess.CompletedProcess(
+        args=["git", "rev-parse"],
+        returncode=124,
+        stdout="",
+        stderr="git command timed out after 10 seconds",
+    )
+    assert _git_timed_out(result) is True
+
+
+def test_git_timed_out_returns_false_for_normal_failure():
+    result = subprocess.CompletedProcess(
+        args=["git", "rev-parse"],
+        returncode=128,
+        stdout="",
+        stderr="fatal: not a git repository",
+    )
+    assert _git_timed_out(result) is False

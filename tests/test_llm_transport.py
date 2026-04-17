@@ -116,3 +116,25 @@ async def test_invoke_json_completion_reraises_non_transport_errors():
             temperature=0.1,
             acompletion_func=fake_acompletion,
         )
+
+
+def test_extract_json_object_handles_braces_inside_quoted_strings():
+    # Braces inside string values must not confuse the depth counter.
+    payload = '{"key": "value with { braces } inside", "ok": true}'
+    assert extract_json_object(payload) == payload
+
+
+def test_extract_json_object_handles_nested_objects():
+    payload = '{"outer": {"inner": {"deep": 1}}, "x": 2}'
+    assert extract_json_object(payload) == payload
+
+
+def test_extract_json_object_returns_first_object_when_multiple_present():
+    payload = '{"first": 1} some text {"second": 2}'
+    assert extract_json_object(payload) == '{"first": 1}'
+
+
+def test_extract_json_object_handles_fenced_block_no_language_tag():
+    bt = chr(96) * 3
+    payload = f"here {bt}\n{{\"verdict\":\"PASS\"}}\n{bt} done"
+    assert extract_json_object(payload) == '{"verdict":"PASS"}'

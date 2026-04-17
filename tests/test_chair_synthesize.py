@@ -82,9 +82,11 @@ def test_parse_chair_findings_logs_malformed_items(caplog):
     # Only the well-formed one survives.
     assert len(findings) == 1
     assert findings[0].description == "Real one"
-    # Malformed items are surfaced in logs, not silently dropped.
+    # Malformed items are surfaced in logs at WARNING, not silently dropped.
     log_text = " ".join(record.message for record in caplog.records)
     assert "malformed chair finding" in log_text.lower()
+    warning_records = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("2" in r.message and "malformed" in r.message.lower() for r in warning_records)
 
 
 def test_chair_failure_verdict_does_not_leak_exception_text():

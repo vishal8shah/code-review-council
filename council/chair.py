@@ -7,11 +7,14 @@ adjudication decisions. Each finding is explicitly accepted or dismissed.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 import litellm
 
 from .llm_transport import invoke_json_completion, load_json_object
 from .schemas import ChairFinding, ChairVerdict, OwnerFindingView, OwnerPresentation, ReviewerOutput, ReviewPack, SupportFileSummary
+
+_log = logging.getLogger(__name__)
 
 
 def _render_support_file_summaries(summaries: list[SupportFileSummary]) -> str:
@@ -279,7 +282,8 @@ def _parse_chair_findings(raw_findings) -> list[ChairFinding]:
     for finding in raw_findings:
         try:
             findings.append(ChairFinding(**finding))
-        except Exception:
+        except Exception as exc:
+            _log.debug("Dropping malformed chair finding: %s", exc)
             continue
     return findings
 

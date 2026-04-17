@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from council.chair import _chair_failure_verdict, synthesize
+from council.chair import _chair_failure_verdict, _parse_chair_findings, synthesize
 from council.llm_transport import JSONCompletionResult
 from council.schemas import Finding, ReviewerOutput, ReviewPack
 
@@ -61,6 +61,30 @@ async def test_synthesize_invalid_json_fails_closed():
     assert verdict.degraded_reasons == [
         "Chair synthesis failed due to an internal transport or parsing error."
     ]
+
+
+def test_parse_chair_findings_logs_malformed_items(caplog):
+    raw = [
+        {
+            "severity": "HIGH",
+            "category": "security",
+            "file": "auth.py",
+            "description": "Real one",
+            "chair_action": "accepted",
+        },
+        {"not": "a valid finding"},  # missing required fields
+        "totally malformed string",
+    ]
+
+    with caplog.at_level("DEBUG", logger="council.chair"):
+        findings = _parse_chair_findings(raw)
+
+    # Only the well-formed one survives.
+    assert len(findings) == 1
+    assert findings[0].description == "Real one"
+    # Malformed items are surfaced in logs, not silently dropped.
+    log_text = " ".join(record.message for record in caplog.records)
+    assert "malformed chair finding" in log_text.lower()
 
 
 def test_chair_failure_verdict_does_not_leak_exception_text():

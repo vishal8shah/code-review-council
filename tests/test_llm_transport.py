@@ -7,6 +7,29 @@ import pytest
 from council.llm_transport import extract_json_object, load_json_object
 
 
+def test_extract_json_object_handles_plain_json_no_fence():
+    assert extract_json_object('{"verdict":"PASS"}') == '{"verdict":"PASS"}'
+
+
+def test_extract_json_object_handles_json_with_surrounding_prose():
+    payload = 'Sure, here is the verdict: {"verdict":"PASS","confidence":0.9} thanks!'
+    assert extract_json_object(payload) == '{"verdict":"PASS","confidence":0.9}'
+
+
+def test_extract_json_object_returns_none_when_no_object_present():
+    assert extract_json_object("no JSON here, just prose.") is None
+    assert extract_json_object("") is None
+
+
+def test_load_json_object_returns_none_for_unparseable():
+    assert load_json_object("not json at all") is None
+
+
+def test_load_json_object_returns_none_for_non_object_root():
+    # Array roots should be rejected — Chair and reviewers require object payloads.
+    assert load_json_object("[1, 2, 3]") is None
+
+
 def test_extract_json_object_handles_real_triple_backtick_fences():
     payload = 'prefix ```json\n{"verdict":"PASS","confidence":0.8}\n``` suffix'
 

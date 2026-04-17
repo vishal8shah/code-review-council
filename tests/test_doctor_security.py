@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from council.config import load_config
-from council.doctor import _run_git, run_doctor
+from council.doctor import DoctorCheck, DoctorReport, _is_valid_branch_name, _run_git, run_doctor
 
 
 def test_run_git_uses_timeout_and_hardened_env():
@@ -46,3 +46,36 @@ def test_run_doctor_reports_git_probe_timeout(monkeypatch):
     git_repo = next(check for check in report.checks if check.name == "git_repo")
     assert git_repo.status == "FAIL"
     assert "timed out" in git_repo.detail.lower()
+
+
+def test_is_valid_branch_name_accepts_valid_names():
+    # git check-ref-format returns 0 for valid branches.
+    ok = MagicMock(returncode=0, stdout="", stderr="")
+    with patch("council.doctor._run_git", return_value=ok):
+        assert _is_valid_branch_name(Path.cwd(), "main") is True
+        assert _is_valid_branch_name(Path.cwd(), "feature/new-thing") is True
+
+
+def test_is_valid_branch_name_rejects_empty_and_invalid():
+    # Empty short-circuits without calling git.
+    assert _is_valid_branch_name(Path.cwd(), "") is False
+
+    # Non-zero returncode means check-ref-format rejected it.
+    bad = MagicMock(returncode=1, stdout="", stderr="bad ref")
+    with patch("council.doctor._run_git", return_value=bad):
+        assert _is_valid_branch_name(Path.cwd(), "../evil") is False
+        assert _is_valid_branch_name(Path.cwd(), "-flag") is False
+
+
+def test_doctor_report_exit_code_reflects_fail_status():
+    all_pass = DoctorReport(checks=[
+        DoctorCheck(name="x", status="PASS", detail="ok"),
+        DoctorCheck(name="y", status="WARN", detail="minor"),
+    ])
+    assert all_pass.exit_code == 0
+
+    with_fail = DoctorReport(checks=[
+        DoctorCheck(name="x", status="PASS", detail="ok"),
+        DoctorCheck(name="y", status="FAIL", detail="broken"),
+    ])
+    assert with_fail.exit_code == 1

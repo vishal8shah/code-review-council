@@ -202,6 +202,8 @@ def doctor(
     repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),
 ) -> None:
     """Run practical preflight checks before a full council review."""
+    from pathlib import Path
+
     from .config import load_config
     from .doctor import run_doctor
 

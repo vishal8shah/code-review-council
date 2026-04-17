@@ -250,18 +250,14 @@ def run_doctor(
             )
         )
 
-    provider_keys = {
-        "OPENAI_API_KEY": bool(os.getenv("OPENAI_API_KEY")),
-        "ANTHROPIC_API_KEY": bool(os.getenv("ANTHROPIC_API_KEY")),
-        "GOOGLE_API_KEY": bool(os.getenv("GOOGLE_API_KEY")),
-    }
-    configured_key_names = [name for name, present in provider_keys.items() if present]
-    if configured_key_names:
+    _provider_key_names = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY")
+    configured_key_count = sum(1 for k in _provider_key_names if os.getenv(k))
+    if configured_key_count:
         checks.append(
             DoctorCheck(
                 "api_keys",
                 "PASS",
-                f"Detected provider key(s): {', '.join(configured_key_names)}.",
+                f"At least one LLM provider API key detected ({configured_key_count} of {len(_provider_key_names)}).",
             )
         )
     else:

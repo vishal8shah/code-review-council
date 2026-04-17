@@ -19,7 +19,7 @@ from rich.console import Console
 
 app = typer.Typer(
     name="council",
-    help="🏛️ Code Review Council — Multi-agent LLM code review gate",
+    help="Code Review Council — Multi-agent LLM code review gate",
     no_args_is_help=True,
 )
 console = Console()
@@ -68,7 +68,7 @@ def review(
     # Safety: warn if --ci without explicit diff target (could review empty diff)
     if ci and not staged and not branch:
         console.print(
-            "  [yellow]⚠ Warning: --ci mode without --branch or --staged. "
+            "  [yellow][WARN] --ci mode without --branch or --staged. "
             "This may produce an empty diff in CI checkouts. "
             "Use --branch main (or your base branch) for PR reviews.[/]"
         )
@@ -183,7 +183,7 @@ def review(
     # Advisory mode — always exit 0
     if not ci:
         if verdict.verdict == "FAIL":
-            console.print("  💡 These findings will be enforced in CI.", style="yellow")
+            console.print("  [INFO] These findings will be enforced in CI.", style="yellow")
 
 
 @app.command()
@@ -281,7 +281,7 @@ def init(
         byok_workflow_path.write_text(_DEFAULT_WORKFLOW_BYOK, encoding="utf-8")
         console.print(f"  [green]Created[/] {byok_workflow_path}")
 
-    console.print("\n  🏛️ Council initialized. Run [bold]council review[/] to review changes.")
+    console.print("\n  Council initialized. Run [bold]council review[/] to review changes.")
 
 
 _DEFAULT_CONFIG = """\

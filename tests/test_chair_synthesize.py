@@ -54,6 +54,8 @@ async def test_synthesize_invalid_json_fails_closed():
         verdict = await synthesize(review_pack, reviews)
 
     assert verdict.verdict == "FAIL"
+    assert verdict.degraded is True
+    assert verdict.chair_output_mode == "failed"
     assert verdict.summary == "Chair synthesis failed; review failed closed for safety."
     assert verdict.rationale == (
         "Chair synthesis transport or parsing failed. The review failed closed for safety."
@@ -61,6 +63,9 @@ async def test_synthesize_invalid_json_fails_closed():
     assert verdict.degraded_reasons == [
         "Chair synthesis failed due to an internal transport or parsing error."
     ]
+    # Reviewer findings are preserved as the caller's input; fail-closed verdict
+    # correctly marks itself degraded so callers know synthesis did not complete.
+    assert verdict.accepted_blockers == []
 
 
 def test_parse_chair_findings_logs_malformed_items(caplog):

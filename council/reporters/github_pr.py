@@ -14,6 +14,8 @@ from urllib import error, request
 from .transport import reviewer_output_mode, transport_notes
 from ..schemas import ChairFinding, ChairVerdict, ReviewerOutput
 
+_MAX_EVENT_FILE_BYTES = 1_000_000  # 1 MB ceiling — GitHub event payloads are small
+
 MARKER = "<!-- council-review-verdict -->"
 INLINE_MARKER_PREFIX = "<!-- council-inline:"
 INLINE_MARKER_RE = re.compile(r"<!-- council-inline:([0-9a-f]+) -->")
@@ -176,14 +178,26 @@ def _emit_annotations(verdict: ChairVerdict) -> None:
         )
 
 
-def _extract_pr_context(event_path: str) -> tuple[int | None, str | None]:
+def _safe_read_event_file(path: str) -> dict | None:
+    """Read a GitHub event JSON file, rejecting non-files and oversized inputs."""
+    if not path:
+        return None
+    from pathlib import Path
+    p = Path(path)
+    if not p.is_file():
+        return None
     try:
-        with open(event_path, encoding="utf-8") as fh:
-            data = json.loads(fh.read())
+        if p.stat().st_size > _MAX_EVENT_FILE_BYTES:
+            return None
+        data = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
-        return None, None
+        return None
+    return data if isinstance(data, dict) else None
 
-    if not isinstance(data, dict):
+
+def _extract_pr_context(event_path: str) -> tuple[int | None, str | None]:
+    data = _safe_read_event_file(event_path)
+    if data is None:
         return None, None
 
     pr = data.get("pull_request") or {}

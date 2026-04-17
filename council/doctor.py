@@ -12,6 +12,7 @@ from .config import CouncilConfig, load_config
 from .llm_transport import classify_model_json_support, provider_env_var_for_model
 
 _GIT_TIMEOUT_SECONDS = 10.0
+_MAX_EVENT_FILE_BYTES = 1_000_000  # 1 MB ceiling — GitHub event payloads are small
 
 
 @dataclass(slots=True)
@@ -106,10 +107,25 @@ def _resolve_branch_target(repo_root: Path, branch: str) -> str | None:
     return None
 
 
-def _extract_pr_number(event_path: str) -> int | None:
+def _read_event_file(path: str) -> dict | None:
+    """Safely read a GitHub event JSON file, rejecting non-files and oversized inputs."""
+    if not path:
+        return None
+    p = Path(path)
+    if not p.is_file():
+        return None
     try:
-        payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        if p.stat().st_size > _MAX_EVENT_FILE_BYTES:
+            return None
+        payload = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _extract_pr_number(event_path: str) -> int | None:
+    payload = _read_event_file(event_path)
+    if payload is None:
         return None
 
     if not isinstance(payload, dict):

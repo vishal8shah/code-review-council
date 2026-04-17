@@ -94,6 +94,13 @@ def test_parse_chair_findings_logs_malformed_items(caplog):
     assert any("2" in r.message and "malformed" in r.message.lower() for r in warning_records)
 
 
+def test_parse_chair_findings_returns_empty_for_non_list_input():
+    assert _parse_chair_findings(None) == []
+    assert _parse_chair_findings("not a list") == []
+    assert _parse_chair_findings(42) == []
+    assert _parse_chair_findings({"key": "value"}) == []
+
+
 def test_chair_failure_verdict_does_not_leak_exception_text():
     verdict = _chair_failure_verdict(
         RuntimeError("secret token 123"),

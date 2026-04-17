@@ -335,19 +335,15 @@ def _chair_failure_verdict(_error: Exception, degraded_reasons: list[str] | None
     )
 
 
-async def synthesize(
+async def _invoke_and_parse_chair(
     review_pack: ReviewPack,
     reviews: list[ReviewerOutput],
-    chair_model: str = "openai/gpt-4o",
-    degraded: bool = False,
-    degraded_reasons: list[str] | None = None,
-    timeout: float = 120.0,
+    chair_model: str,
+    degraded: bool,
+    degraded_reasons: list[str] | None,
+    timeout: float,
 ) -> ChairVerdict:
-    """Run the Chair synthesis to produce a final verdict."""
-    fast_path = _chair_fast_path_verdict(reviews, degraded, degraded_reasons)
-    if fast_path is not None:
-        return fast_path
-
+    """Invoke the chair LLM and parse its response, failing closed on any error."""
     try:
         response = await invoke_json_completion(
             model=chair_model,
@@ -374,6 +370,29 @@ async def synthesize(
 
     except Exception as e:
         return _chair_failure_verdict(e, degraded_reasons)
+
+
+async def synthesize(
+    review_pack: ReviewPack,
+    reviews: list[ReviewerOutput],
+    chair_model: str = "openai/gpt-4o",
+    degraded: bool = False,
+    degraded_reasons: list[str] | None = None,
+    timeout: float = 120.0,
+) -> ChairVerdict:
+    """Run the Chair synthesis to produce a final verdict."""
+    fast_path = _chair_fast_path_verdict(reviews, degraded, degraded_reasons)
+    if fast_path is not None:
+        return fast_path
+
+    return await _invoke_and_parse_chair(
+        review_pack=review_pack,
+        reviews=reviews,
+        chair_model=chair_model,
+        degraded=degraded,
+        degraded_reasons=degraded_reasons,
+        timeout=timeout,
+    )
 
 
 # ---------------------------------------------------------------------------

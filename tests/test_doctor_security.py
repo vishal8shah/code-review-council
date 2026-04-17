@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from council.config import load_config
-from council.doctor import DoctorCheck, DoctorReport, _git_timed_out, _is_valid_branch_name, _run_git, run_doctor
+from council.doctor import DoctorCheck, DoctorReport, _git_timed_out, _is_valid_branch_name, _read_event_file, _run_git, run_doctor
 
 
 def test_run_git_uses_timeout_and_hardened_env():
@@ -110,3 +110,25 @@ def test_git_timed_out_returns_false_for_normal_failure():
         stderr="fatal: not a git repository",
     )
     assert _git_timed_out(result) is False
+
+
+def test_read_event_file_rejects_symlinks(tmp_path):
+    real = tmp_path / "real.json"
+    real.write_text('{"pull_request": {"number": 1}}', encoding="utf-8")
+    link = tmp_path / "link.json"
+    link.symlink_to(real)
+
+    assert _read_event_file(str(real)) == {"pull_request": {"number": 1}}
+    assert _read_event_file(str(link)) is None
+
+
+def test_read_event_file_rejects_oversized(tmp_path):
+    big = tmp_path / "big.json"
+    big.write_text("{" + " " * 1_100_000 + "}", encoding="utf-8")
+
+    assert _read_event_file(str(big)) is None
+
+
+def test_read_event_file_rejects_missing_and_empty():
+    assert _read_event_file("") is None
+    assert _read_event_file("/nonexistent/path.json") is None

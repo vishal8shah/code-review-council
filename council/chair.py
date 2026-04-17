@@ -380,7 +380,12 @@ async def synthesize(
     degraded_reasons: list[str] | None = None,
     timeout: float = 120.0,
 ) -> ChairVerdict:
-    """Run the Chair synthesis to produce a final verdict."""
+    """Run the Chair synthesis to produce a final verdict.
+
+    Returns a ChairVerdict. If all reviewers passed, returns immediately
+    via the fast path. Otherwise invokes the chair LLM and fails closed
+    on transport or parsing errors.
+    """
     fast_path = _chair_fast_path_verdict(reviews, degraded, degraded_reasons)
     if fast_path is not None:
         return fast_path

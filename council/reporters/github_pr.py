@@ -184,7 +184,7 @@ def _safe_read_event_file(path: str) -> dict | None:
         return None
     from pathlib import Path
     p = Path(path)
-    if not p.is_file():
+    if p.is_symlink() or not p.is_file():
         return None
     try:
         if p.stat().st_size > _MAX_EVENT_FILE_BYTES:

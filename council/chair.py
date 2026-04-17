@@ -10,6 +10,7 @@ import json
 import logging
 import uuid
 import litellm
+from pydantic import ValidationError
 
 from .llm_transport import invoke_json_completion, load_json_object
 from .schemas import ChairFinding, ChairVerdict, OwnerFindingView, OwnerPresentation, ReviewerOutput, ReviewPack, SupportFileSummary
@@ -283,7 +284,7 @@ def _parse_chair_findings(raw_findings) -> list[ChairFinding]:
     for finding in raw_findings:
         try:
             findings.append(ChairFinding(**finding))
-        except Exception as exc:
+        except (TypeError, ValidationError) as exc:
             _log.debug("Dropping malformed chair finding: %s", exc)
             dropped += 1
     if dropped:

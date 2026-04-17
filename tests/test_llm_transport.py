@@ -138,3 +138,19 @@ def test_extract_json_object_handles_fenced_block_no_language_tag():
     bt = chr(96) * 3
     payload = f"here {bt}\n{{\"verdict\":\"PASS\"}}\n{bt} done"
     assert extract_json_object(payload) == '{"verdict":"PASS"}'
+
+
+def test_extract_json_object_handles_escaped_quotes_in_string_values():
+    # Escaped quotes must not prematurely close the string and confuse depth tracking.
+    payload = '{"key": "value with \\"escaped\\" quotes", "ok": true}'
+    assert extract_json_object(payload) == payload
+
+
+def test_extract_json_object_returns_first_fenced_block_when_multiple_present():
+    bt = chr(96) * 3
+    payload = (
+        f"{bt}json\n{{\"first\": 1}}\n{bt}\n"
+        f"some prose\n"
+        f"{bt}json\n{{\"second\": 2}}\n{bt}"
+    )
+    assert extract_json_object(payload) == '{"first": 1}'

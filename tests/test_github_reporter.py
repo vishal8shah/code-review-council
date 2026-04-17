@@ -1,4 +1,6 @@
 from __future__ import annotations
+from contextlib import contextmanager
+from unittest.mock import patch
 
 import pytest
 
@@ -6,6 +8,8 @@ from council.reporters.github_pr import (
     _build_comment_body,
     _build_inline_comment_body,
     _build_inline_comment_candidates,
+    _inline_key,
+    _post_inline_comments,
     _resolve_github_api_url,
 )
 from council.schemas import ChairFinding, ChairVerdict, ReviewerOutput
@@ -127,3 +131,90 @@ def test_build_inline_comment_candidates_includes_warnings_and_respects_line_ran
 
     multi = next(c for c in candidates if c["line"] == 15)
     assert multi["start_line"] == 10
+
+
+def test_post_inline_comments_returns_false_when_no_head_sha():
+    verdict = ChairVerdict(verdict="FAIL", confidence=0.9, summary="s", rationale="r")
+    result = _post_inline_comments(
+        verdict=verdict,
+        repo="owner/repo",
+        pr_number=1,
+        head_sha=None,
+        headers={},
+        api_url="https://api.github.com",
+        timeout=5.0,
+        max_retries=0,
+        backoff_seconds=1.0,
+    )
+    assert result is False
+
+
+def test_post_inline_comments_returns_false_when_no_eligible_findings():
+    verdict = ChairVerdict(
+        verdict="FAIL",
+        confidence=0.9,
+        summary="s",
+        rationale="r",
+        accepted_blockers=[
+            ChairFinding(
+                severity="HIGH",
+                category="security",
+                file="auth.py",
+                # no line_start → not an inline candidate
+                description="no line info",
+                chair_action="accepted",
+            )
+        ],
+    )
+    result = _post_inline_comments(
+        verdict=verdict,
+        repo="owner/repo",
+        pr_number=1,
+        head_sha="abc123",
+        headers={},
+        api_url="https://api.github.com",
+        timeout=5.0,
+        max_retries=0,
+        backoff_seconds=1.0,
+    )
+    assert result is False
+
+
+def test_post_inline_comments_skips_duplicate_keys(monkeypatch):
+    finding = ChairFinding(
+        severity="HIGH",
+        category="security",
+        file="auth.py",
+        line_start=10,
+        description="issue",
+        chair_action="accepted",
+    )
+    verdict = ChairVerdict(
+        verdict="FAIL",
+        confidence=0.9,
+        summary="s",
+        rationale="r",
+        accepted_blockers=[finding],
+    )
+
+    @contextmanager
+    def fake_request_with_retry(req, **kwargs):
+        yield None
+
+    with patch(
+        "council.reporters.github_pr._existing_inline_keys",
+        return_value={_inline_key(finding)},
+    ), patch("council.reporters.github_pr._request_with_retry", fake_request_with_retry):
+        result = _post_inline_comments(
+            verdict=verdict,
+            repo="owner/repo",
+            pr_number=1,
+            head_sha="abc123",
+            headers={},
+            api_url="https://api.github.com",
+            timeout=5.0,
+            max_retries=0,
+            backoff_seconds=1.0,
+        )
+
+    assert result is False

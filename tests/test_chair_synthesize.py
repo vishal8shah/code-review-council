@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from council.chair import _chair_failure_verdict, _parse_chair_findings, synthesize
+from council.chair import _chair_failure_verdict, _chair_verdict_from_payload, _parse_chair_findings, synthesize
 from council.llm_transport import JSONCompletionResult
 from council.schemas import Finding, ReviewerOutput, ReviewPack
 
@@ -104,3 +104,27 @@ def test_chair_failure_verdict_does_not_leak_exception_text():
     assert "secret token 123" not in verdict.summary
     assert "secret token 123" not in verdict.rationale
     assert all("secret token 123" not in reason for reason in verdict.degraded_reasons)
+
+
+def test_chair_verdict_from_payload_propagates_output_mode():
+    parsed = {
+        "verdict": "PASS",
+        "confidence": 0.95,
+        "summary": "all good",
+        "rationale": "nothing to flag",
+        "accepted_blockers": [],
+        "warnings": [],
+        "dismissed_findings": [],
+        "all_findings": [],
+    }
+    verdict = _chair_verdict_from_payload(
+        parsed=parsed,
+        output_mode="prompt_json_fallback",
+        degraded=True,
+        degraded_reasons=["rate limit"],
+    )
+
+    assert verdict.chair_output_mode == "prompt_json_fallback"
+    assert verdict.degraded is True
+    assert verdict.degraded_reasons == ["rate limit"]
+    assert verdict.verdict == "PASS"

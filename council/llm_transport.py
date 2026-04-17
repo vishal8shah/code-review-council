@@ -122,37 +122,52 @@ def extract_json_object(text: str) -> str | None:
     candidate = text.strip()
 
     def _scan_for_object(payload: str) -> str | None:
-        start = payload.find("{")
-        if start == -1:
+        pos = 0
+        while pos < len(payload):
+            start = payload.find("{", pos)
+            if start == -1:
+                return None
+
+            depth = 0
+            quote_char: str | None = None
+            escaped = False
+            found_end: int | None = None
+            for idx in range(start, len(payload)):
+                ch = payload[idx]
+
+                if quote_char is not None:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == quote_char:
+                        quote_char = None
+                    continue
+
+                if ch in _STRING_DELIMITERS:
+                    quote_char = ch
+                    continue
+
+                if ch == "{":
+                    depth += 1
+                    continue
+
+                if ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        found_end = idx
+                        break
+
+            if found_end is not None:
+                candidate_str = payload[start : found_end + 1]
+                try:
+                    json.loads(candidate_str)
+                    return candidate_str
+                except (json.JSONDecodeError, ValueError):
+                    pos = start + 1
+                    continue
+
             return None
-
-        depth = 0
-        in_string = False
-        escaped = False
-        for idx in range(start, len(payload)):
-            ch = payload[idx]
-
-            if in_string:
-                if escaped:
-                    escaped = False
-                elif ch == "\\":
-                    escaped = True
-                elif ch == '"':
-                    in_string = False
-                continue
-
-            if ch == '"':
-                in_string = True
-                continue
-
-            if ch == "{":
-                depth += 1
-                continue
-
-            if ch == "}":
-                depth -= 1
-                if depth == 0:
-                    return payload[start : idx + 1]
         return None
 
     for fence in _FENCE_TOKENS:

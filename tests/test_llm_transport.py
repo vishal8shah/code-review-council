@@ -154,3 +154,15 @@ def test_extract_json_object_returns_first_fenced_block_when_multiple_present():
         f"{bt}json\n{{\"second\": 2}}\n{bt}"
     )
     assert extract_json_object(payload) == '{"first": 1}'
+
+
+def test_extract_json_object_skips_braces_inside_single_quoted_strings():
+    payload = """The dict {'key': '{value}'} was found. {"verdict": "PASS"}"""
+    parsed = load_json_object(payload)
+    assert parsed == {"verdict": "PASS"}
+
+
+def test_extract_json_object_skips_braces_inside_backtick_strings():
+    payload = 'The template `fn({x})` works. {"verdict": "PASS"}'
+    parsed = load_json_object(payload)
+    assert parsed == {"verdict": "PASS"}

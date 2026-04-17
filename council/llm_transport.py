@@ -67,13 +67,10 @@ _RESPONSE_FORMAT_REJECTION_MARKERS = (
 )
 
 _STRING_DELIMITERS = {"'", '"', "`"}
-# Fence tokens for code-block extraction. Two are intentional:
-#   1. Real triple-backticks emitted by most models.
-#   2. "[TRIPLE_BACKTICK]" sentinel used by templates/models that escape
-#      backticks as a literal placeholder. Both paths are covered by tests
-#      in tests/test_llm_transport.py. Do NOT remove either without breaking
-#      a supported output format.
-_FENCE_TOKENS = ("```", "[TRIPLE_BACKTICK]")
+# Built via chr() so the diff-preprocessor's .replace("```", "[TRIPLE_BACKTICK]")
+# does not turn both tuple entries into the same string when this file appears in a diff.
+_BACKTICK_FENCE = chr(96) * 3
+_FENCE_TOKENS = (_BACKTICK_FENCE, "[TRIPLE_BACKTICK]")
 
 
 def classify_model_json_support(model: str) -> str:

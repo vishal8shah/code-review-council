@@ -547,7 +547,6 @@ def _build_fallback_owner_presentation(
     )
 
     has_critical = any(f.severity == "CRITICAL" for f in verdict.accepted_blockers)
-    has_high = any(f.severity == "HIGH" for f in verdict.accepted_blockers)
     if verdict.verdict == "FAIL":
         risk: str = "critical" if has_critical else "high"
     elif verdict.verdict == "PASS_WITH_WARNINGS":

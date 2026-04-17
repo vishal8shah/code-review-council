@@ -49,7 +49,7 @@ def _load_ignore_patterns(repo_root: Path, ignore_file: str) -> list[str]:
     ignore_path = repo_root / ignore_file
     if ignore_path.exists():
         lines = ignore_path.read_text().splitlines()
-        return [l.strip() for l in lines if l.strip() and not l.startswith("#")]
+        return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
     return DEFAULT_IGNORE_PATTERNS
 
 

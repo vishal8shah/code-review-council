@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 if sys.version_info >= (3, 11):
     import tomllib

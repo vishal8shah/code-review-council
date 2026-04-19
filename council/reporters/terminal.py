@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+
 from rich.console import Console
 
 from .transport import transport_notes
 from ..schemas import ChairFinding, ChairVerdict, GateZeroResult, ReviewerOutput, ReviewPack
 
-console = Console()
+console = Console(emoji=False)
 
 VERDICT_STYLES = {
     "PASS": ("bold green", "PASS"),
@@ -35,6 +37,28 @@ _REC_STYLES = {
 }
 
 
+def _console_encoding() -> str:
+    """Return the active output encoding, defaulting to UTF-8."""
+    return getattr(console.file, "encoding", None) or sys.stdout.encoding or "utf-8"
+
+
+def _safe_text(value: str | None) -> str:
+    """Replace characters the active console encoding cannot render."""
+    if value is None:
+        return ""
+    encoding = _console_encoding()
+    try:
+        value.encode(encoding)
+    except UnicodeEncodeError:
+        return value.encode(encoding, errors="replace").decode(encoding)
+    return value
+
+
+def _rule_characters() -> str:
+    """Use ASCII rule characters on consoles that cannot render box drawing."""
+    return "─" if _safe_text("─") == "─" else "-"
+
+
 def print_gate_zero(gate_result: GateZeroResult) -> None:
     """Print Gate Zero results."""
     if gate_result.passed:
@@ -45,11 +69,11 @@ def print_gate_zero(gate_result: GateZeroResult) -> None:
             loc = f"{finding.file}:{finding.line_start}" if finding.line_start else finding.file
             console.print(
                 f"    [{SEVERITY_STYLES.get(finding.severity, '')}]{finding.severity}[/] "
-                f"[{finding.check}] {loc}"
+                f"[{_safe_text(finding.check)}] {_safe_text(loc)}"
             )
-            console.print(f"          {finding.message}")
+            console.print(f"          {_safe_text(finding.message)}")
             if finding.suggestion:
-                console.print(f"          -> {finding.suggestion}", style="dim")
+                console.print(f"          -> {_safe_text(finding.suggestion)}", style="dim")
 
 
 def print_review_pack_summary(review_pack: ReviewPack) -> None:
@@ -61,7 +85,7 @@ def print_review_pack_summary(review_pack: ReviewPack) -> None:
         f"~{review_pack.token_estimate} tokens"
     )
     if review_pack.files_skipped:
-        names = ", ".join(review_pack.files_skipped[:3])
+        names = ", ".join(_safe_text(name) for name in review_pack.files_skipped[:3])
         console.print(f"  Skipped {len(review_pack.files_skipped)} files: {names}", style="dim")
 
 
@@ -77,22 +101,22 @@ def print_reviewer_results(outputs: list[ReviewerOutput]) -> None:
         )
         if reviewer.error:
             console.print(
-                f"    {prefix} {reviewer.reviewer_id} ({reviewer.model}) ... "
-                f"[red]ERROR[/]{mode} ({reviewer.error[:60]})"
+                f"    {prefix} {_safe_text(reviewer.reviewer_id)} ({_safe_text(reviewer.model)}) ... "
+                f"[red]ERROR[/]{mode} ({_safe_text(reviewer.error[:60])})"
             )
         elif reviewer.verdict == "FAIL":
             console.print(
-                f"    {prefix} {reviewer.reviewer_id} ({reviewer.model}) ... "
+                f"    {prefix} {_safe_text(reviewer.reviewer_id)} ({_safe_text(reviewer.model)}) ... "
                 f"[red]FAIL[/]{mode} ({len(reviewer.findings)} findings)"
             )
         elif reviewer.findings:
             console.print(
-                f"    {prefix} {reviewer.reviewer_id} ({reviewer.model}) ... "
+                f"    {prefix} {_safe_text(reviewer.reviewer_id)} ({_safe_text(reviewer.model)}) ... "
                 f"[yellow]PASS[/]{mode} ({len(reviewer.findings)} findings)"
             )
         else:
             console.print(
-                f"    {prefix} {reviewer.reviewer_id} ({reviewer.model}) ... [green]PASS[/]{mode}"
+                f"    {prefix} {_safe_text(reviewer.reviewer_id)} ({_safe_text(reviewer.model)}) ... [green]PASS[/]{mode}"
             )
 
 
@@ -106,16 +130,18 @@ def print_finding(finding: ChairFinding) -> None:
     symbol = f" `{finding.symbol_name}`" if finding.symbol_name else ""
 
     style = SEVERITY_STYLES.get(finding.severity, "")
-    console.print(f"\n  [{style}]{finding.severity}[/] [{finding.category}] {loc}{symbol}")
-    console.print(f"        {finding.description}")
+    console.print(
+        f"\n  [{style}]{finding.severity}[/] [{_safe_text(finding.category)}] {_safe_text(loc)}{_safe_text(symbol)}"
+    )
+    console.print(f"        {_safe_text(finding.description)}")
     if finding.evidence_ref:
-        console.print(f"        Evidence: {finding.evidence_ref}", style="dim")
+        console.print(f"        Evidence: {_safe_text(finding.evidence_ref)}", style="dim")
     if finding.suggestion:
-        console.print(f"        -> {finding.suggestion}", style="cyan")
+        console.print(f"        -> {_safe_text(finding.suggestion)}", style="cyan")
     if finding.source_reviewers:
         consensus = " (consensus)" if finding.consensus else ""
         console.print(
-            f"        Source: {', '.join(finding.source_reviewers)}{consensus}",
+            f"        Source: {_safe_text(', '.join(finding.source_reviewers))}{consensus}",
             style="dim",
         )
 
@@ -130,22 +156,22 @@ def _print_owner_summary(verdict: ChairVerdict) -> None:
     rec_label = owner_presentation.merge_recommendation.replace("_", " ")
 
     console.print()
-    console.rule(style="cyan")
+    console.rule(style="cyan", characters=_rule_characters())
     console.print("  [bold cyan]Owner Summary[/]")
     console.print(
         f"  [{rec_style}]{rec_icon} {rec_label}[/]"
-        f"  -  Risk: {owner_presentation.risk_level.upper()}  -  {owner_presentation.confidence_label}"
+        f"  -  Risk: {_safe_text(owner_presentation.risk_level.upper())}  -  {_safe_text(owner_presentation.confidence_label)}"
     )
-    console.print(f"\n  {owner_presentation.short_summary}", style="italic")
+    console.print(f"\n  {_safe_text(owner_presentation.short_summary)}", style="italic")
     if owner_presentation.degraded_warning:
-        console.print(f"\n  [WARN] {owner_presentation.degraded_warning}", style="yellow")
+        console.print(f"\n  [WARN] {_safe_text(owner_presentation.degraded_warning)}", style="yellow")
     if owner_presentation.findings:
         console.print(f"\n  [bold]Issues ({len(owner_presentation.findings)}):[/]")
         for finding in owner_presentation.findings:
             icon = _URGENCY_ICONS.get(finding.urgency, "-")
             urgency_label = finding.urgency.replace("_", " ").upper()
-            console.print(f"    {icon} [{urgency_label}] {finding.title}")
-    console.rule(style="cyan")
+            console.print(f"    {icon} [{urgency_label}] {_safe_text(finding.title)}")
+    console.rule(style="cyan", characters=_rule_characters())
 
 
 def print_verdict(
@@ -182,17 +208,17 @@ def print_verdict(
     if notes:
         console.print("  Transport Notes")
         for note in notes:
-            console.print(f"    - {note}", style="dim")
+            console.print(f"    - {_safe_text(note)}", style="dim")
 
     mode_note = "" if ci_mode else " (advisory)"
     console.print()
-    console.rule(style=style.replace("bold ", ""))
+    console.rule(style=style.replace("bold ", ""), characters=_rule_characters())
     console.print(f"  VERDICT: {icon} {verdict.verdict}{mode_note}", style=style)
     if verdict.degraded:
         console.print("  [WARN] Degraded run - integrity issues detected:", style="yellow")
         for reason in verdict.degraded_reasons:
-            console.print(f"    - {reason}", style="yellow dim")
-    console.rule(style=style.replace("bold ", ""))
+            console.print(f"    - {_safe_text(reason)}", style="yellow dim")
+    console.rule(style=style.replace("bold ", ""), characters=_rule_characters())
 
     if audience == "owner":
         issue_count = len(verdict.accepted_blockers) + len(verdict.warnings)
@@ -202,7 +228,7 @@ def print_verdict(
                 style="dim",
             )
         if verdict.summary:
-            console.print(f"\n  {verdict.summary}", style="dim italic")
+            console.print(f"\n  {_safe_text(verdict.summary)}", style="dim italic")
     else:
         for finding in verdict.accepted_blockers:
             print_finding(finding)
@@ -217,6 +243,6 @@ def print_verdict(
             )
 
         if verdict.summary:
-            console.print(f"\n  {verdict.summary}", style="dim italic")
+            console.print(f"\n  {_safe_text(verdict.summary)}", style="dim italic")
 
     console.print()

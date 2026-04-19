@@ -1964,14 +1964,15 @@ class TestWorkflowScaffold:
     def test_workflow_skips_when_no_llm_keys(self):
         """Generated workflow should skip council run when fork PRs have no secrets."""
         from council.cli import _DEFAULT_WORKFLOW
-        assert "Check LLM credentials availability" in _DEFAULT_WORKFLOW
+        assert "Check Gemini credentials availability" in _DEFAULT_WORKFLOW
         assert "id: llm_keys" in _DEFAULT_WORKFLOW
         assert "env:" in _DEFAULT_WORKFLOW
-        assert "if [ -n \"$ANTHROPIC_API_KEY\" ] || [ -n \"$OPENAI_API_KEY\" ] || [ -n \"$GOOGLE_API_KEY\" ]; then" in _DEFAULT_WORKFLOW
+        assert 'if [ -n "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW
         assert "if: steps.llm_keys.outputs.has_key == 'true'" in _DEFAULT_WORKFLOW
-        assert "No LLM API keys available (common on fork PRs)" in _DEFAULT_WORKFLOW
-        assert '"skipped":"no_llm_api_keys"' in _DEFAULT_WORKFLOW
-        assert "Run the BYOK workflow in your fork: Actions -> Code Review Council (BYOK - Fork)" in _DEFAULT_WORKFLOW
+        assert "No GOOGLE_API_KEY available. This workflow is pinned to Gemini" in _DEFAULT_WORKFLOW
+        assert '"skipped":"no_google_api_key"' in _DEFAULT_WORKFLOW
+        assert "Write CI Gemini config" in _DEFAULT_WORKFLOW
+        assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW
 
     def test_workflow_passes_branch(self):
         """Generated workflow must pass --branch to avoid empty-diff reviews."""
@@ -1985,9 +1986,9 @@ class TestWorkflowScaffold:
 
         assert "workflow_dispatch" in _DEFAULT_WORKFLOW_BYOK
         assert "upstream_repo" in _DEFAULT_WORKFLOW_BYOK
-        assert "Fail fast if no BYOK keys configured" in _DEFAULT_WORKFLOW_BYOK
-        assert 'if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW_BYOK
-        assert '"skipped":"no_byok_keys"' in _DEFAULT_WORKFLOW_BYOK
+        assert "Fail fast if no Gemini key configured" in _DEFAULT_WORKFLOW_BYOK
+        assert 'if [ -z "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW_BYOK
+        assert '"skipped":"no_google_api_key"' in _DEFAULT_WORKFLOW_BYOK
         assert "Resolve review base ref" in _DEFAULT_WORKFLOW_BYOK
         assert "UPSTREAM_REPO: ${{ inputs.upstream_repo }}" in _DEFAULT_WORKFLOW_BYOK
         assert "BASE_REF: ${{ inputs.base_ref }}" in _DEFAULT_WORKFLOW_BYOK
@@ -2005,6 +2006,8 @@ class TestWorkflowScaffold:
         assert 'if [[ ! "$UPSTREAM_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then' in _DEFAULT_WORKFLOW_BYOK
         assert 'if ! git fetch --no-tags upstream -- "$BASE_REF"; then' in _DEFAULT_WORKFLOW_BYOK
         assert "Warn if workflow is running on the base branch" in _DEFAULT_WORKFLOW_BYOK
+        assert "Write CI Gemini config" in _DEFAULT_WORKFLOW_BYOK
+        assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW_BYOK
         assert "TARGET_BRANCH: ${{ steps.review_base.outputs.target }}" in _DEFAULT_WORKFLOW_BYOK
         assert "AUDIENCE: ${{ inputs.audience }}" in _DEFAULT_WORKFLOW_BYOK
         assert '[ "$AUDIENCE" != "developer" ] && [ "$AUDIENCE" != "owner" ]' in _DEFAULT_WORKFLOW_BYOK

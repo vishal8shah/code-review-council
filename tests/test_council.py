@@ -1049,6 +1049,52 @@ class TestReviewPack:
         assert m.get("src/components/testimonials.tsx") == []
         assert test_path in m.get("src/components/specimen.tsx", [])
 
+    def test_test_coverage_map_discovers_repo_test_files(self, tmp_path):
+        """Source files with no tests in the diff get coverage from repo filesystem."""
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_parser.py").write_text("def test_parse(): pass\n")
+        (tmp_path / "council").mkdir()
+        (tmp_path / "council" / "parser.py").write_text("def parse(): pass\n")
+
+        ctx = DiffContext(files=[
+            DiffFile(path="council/parser.py", change_type="modified"),
+        ])
+        m = _build_test_coverage_map(ctx, repo_root=tmp_path)
+        assert "tests/test_parser.py" in m.get("council/parser.py", [])
+
+    def test_test_coverage_map_prefers_diff_over_repo_scan(self, tmp_path):
+        """When a test is in the diff, the repo scan doesn't add duplicates."""
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_parser.py").write_text("def test_parse(): pass\n")
+
+        ctx = DiffContext(files=[
+            DiffFile(path="council/parser.py", change_type="modified"),
+            DiffFile(path="tests/test_parser.py", change_type="modified"),
+        ])
+        m = _build_test_coverage_map(ctx, repo_root=tmp_path)
+        assert m.get("council/parser.py") == ["tests/test_parser.py"]
+
+    def test_test_coverage_map_no_repo_root_skips_scan(self):
+        """Without repo_root, no filesystem fallback is attempted."""
+        ctx = DiffContext(files=[
+            DiffFile(path="council/parser.py", change_type="modified"),
+        ])
+        m = _build_test_coverage_map(ctx, repo_root=None)
+        assert m.get("council/parser.py") == []
+
+    def test_test_coverage_map_discovers_prefix_match_test_files(self, tmp_path):
+        """Repo scan falls back to prefix matching (test_X_*.py) for source files."""
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_doctor_security.py").write_text("def test_sec(): pass\n")
+        (tmp_path / "council").mkdir()
+        (tmp_path / "council" / "doctor.py").write_text("def check(): pass\n")
+
+        ctx = DiffContext(files=[
+            DiffFile(path="council/doctor.py", change_type="modified"),
+        ])
+        m = _build_test_coverage_map(ctx, repo_root=tmp_path)
+        assert "tests/test_doctor_security.py" in m.get("council/doctor.py", [])
+
     def test_assemble_marks_test_symbols_as_self_covered(self):
         """Changed symbols in test files should be treated as self-covered tests."""
         ctx = DiffContext(

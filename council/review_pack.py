@@ -293,8 +293,73 @@ def _filter_to_changed_symbols(
     return changed
 
 
-def _build_test_coverage_map(diff_context: DiffContext) -> dict[str, list[str]]:
-    """Map source files to test files using imports and naming conventions."""
+def _discover_repo_test_files(
+    source_path: str,
+    repo_root: Path | None,
+) -> list[str]:
+    """Scan the repo filesystem for test files matching a source file by naming convention."""
+    if repo_root is None:
+        return []
+
+    stem = Path(source_path).stem.lower()
+    suffix = Path(source_path).suffix.lower()
+    if not stem or suffix not in (".py", *_ECMASCRIPT_EXTENSIONS):
+        return []
+
+    candidate_names: list[str] = []
+    if suffix == ".py":
+        candidate_names.append(f"test_{stem}.py")
+        candidate_names.append(f"{stem}_test.py")
+    else:
+        for ext in _ECMASCRIPT_EXTENSIONS:
+            candidate_names.append(f"{stem}.test{ext}")
+            candidate_names.append(f"{stem}.spec{ext}")
+
+    test_dirs = [repo_root / "tests", repo_root / "test", repo_root / "__tests__"]
+    source_dir = repo_root / Path(source_path).parent
+    if source_dir not in test_dirs:
+        test_dirs.append(source_dir)
+
+    matches: list[str] = []
+    for test_dir in test_dirs:
+        if not test_dir.is_dir():
+            continue
+        for name in candidate_names:
+            candidate = test_dir / name
+            if candidate.is_file():
+                try:
+                    rel = str(candidate.relative_to(repo_root))
+                except ValueError:
+                    continue
+                repo_path = rel.replace("\\", "/")
+                if repo_path not in matches:
+                    matches.append(repo_path)
+
+    if not matches:
+        prefix = f"test_{stem}"
+        for test_dir in test_dirs:
+            if not test_dir.is_dir():
+                continue
+            for entry in test_dir.iterdir():
+                if not entry.is_file() or entry.suffix != suffix:
+                    continue
+                if entry.stem.lower().startswith(prefix):
+                    try:
+                        rel = str(entry.relative_to(repo_root))
+                    except ValueError:
+                        continue
+                    repo_path = rel.replace("\\", "/")
+                    if repo_path not in matches:
+                        matches.append(repo_path)
+
+    return matches
+
+
+def _build_test_coverage_map(
+    diff_context: DiffContext,
+    repo_root: Path | None = None,
+) -> dict[str, list[str]]:
+    """Map source files to test files using imports, naming conventions, and repo scan."""
     test_entries = [f for f in diff_context.files if is_test_file(f.path)]
     source_entries = [f for f in diff_context.files if not is_test_file(f.path)]
 
@@ -403,6 +468,13 @@ def _build_test_coverage_map(diff_context: DiffContext) -> dict[str, list[str]]:
 
         for source_path in matched_paths:
             _append_match(source_path, test.path)
+
+    for source_path, tests in coverage_map.items():
+        if tests:
+            continue
+        for repo_test in _discover_repo_test_files(source_path, repo_root):
+            if repo_test not in tests:
+                tests.append(repo_test)
 
     return coverage_map
 
@@ -549,6 +621,7 @@ def assemble(
     skipped_files: list[str] | None = None,
     truncated_files: list[str] | None = None,
     metadata_context: DiffContext | None = None,
+    repo_root: Path | None = None,
 ) -> ReviewPack:
     """Assemble a ReviewPack from the preprocessed diff context."""
     metadata_source = metadata_context or diff_context
@@ -581,7 +654,7 @@ def assemble(
             all_symbols.extend(changed)
 
     # Build test coverage map
-    test_map = _build_test_coverage_map(metadata_source)
+    test_map = _build_test_coverage_map(metadata_source, repo_root=repo_root)
     support_summaries = _build_support_file_summaries(
         metadata_source=metadata_source,
         skipped_files=skipped_files or [],

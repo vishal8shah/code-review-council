@@ -17,11 +17,13 @@ from .analyzers.ecmascript import (
     collect_typescript_exports,
 )
 from .config import CouncilConfig
+from .diff_preprocessor import _file_priority
 from .schemas import (
     ChangedSymbol,
     DiffContext,
     GateZeroFinding,
     ReviewPack,
+    SupportFileSummary,
 )
 
 _ECMASCRIPT_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx")
@@ -31,6 +33,17 @@ _ECMASCRIPT_IMPORT_PATTERNS = (
     re.compile(r"""\bimport\(\s*["'](?P<path>\.[^"']+)["']\s*\)"""),
     re.compile(r"""\brequire\(\s*["'](?P<path>\.[^"']+)["']\s*\)"""),
 )
+_DOC_EXTENSIONS = {".md", ".rst", ".txt"}
+_CONFIG_EXTENSIONS = {".cfg", ".ini", ".json", ".toml", ".yaml", ".yml"}
+_MAX_SUPPORT_FILE_SUMMARIES = 6
+_MAX_SUPPORT_SUMMARY_LINES = 3
+_MAX_SUPPORT_SUMMARY_CHARS = 240
+_TEST_NAME_PATTERNS = (
+    re.compile(r"""^\s*(?:def\s+(test_[A-Za-z0-9_]+))\s*\("""),
+    re.compile(r"""^\s*((?:it|test|describe)\s*\([^)]*\))"""),
+)
+_DOC_HEADING_PATTERN = re.compile(r"""^\s*#+\s+.+""")
+_CONFIG_KEY_PATTERN = re.compile(r"""^\s*([A-Za-z0-9_.-]+\s*[:=].*)$""")
 
 
 def _normalize_repo_path(path: str) -> str:
@@ -404,22 +417,151 @@ def _estimate_tokens(text: str) -> int:
         return len(text) // 4
 
 
+def _support_file_kind(path: str) -> str | None:
+    """Classify review support files that matter outside the token budget."""
+    normalized = path.replace("\\", "/").lower()
+    suffix = Path(normalized).suffix.lower()
+
+    if is_test_file(path):
+        return "test"
+    if normalized.startswith("docs/") or suffix in _DOC_EXTENSIONS:
+        return "docs"
+    if normalized.startswith(".github/workflows/") or suffix in _CONFIG_EXTENSIONS:
+        return "config"
+    return None
+
+
+def _changed_non_empty_lines(diff_file) -> list[str]:
+    """Return cleaned added/removed lines from a diff file."""
+    lines: list[str] = []
+    for hunk in diff_file.hunks:
+        for raw_line in hunk.content.splitlines():
+            if not raw_line or raw_line[0] not in "+-":
+                continue
+            cleaned = raw_line[1:].strip()
+            if cleaned:
+                lines.append(cleaned)
+    return lines
+
+
+def _truncate_support_summary(text: str) -> str:
+    """Bound support-file summaries so prompt bloat stays predictable."""
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= _MAX_SUPPORT_SUMMARY_CHARS:
+        return text
+    return text[: _MAX_SUPPORT_SUMMARY_CHARS - 3].rstrip() + "..."
+
+
+def _summarize_support_file(diff_file, kind: str) -> str:
+    """Build a short evidence summary for a skipped or truncated support file."""
+    changed_lines = _changed_non_empty_lines(diff_file)
+    summary_lines: list[str] = []
+
+    if kind == "test":
+        for line in changed_lines:
+            for pattern in _TEST_NAME_PATTERNS:
+                match = pattern.match(line)
+                if not match:
+                    continue
+                summary_lines.append(match.group(1))
+                break
+            if len(summary_lines) >= _MAX_SUPPORT_SUMMARY_LINES:
+                break
+    elif kind == "docs":
+        for line in changed_lines:
+            if _DOC_HEADING_PATTERN.match(line):
+                summary_lines.append(line)
+            if len(summary_lines) >= _MAX_SUPPORT_SUMMARY_LINES:
+                break
+    elif kind == "config":
+        for line in changed_lines:
+            match = _CONFIG_KEY_PATTERN.match(line)
+            if match:
+                summary_lines.append(match.group(1))
+            if len(summary_lines) >= _MAX_SUPPORT_SUMMARY_LINES:
+                break
+
+    if not summary_lines:
+        summary_lines = changed_lines[:_MAX_SUPPORT_SUMMARY_LINES]
+
+    if not summary_lines:
+        summary_lines = ["Changed file outside review budget."]
+
+    return _truncate_support_summary(" | ".join(summary_lines[:_MAX_SUPPORT_SUMMARY_LINES]))
+
+
+def _build_support_file_summaries(
+    metadata_source: DiffContext,
+    skipped_files: list[str],
+    truncated_files: list[str],
+    test_map: dict[str, list[str]],
+    config: CouncilConfig,
+) -> list[SupportFileSummary]:
+    """Summarize skipped/truncated tests, docs, and config from the full filtered diff."""
+    skipped_set = set(skipped_files)
+    truncated_set = set(truncated_files)
+    related_sources: dict[str, list[str]] = {}
+    for source_path, test_paths in test_map.items():
+        for test_path in test_paths:
+            related_sources.setdefault(test_path, []).append(source_path)
+
+    candidates = []
+    for diff_file in metadata_source.files:
+        status = None
+        if diff_file.path in truncated_set:
+            status = "truncated"
+        elif diff_file.path in skipped_set:
+            status = "skipped"
+        if status is None:
+            continue
+
+        kind = _support_file_kind(diff_file.path)
+        if kind is None:
+            continue
+
+        candidates.append((diff_file, kind, status))
+
+    candidates.sort(
+        key=lambda item: _file_priority(item[0], config.preprocessor.priorities),
+        reverse=True,
+    )
+
+    summaries: list[SupportFileSummary] = []
+    for diff_file, kind, status in candidates[:_MAX_SUPPORT_FILE_SUMMARIES]:
+        related_files = related_sources.get(diff_file.path, []) if kind == "test" else []
+        summaries.append(
+            SupportFileSummary(
+                path=diff_file.path,
+                kind=kind,
+                status=status,
+                related_files=related_files,
+                summary=_summarize_support_file(diff_file, kind),
+            )
+        )
+
+    return summaries
+
+
 def assemble(
     diff_context: DiffContext,
     gate_zero_findings: list[GateZeroFinding],
     config: CouncilConfig,
     skipped_files: list[str] | None = None,
     truncated_files: list[str] | None = None,
+    metadata_context: DiffContext | None = None,
 ) -> ReviewPack:
     """Assemble a ReviewPack from the preprocessed diff context."""
+    metadata_source = metadata_context or diff_context
+
     # Extract symbols from all non-deleted files with source content
     all_symbols: list[ChangedSymbol] = []
-    languages: set[str] = set()
+    languages: set[str] = {
+        diff_file.language
+        for diff_file in metadata_source.files
+        if diff_file.language
+    }
 
     for diff_file in diff_context.files:
-        if diff_file.language:
-            languages.add(diff_file.language)
-
         # Extract deleted symbols from removed lines in hunks
         # (works for any language — regex-based, doesn't need source_content)
         if diff_file.change_type in ("deleted", "modified") and diff_file.hunks:
@@ -439,7 +581,14 @@ def assemble(
             all_symbols.extend(changed)
 
     # Build test coverage map
-    test_map = _build_test_coverage_map(diff_context)
+    test_map = _build_test_coverage_map(metadata_source)
+    support_summaries = _build_support_file_summaries(
+        metadata_source=metadata_source,
+        skipped_files=skipped_files or [],
+        truncated_files=truncated_files or [],
+        test_map=test_map,
+        config=config,
+    )
 
     # Mark symbols that have tests
     for symbol in all_symbols:
@@ -477,17 +626,18 @@ def assemble(
 
     return ReviewPack(
         diff_text=diff_text,
-        changed_files=diff_context.changed_files,
-        added_files=diff_context.added_files,
-        deleted_files=diff_context.deleted_files,
+        changed_files=metadata_source.changed_files,
+        added_files=metadata_source.added_files,
+        deleted_files=metadata_source.deleted_files,
         changed_symbols=all_symbols,
         test_coverage_map=test_map,
         languages_detected=sorted(languages - {"markdown", "toml", "yaml", "json"}),
+        support_files_outside_budget=support_summaries,
         gate_zero_results=gate_zero_findings,
         repo_policies=repo_policies,
-        branch=diff_context.branch,
-        commit_range=diff_context.commit_range,
-        total_lines_changed=diff_context.total_additions + diff_context.total_deletions,
+        branch=metadata_source.branch,
+        commit_range=metadata_source.commit_range,
+        total_lines_changed=metadata_source.total_additions + metadata_source.total_deletions,
         token_estimate=_estimate_tokens(diff_text),
         files_truncated=truncated_files or [],
         files_skipped=skipped_files or [],

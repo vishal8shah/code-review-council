@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from council.chair import _chair_failure_verdict, _chair_verdict_from_payload, _parse_chair_findings, synthesize
+from council.llm_transport import JSONCompletionResult
+from council.schemas import Finding, ReviewerOutput, ReviewPack
+
+
+@pytest.mark.asyncio
+async def test_synthesize_fast_path_passes_without_llm_call():
+    review_pack = ReviewPack(diff_text="+x")
+    reviews = [ReviewerOutput(reviewer_id="qa", model="m", verdict="PASS", confidence=0.9, findings=[])]
+
+    verdict = await synthesize(review_pack, reviews)
+
+    assert verdict.verdict == "PASS"
+    assert verdict.summary == "All reviewers passed with no findings."
+
+
+@pytest.mark.asyncio
+async def test_synthesize_invalid_json_fails_closed():
+    review_pack = ReviewPack(diff_text="+x")
+    reviews = [
+        ReviewerOutput(
+            reviewer_id="secops",
+            model="m",
+            verdict="FAIL",
+            confidence=0.9,
+            findings=[
+                Finding(
+                    severity="HIGH",
+                    category="security",
+                    file="auth.py",
+                    description="Issue",
+                    suggestion="Fix",
+                )
+            ],
+        )
+    ]
+
+    with patch(
+        "council.chair.invoke_json_completion",
+        new=AsyncMock(
+            return_value=JSONCompletionResult(
+                raw_content="not valid json",
+                tokens_used=3,
+                output_mode="response_format",
+            )
+        ),
+    ):
+        verdict = await synthesize(review_pack, reviews)
+
+    assert verdict.verdict == "FAIL"
+    assert verdict.degraded is True
+    assert verdict.chair_output_mode == "failed"
+    assert verdict.summary == "Chair synthesis failed; review failed closed for safety."
+    assert verdict.rationale == (
+        "Chair synthesis transport or parsing failed. The review failed closed for safety."
+    )
+    assert verdict.degraded_reasons == [
+        "Chair synthesis failed due to an internal transport or parsing error."
+    ]
+    # Reviewer findings are preserved as the caller's input; fail-closed verdict
+    # correctly marks itself degraded so callers know synthesis did not complete.
+    assert verdict.accepted_blockers == []
+
+
+def test_parse_chair_findings_logs_malformed_items(caplog):
+    raw = [
+        {
+            "severity": "HIGH",
+            "category": "security",
+            "file": "auth.py",
+            "description": "Real one",
+            "chair_action": "accepted",
+        },
+        {"not": "a valid finding"},  # missing required fields
+        "totally malformed string",
+    ]
+
+    with caplog.at_level("DEBUG", logger="council.chair"):
+        findings = _parse_chair_findings(raw)
+
+    # Only the well-formed one survives.
+    assert len(findings) == 1
+    assert findings[0].description == "Real one"
+    # Malformed items are surfaced in logs at WARNING, not silently dropped.
+    log_text = " ".join(record.message for record in caplog.records)
+    assert "malformed chair finding" in log_text.lower()
+    warning_records = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("2" in r.message and "malformed" in r.message.lower() for r in warning_records)
+
+
+def test_parse_chair_findings_returns_empty_for_non_list_input():
+    assert _parse_chair_findings(None) == []
+    assert _parse_chair_findings("not a list") == []
+    assert _parse_chair_findings(42) == []
+    assert _parse_chair_findings({"key": "value"}) == []
+
+
+def test_chair_failure_verdict_does_not_leak_exception_text():
+    verdict = _chair_failure_verdict(
+        RuntimeError("secret token 123"),
+        degraded_reasons=["existing"],
+    )
+
+    assert verdict.summary == "Chair synthesis failed; review failed closed for safety."
+    assert "secret token 123" not in verdict.summary
+    assert "secret token 123" not in verdict.rationale
+    assert all("secret token 123" not in reason for reason in verdict.degraded_reasons)
+
+
+def test_chair_verdict_from_payload_propagates_output_mode():
+    parsed = {
+        "verdict": "PASS",
+        "confidence": 0.95,
+        "summary": "all good",
+        "rationale": "nothing to flag",
+        "accepted_blockers": [],
+        "warnings": [],
+        "dismissed_findings": [],
+        "all_findings": [],
+    }
+    verdict = _chair_verdict_from_payload(
+        parsed=parsed,
+        output_mode="prompt_json_fallback",
+        degraded=True,
+        degraded_reasons=["rate limit"],
+    )
+
+    assert verdict.chair_output_mode == "prompt_json_fallback"
+    assert verdict.degraded is True
+    assert verdict.degraded_reasons == ["rate limit"]
+    assert verdict.verdict == "PASS"
+
+
+def test_chair_payload_cannot_create_degraded_state():
+    parsed = {
+        "verdict": "PASS_WITH_WARNINGS",
+        "confidence": 0.8,
+        "degraded": True,
+        "summary": "model saw a reviewer warning",
+        "rationale": "non-blocking reviewer parse warning",
+        "accepted_blockers": [],
+        "warnings": [],
+        "dismissed_findings": [],
+        "all_findings": [],
+    }
+
+    verdict = _chair_verdict_from_payload(
+        parsed=parsed,
+        output_mode="response_format",
+        degraded=False,
+        degraded_reasons=None,
+    )
+
+    assert verdict.degraded is False
+    assert verdict.degraded_reasons == []
+    assert verdict.verdict == "PASS_WITH_WARNINGS"

@@ -109,7 +109,7 @@ Given the goal of vibe-coding this quickly, the stack should minimize boilerplat
 | **Language** | **Python 3.12+** | Fastest to vibe-code; best LLM SDK ecosystem; your existing fork is Python-based |
 | **LLM Orchestration** | **LiteLLM** (unified proxy) | Single interface to call Claude, GPT-4o, Gemini, etc. via OpenAI-compatible API. Eliminates per-provider SDK management. Drop-in replacement for `openai.ChatCompletion.create()` |
 | **Async Execution** | **asyncio + `asyncio.gather()`** | Fan-out reviewer calls in parallel — critical for keeping latency under control |
-| **Structured Output** | **Pydantic v2** | Define strict review schemas; use with `response_format` / tool calling for guaranteed JSON from all models |
+| **Structured Output** | **Pydantic v2** | Define strict review schemas; prefer `response_format` when supported and retry with prompt-only JSON fallback when a provider rejects native JSON mode |
 | **Diff Parsing** | **`unidiff`** (Python lib) + `git` subprocess | Parse unified diffs into per-file, per-hunk structured objects |
 | **Diff Preprocessing** | **Custom filter/chunker** | Ignore patterns (like `.gitignore` for review scope), token budget management, generated file detection, chunking for large diffs |
 | **Static Analysis (Gate Zero)** | **Python `ast`** + **dependency-free TS/JS heuristics** | Plugin system for per-language rules. Python uses `ast.parse()`; TypeScript/JavaScript scan exported symbols line-by-line without extra parser dependencies. |
@@ -117,7 +117,7 @@ Given the goal of vibe-coding this quickly, the stack should minimize boilerplat
 | **CLI Interface** | **`typer`** | Beautiful CLI with minimal code; auto-generates `--help` |
 | **Configuration** | **TOML** (`.council.toml` in repo root) | Human-readable, git-committable config for reviewer personas, thresholds, model assignments |
 | **Git Integration** | **GitHub Action** (primary gate) + optional **`pre-push` hook** (advisory) | CI blocks merge on FAIL; local hook provides fast advisory feedback |
-| **Output/Reports** | **Rich** (terminal) + **Markdown** (file) + **PR annotations** (CI) | Pretty terminal output locally; persistent review artifacts; inline PR comments in CI |
+| **Output/Reports** | **Rich** (terminal) + **Markdown** (file) + **GitHub PR reporter** (CI) | Pretty terminal output locally; persistent review artifacts; sticky summaries plus inline PR comments in CI |
 | **Testing** | **pytest + pytest-asyncio** | Test the council itself — dogfood the QA layer |
 
 ### 1.3 Project Structure
@@ -129,10 +129,12 @@ code-review-council/
 │   ├── __init__.py
 │   ├── cli.py                 # Typer CLI entrypoint
 │   ├── config.py              # TOML config loader + Pydantic settings
+│   ├── doctor.py              # Preflight diagnostics for repo/model/GitHub setup
 │   ├── diff_parser.py         # Git diff → structured DiffContext
 │   ├── diff_preprocessor.py   # Filtering, chunking, token budgets
 │   ├── review_pack.py         # Assembles ReviewPack from diff + AST + policies
 │   ├── gate_zero.py           # Static pre-flight checks (docs, lint, types)
+│   ├── llm_transport.py       # Shared LiteLLM JSON transport + fallback helpers
 │   ├── orchestrator.py        # Fan-out to reviewers, collect, pass to chair
 │   ├── reviewers/
 │   │   ├── base.py            # BaseReviewer ABC
@@ -159,7 +161,9 @@ code-review-council/
 │       ├── terminal.py        # Rich console output
 │       ├── markdown.py        # .council-review.md generator
 │       ├── json_report.py     # Machine-readable JSON output
-│       └── github_pr.py       # PR comment + inline annotations
+│       ├── html_report.py     # Standalone HTML report output
+│       ├── transport.py       # Shared transport-note helpers for reporters
+│       └── github_pr.py       # Sticky PR summary + inline review reporting
 ├── hooks/
 │   └── pre-push              # Git hook installer script (advisory mode)
 ├── .github/
@@ -245,7 +249,7 @@ The Diff Preprocessor runs after Gate Zero and before ReviewPack assembly:
 |----------|-----------|-----------------|
 | **Ignore patterns** | `.councilignore` file (gitignore syntax) | Skip `package-lock.json`, `*.lock`, `*.min.js`, `*.generated.*`, `vendor/`, `dist/`, `node_modules/` |
 | **Generated file detection** | Header comment patterns (`// @generated`, `# auto-generated`) + known paths | Exclude from LLM review; flag in report as "skipped" |
-| **Token budget enforcement** | tiktoken estimation per file | If total diff exceeds `max_review_tokens` (default: 30,000), truncate lowest-priority files first |
+| **Token budget enforcement** | tiktoken estimation per file | If total diff exceeds `max_review_tokens` (default: 20,000), truncate lowest-priority files first. Some model mixes may be capped more aggressively in practice to stay below provider request-size limits |
 | **File prioritization** | Security-sensitive files first (auth, crypto, API routes), then business logic, then tests, then config/docs | Ensures token budget is spent on highest-risk code |
 | **Chunking** | For files exceeding `max_file_tokens` (default: 8,000), truncate to the token limit | V1 truncates at the token boundary. Future versions may split at parser-aware function/class boundaries. Truncated files are labeled in the ReviewPack |
 
@@ -253,7 +257,7 @@ The Diff Preprocessor runs after Gate Zero and before ReviewPack assembly:
 
 ```toml
 [preprocessor]
-max_review_tokens = 30000          # total token budget for LLM reviewers
+max_review_tokens = 20000          # total token budget for LLM reviewers
 max_file_tokens = 8000             # per-file limit before chunking
 ignore_file = ".councilignore"     # gitignore-style exclusion patterns
 
@@ -315,12 +319,12 @@ class ReviewPack(BaseModel):
     branch: str
     commit_range: str                  # e.g., "abc123..def456"
     total_lines_changed: int
-    token_estimate: int                # estimated tokens this pack will consume
-    files_truncated: list[str]         # files that were chunked or budget-trimmed
-    files_skipped: list[str]           # files excluded by ignore patterns
+    token_estimate: int                # estimated tokens in the reviewer-visible diff text
+    files_truncated: list[str]         # files whose hunks were truncated to fit per-file limits
+    files_skipped: list[str]           # files filtered or dropped from diff text before reviewer calls
 ```
 
-**Why this matters:** Without a ReviewPack, even excellent prompts degrade fast. A SecOps reviewer seeing raw diff text has to infer which functions are public, whether tests exist, and what the repo's security policies are. With a ReviewPack, those facts are explicit. The reviewer can focus on judgment, not context reconstruction.
+**Why this matters:** Without a ReviewPack, even excellent prompts degrade fast. A SecOps reviewer seeing raw diff text has to infer which functions are public, whether tests exist, and what the repo's security policies are. With a ReviewPack, those facts are explicit. The reviewer can focus on judgment, not context reconstruction. The diff text remains budgeted for model safety, but ReviewPack metadata now comes from the full filtered PR diff so changed tests/docs/config still inform review even when their hunks fall outside the token budget.
 
 ### Stage 1 — Reviewer Panel (Parallel LLM Calls)
 
@@ -779,7 +783,7 @@ Every component here exists and is proven:
 | Component | Maturity | Notes |
 |-----------|----------|-------|
 | Multi-model LLM calls via LiteLLM | Production-grade | Used by thousands of projects; supports 100+ providers |
-| Structured JSON output from LLMs | Production-grade | All frontier models support `response_format: json` or tool calling |
+| Structured JSON output from LLMs | Production-grade | Native JSON mode is common but not universal; Council now retries with prompt-only JSON fallback and surfaces the transport mode in reports |
 | Git diff parsing | Trivial | `unidiff` library + `git diff` subprocess |
 | AST-based code analysis | Built into Python stdlib | `ast.parse()` has been stable for 15+ years |
 | Git pre-push hooks | Standard Git feature | Bash script that calls `council review` |
@@ -870,7 +874,7 @@ $ council review
 
 🏛️  Code Review Council — Reviewing 7 files, 342 lines changed
   ℹ️  Skipped 2 files (package-lock.json, dist/bundle.min.js)
-  ℹ️  Token budget: 12,400 / 30,000
+  ℹ️  Token budget: 12,400 / 20,000
 
   Stage 0: Gate Zero ........... ✅ PASSED (1.2s)
   ReviewPack assembled: 5 changed symbols, 2 with tests
@@ -934,7 +938,7 @@ jobs:
           path: council-report.json
 ```
 
-In `--ci` mode, the council posts findings as **inline PR annotations** on the relevant lines and sets the GitHub check status based on the verdict.
+In `--ci` mode, the council posts a sticky PR summary, emits workflow annotations, and best-effort inline PR review comments for accepted findings with file/line evidence, then sets the GitHub check status based on the verdict.
 
 ### 7.4 On Hard Failure (CI)
 
@@ -985,7 +989,7 @@ local_mode = "advisory"            # advisory (never blocks) | gate (blocks push
 # CI is the primary enforcement point; local is for fast feedback
 
 [preprocessor]
-max_review_tokens = 30000          # total token budget for LLM reviewers
+max_review_tokens = 20000          # total token budget for LLM reviewers
 max_file_tokens = 8000             # per-file limit before chunking
 ignore_file = ".councilignore"     # gitignore-style exclusion patterns
 detect_generated = true            # auto-skip files with @generated headers
@@ -1048,7 +1052,7 @@ enabled = true
 terminal = true
 markdown = true                     # writes .council-review.md
 json_report = "ci"                   # auto-write in CI; configurable for local runs
-github_pr = false                    # not yet implemented — enable when reporter is added
+github_pr = false                    # enable with `--github-pr` for sticky summary + inline GitHub reporting
 
 [cost]
 warn_threshold_usd = 1.00           # warn if single review exceeds this
@@ -1073,19 +1077,26 @@ Everything described in this document up to this point. The core deliverable:
 8. **Output**: terminal (Rich), markdown (.council-review.md), JSON
 9. **GitHub Action** as primary CI gate + optional pre-push hook (advisory)
 
-### V2 — Production Hardening
+### V2 — Production Hardening (Implemented)
 
 Once V1 is stable with low false-positive rates:
 
 1. **SQLite/Postgres storage** for review runs — enables trend analysis
-2. **PR inline annotations** — post findings as GitHub review comments on specific lines
+2. **PR inline reporting** — sticky PR summary, workflow annotations, and best-effort inline GitHub review comments on specific lines
 3. **Repo-specific policy bundles** — configurable per-repo or per-team rules beyond the defaults
 4. **Team dashboard** — web UI (could reuse frontend ideas from the Karpathy fork) showing review history, pass rates, common findings, cost tracking
 5. **MCP server** — expose the council as an MCP tool so Claude Code or other agents can self-review before suggesting commits
 
-### V3 — Intelligence Layer
+### V3 — Portability + PR Usability (Implemented)
 
-Only after V2 proves the system is reliable:
+1. **Shared JSON transport helper** — reviewer, Chair, and owner-presentation calls use one LiteLLM path.
+2. **Structured-output portability** — native JSON mode first, prompt-only fallback on provider rejection, surfaced in report metadata.
+3. **`council doctor`** — preflight checks for repo state, branch targets, provider keys, likely fallback-only models, and GitHub PR context.
+4. **Transport-aware reporting** — terminal, markdown, HTML, JSON, and GitHub PR summaries show transport notes when fallback or failure occurs.
+
+### V4 — Intelligence Layer
+
+Only after the portability and usability layers are solid:
 
 1. **Auto-fix generation** (`council review --fix`) — chain back to a coding LLM to generate patches for CRITICAL/HIGH findings, then re-run the council on the patched code. **Prerequisite**: stable verdicts, low false positives, good evidence quality. Adding this too early is a trap — you'd be auto-fixing hallucinated issues.
 2. **Learning loop** — store review verdicts and findings in a DB. Analyze patterns over time: "80% of your FAIL verdicts are missing error handling in parsers" → surface as pre-review tips.
@@ -1119,3 +1130,4 @@ Only after V2 proves the system is reliable:
 | v1.1 | 2025-02-28 | Added ReviewPack schema, diff preprocessor, language-agnostic Gate Zero, CI-first enforcement, real-world cost/latency caveats. Incorporated feedback from GPT-4o comparative review. |
 | v1.2 | 2025-02-28 | 5 pre-build adjustments: evidence/policy-based Chair (not count-based), enriched Finding schemas with evidence_ref/symbol/confidence, forced JSON in CI mode, degraded-mode handling for reviewer timeouts, removed emergency bypass from V1. |
 | v1.3 | 2025-02-28 | Post-implementation update. Two rounds of peer review, 26 fixes applied. Key changes: Chair default GPT-4o (configurable), reviewer defaults updated to OpenAI model mix (configurable), deleted symbol detection via hunk scanning, unified degraded-mode with `degraded_reasons`, linter integration implemented (`shlex.split`, `{files}` placeholder), `repo_policies` populated from config, file boundary headers in diff text, `warnings` as first-class ChairVerdict field, path traversal protection, honest truncation (not "chunking"). 62 tests. See SELF-REVIEW.md for remaining known limitations. |
+| v1.4 | 2026-04-11 | Phase 2 and Phase 3 update. ReviewPack now covers Python plus parser-free TypeScript/JavaScript exports, shared test-path classification is reused across Gate Zero and ReviewPack, LiteLLM transport now retries without native JSON mode when providers reject `response_format`, reports surface `output_mode` / transport notes, `council doctor` was added for preflight checks, and GitHub PR reporting now combines sticky summaries with best-effort inline comments. |

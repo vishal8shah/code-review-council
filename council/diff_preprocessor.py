@@ -38,13 +38,18 @@ SECURITY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_MODEL_REVIEW_TOKEN_CAPS: tuple[tuple[str, int], ...] = (
+    ("gpt-4o-mini", 20_000),
+    ("gpt-4o", 20_000),
+)
+
 
 def _load_ignore_patterns(repo_root: Path, ignore_file: str) -> list[str]:
     """Load ignore patterns from .councilignore or use defaults."""
     ignore_path = repo_root / ignore_file
     if ignore_path.exists():
         lines = ignore_path.read_text().splitlines()
-        return [l.strip() for l in lines if l.strip() and not l.startswith("#")]
+        return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
     return DEFAULT_IGNORE_PATTERNS
 
 
@@ -133,10 +138,71 @@ def _file_priority(diff_file: DiffFile, priorities: PreprocessorPriorities | Non
     return priorities.business  # default for source code
 
 
+def effective_review_token_budget(
+    config: PreprocessorConfig,
+    reviewer_models: list[str] | None = None,
+) -> int:
+    """Return the effective total review budget for the configured reviewer mix.
+
+    Some models have tighter practical request-size limits than the global
+    default budget once prompts, symbol summaries, and metadata are added.
+    Cap the diff budget conservatively for those models so required CI checks
+    fail less often on large PRs.
+    """
+    budget = config.max_review_tokens
+    for model in reviewer_models or []:
+        normalized = (model or "").strip().lower()
+        for marker, cap in _MODEL_REVIEW_TOKEN_CAPS:
+            if marker in normalized:
+                budget = min(budget, cap)
+                break
+    return budget
+
+
+def _build_context(diff_context: DiffContext, files: list[DiffFile]) -> DiffContext:
+    """Rebuild a DiffContext after filtering or budget trimming."""
+    return DiffContext(
+        files=files,
+        changed_files=[f.path for f in files],
+        added_files=[f.path for f in files if f.change_type == "added"],
+        deleted_files=[f.path for f in files if f.change_type == "deleted"],
+        branch=diff_context.branch,
+        commit_range=diff_context.commit_range,
+        total_additions=sum(f.additions for f in files),
+        total_deletions=sum(f.deletions for f in files),
+    )
+
+
+def filter_context(
+    diff_context: DiffContext,
+    config: PreprocessorConfig,
+    repo_root: Path | None = None,
+) -> tuple[DiffContext, list[str]]:
+    """Remove ignored and generated files while preserving full diff metadata."""
+    if repo_root is None:
+        repo_root = Path.cwd()
+
+    ignore_patterns = _load_ignore_patterns(repo_root, config.ignore_file)
+    skipped_files: list[str] = []
+    kept_files: list[DiffFile] = []
+
+    for diff_file in diff_context.files:
+        if _should_ignore(diff_file.path, ignore_patterns):
+            skipped_files.append(diff_file.path)
+            continue
+        if config.detect_generated and _is_generated(diff_file):
+            skipped_files.append(diff_file.path)
+            continue
+        kept_files.append(diff_file)
+
+    return _build_context(diff_context, kept_files), skipped_files
+
+
 def process(
     diff_context: DiffContext,
     config: PreprocessorConfig,
     repo_root: Path | None = None,
+    reviewer_models: list[str] | None = None,
 ) -> tuple[DiffContext, list[str], list[str]]:
     """Filter, prioritize, and budget-manage a diff.
 
@@ -146,25 +212,16 @@ def process(
     if repo_root is None:
         repo_root = Path.cwd()
 
-    ignore_patterns = _load_ignore_patterns(repo_root, config.ignore_file)
-    skipped_files: list[str] = []
+    filtered_context, filtered_skipped = filter_context(diff_context, config, repo_root=repo_root)
+    skipped_files: list[str] = list(filtered_skipped)
     truncated_files: list[str] = []
-
-    # Step 1: Filter out ignored and generated files
-    kept_files: list[DiffFile] = []
-    for f in diff_context.files:
-        if _should_ignore(f.path, ignore_patterns):
-            skipped_files.append(f.path)
-            continue
-        if config.detect_generated and _is_generated(f):
-            skipped_files.append(f.path)
-            continue
-        kept_files.append(f)
+    kept_files = list(filtered_context.files)
 
     # Step 2: Sort by priority (highest first)
     kept_files.sort(key=lambda f: _file_priority(f, config.priorities), reverse=True)
 
     # Step 3: Token budget enforcement
+    max_review_tokens = effective_review_token_budget(config, reviewer_models)
     total_tokens = 0
     budget_files: list[DiffFile] = []
 
@@ -193,7 +250,7 @@ def process(
             )
             file_tokens = config.max_file_tokens
 
-        if total_tokens + file_tokens > config.max_review_tokens:
+        if total_tokens + file_tokens > max_review_tokens:
             # Budget exhausted — skip remaining lower-priority files
             skipped_files.append(f.path)
             continue
@@ -201,16 +258,6 @@ def process(
         total_tokens += file_tokens
         budget_files.append(f)
 
-    # Build filtered DiffContext
-    processed = DiffContext(
-        files=budget_files,
-        changed_files=[f.path for f in budget_files],
-        added_files=[f.path for f in budget_files if f.change_type == "added"],
-        deleted_files=[f.path for f in budget_files if f.change_type == "deleted"],
-        branch=diff_context.branch,
-        commit_range=diff_context.commit_range,
-        total_additions=sum(f.additions for f in budget_files),
-        total_deletions=sum(f.deletions for f in budget_files),
-    )
+    processed = _build_context(filtered_context, budget_files)
 
     return processed, skipped_files, truncated_files

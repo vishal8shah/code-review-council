@@ -78,10 +78,49 @@ def _load_class_path(class_path: str) -> type[BaseReviewer] | None:
     return None
 
 
+def _is_unexpected_keyword_error(exc: TypeError, supplied_kwargs: dict[str, object]) -> bool:
+    """Return True when a reviewer rejected one of our compatibility kwargs."""
+    msg = str(exc)
+    return "unexpected keyword" in msg and any(key in msg for key in supplied_kwargs)
+
+
+def _instantiate_reviewer(
+    cls: type[BaseReviewer],
+    rc: ReviewerConfig,
+    prompt_path: str | None,
+    on_integrity_issue: str,
+    reviewer_timeout: float,
+) -> BaseReviewer:
+    """Instantiate a reviewer while preserving older custom reviewer signatures."""
+    base_kwargs = {
+        "reviewer_id": rc.id,
+        "model": rc.model,
+        "prompt_path": prompt_path,
+    }
+    compatibility_kwargs = [
+        {"timeout": reviewer_timeout, "on_integrity_issue": on_integrity_issue},
+        {"timeout": reviewer_timeout},
+        {"on_integrity_issue": on_integrity_issue},
+        {},
+    ]
+
+    last_error: TypeError | None = None
+    for extra_kwargs in compatibility_kwargs:
+        try:
+            return cls(**base_kwargs, **extra_kwargs)
+        except TypeError as exc:
+            if not extra_kwargs or not _is_unexpected_keyword_error(exc, extra_kwargs):
+                raise
+            last_error = exc
+
+    raise last_error or TypeError("Unable to instantiate reviewer")
+
+
 def _instantiate_reviewers(
     configs: list[ReviewerConfig],
     on_integrity_issue: str,
     repo_root: Path | None = None,
+    reviewer_timeout: float = 60.0,
 ) -> list[BaseReviewer]:
     """Create reviewer instances from config."""
     reviewers: list[BaseReviewer] = []
@@ -99,24 +138,13 @@ def _instantiate_reviewers(
                 p = base_root / p
             prompt_path = str(p)
 
-        try:
-            reviewers.append(cls(
-                reviewer_id=rc.id,
-                model=rc.model,
-                prompt_path=prompt_path,
-                on_integrity_issue=on_integrity_issue,
-            ))
-        except TypeError as exc:
-            msg = str(exc)
-            if "on_integrity_issue" in msg and "unexpected keyword" in msg:
-                # Backward compatibility for custom reviewers not yet accepting integrity policy kwarg
-                reviewers.append(cls(
-                    reviewer_id=rc.id,
-                    model=rc.model,
-                    prompt_path=prompt_path,
-                ))
-            else:
-                raise
+        reviewers.append(_instantiate_reviewer(
+            cls=cls,
+            rc=rc,
+            prompt_path=prompt_path,
+            on_integrity_issue=on_integrity_issue,
+            reviewer_timeout=reviewer_timeout,
+        ))
     return reviewers
 
 
@@ -151,14 +179,22 @@ async def run_council(
     if gate_result.hard_fail:
         return CouncilResult(verdict=gate_result.as_early_exit(), gate_result=gate_result)
 
-    processed_diff, skipped_files, truncated_files = diff_preprocessor.process(
+    filtered_full_diff, filtered_skipped = diff_preprocessor.filter_context(
         diff_context,
         config=config.preprocessor,
         repo_root=repo_root,
     )
+    processed_diff, budget_skipped, truncated_files = diff_preprocessor.process(
+        filtered_full_diff,
+        config=config.preprocessor,
+        repo_root=repo_root,
+        reviewer_models=[reviewer.model for reviewer in config.active_reviewers],
+    )
+    skipped_files = list(dict.fromkeys(filtered_skipped + budget_skipped))
 
     review_pack = rp_module.assemble(
         diff_context=processed_diff,
+        metadata_context=filtered_full_diff,
         gate_zero_findings=gate_result.findings,
         config=config,
         skipped_files=skipped_files,
@@ -169,6 +205,7 @@ async def run_council(
         config.active_reviewers,
         config.enforcement.on_integrity_issue,
         repo_root=repo_root,
+        reviewer_timeout=float(config.reviewer_timeout_seconds),
     )
 
     if not reviewer_instances:
@@ -209,6 +246,7 @@ async def run_council(
                     confidence=0.0,
                     reasoning="",
                     tokens_used=0,
+                    output_mode="failed",
                     error=f"reviewer_task_exception: {type(result).__name__}: {result}",
                     integrity_error=True,
                 )

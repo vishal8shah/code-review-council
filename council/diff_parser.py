@@ -39,6 +39,31 @@ def detect_language(file_path: str) -> str | None:
     return EXTENSION_MAP.get(ext)
 
 
+def _decode_git_output(value: bytes | str | None) -> str:
+    """Decode git subprocess output without losing undecodable bytes."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="surrogateescape")
+    return value
+
+
+def _run_git_text(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    """Run a git command and decode stdout/stderr without lossy replacement."""
+    result = subprocess.run(
+        cmd,
+        cwd=cwd,
+        capture_output=True,
+        text=False,
+    )
+    return subprocess.CompletedProcess(
+        args=result.args,
+        returncode=result.returncode,
+        stdout=_decode_git_output(result.stdout),
+        stderr=_decode_git_output(result.stderr),
+    )
+
+
 def get_git_diff(
     repo_root: Path | None = None,
     staged: bool = False,
@@ -64,14 +89,14 @@ def get_git_diff(
     elif branch:
         cmd.extend([f"{branch}...HEAD"])
 
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    result = _run_git_text(cmd, cwd)
 
     if result.returncode != 0:
         # In CI checkouts the branch only exists as origin/<branch>.
         # Retry once with the remote-tracking ref before giving up.
         if branch and "unknown revision" in result.stderr:
             fallback_cmd = ["git", "diff", "--unified=3", f"origin/{branch}...HEAD"]
-            fallback = subprocess.run(fallback_cmd, cwd=cwd, capture_output=True, text=True)
+            fallback = _run_git_text(fallback_cmd, cwd)
             if fallback.returncode == 0:
                 return fallback.stdout
         raise RuntimeError(f"git diff failed: {result.stderr.strip()}")
@@ -81,12 +106,7 @@ def get_git_diff(
 
 def get_current_branch(repo_root: Path | None = None) -> str:
     """Get the current git branch name."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=repo_root or Path.cwd(),
-        capture_output=True,
-        text=True,
-    )
+    result = _run_git_text(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_root or Path.cwd())
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 

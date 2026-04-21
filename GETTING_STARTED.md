@@ -78,6 +78,21 @@ If you use a different provider supported by LiteLLM, set that provider's key in
 
 ---
 
+## Run a preflight check
+
+Before your first review, validate the repo, branch target, configured models, and
+available keys:
+
+```bash
+council doctor --branch main
+```
+
+`council doctor` warns when a configured model is likely to need prompt-only JSON
+fallback and fails fast on blocking setup issues such as missing keys, invalid branch
+targets, or missing GitHub PR context.
+
+---
+
 ## Initialize in your target repo
 
 Run `council init` from the root of the repository you want to review:
@@ -115,7 +130,7 @@ council review --branch main
 council review --ci --branch main
 ```
 
-**CI mode with GitHub PR sticky comment + annotations:**
+**CI mode with GitHub PR sticky summary + inline comments + annotations:**
 ```bash
 council review --ci --github-pr --branch main
 ```
@@ -249,6 +264,12 @@ If the review fails immediately, confirm your provider API key is set in your en
 echo $OPENAI_API_KEY
 echo $ANTHROPIC_API_KEY
 ```
+Then run:
+```bash
+council doctor --branch main
+```
+It will tell you which configured models are missing provider keys and whether your
+current setup is blocking or just likely to use JSON fallback transport.
 
 
 **Prompt-injection findings in test fixtures**
@@ -259,7 +280,8 @@ Secret scanning still runs for test files; committed tokens in tests will still 
 **Owner report mentions a "fallback" or "deterministic"**
 This is a safety feature, not a failure. It means:
 - the technical findings still exist and are shown in the technical appendix
-- the plain-English translation used a deterministic fallback instead of the LLM translation path
+- the plain-English translation or one of the model calls used a fallback transport path
+  instead of native `response_format`
 
 The findings are not hidden.
 

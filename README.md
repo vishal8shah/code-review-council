@@ -5,7 +5,7 @@
 > Designed for **agentic codebases** where AI writes most of the diff — the review loop is automated, auditable, and observable end-to-end.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![GitHub Actions](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](https://github.com/vishal8shah/code-review-council/actions)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://makeapullrequest.com)
 [![Docs](https://img.shields.io/badge/docs-live-orange)](https://vishal8shah.github.io/code-review-council/)
@@ -64,6 +64,9 @@ council init
 # Set API keys
 export ANTHROPIC_API_KEY=sk-...
 export OPENAI_API_KEY=sk-...
+
+# Preflight setup and model compatibility
+council doctor --branch main
 
 # Review current changes
 council review
@@ -328,19 +331,20 @@ Add your infographic PNGs under `site/docs/assets/infographics/`. If you fork, u
 
 ## ⚠️ Known Limitations (V1 Alpha)
 
-- **Model compatibility**: V1 uses `response_format={"type": "json_object"}` which is supported by OpenAI and Anthropic models via LiteLLM. Gemini and other providers may not support this parameter. If using non-OpenAI/Anthropic models, test compatibility first. A fallback mechanism is planned.
+- **Model compatibility**: Council now retries without `response_format={"type": "json_object"}` when a provider/model rejects native JSON mode. That improves portability, but some providers still return malformed JSON or require prompt tuning. Council surfaces `output_mode` and transport notes when fallback transport is used or fails.
 - **Language support**: Gate Zero analyzers now cover Python, TypeScript, and JavaScript. ReviewPack symbol extraction also covers Python plus parser-free TypeScript/JavaScript exports, including default exports, interfaces, and type aliases. TypeScript/JavaScript analyzers remain disabled by default until explicitly enabled in `[gate_zero.analyzers]`. The diff preprocessor, reviewer panel, and Chair work with any language.
-- **Test coverage map**: Only detects test files present in the current diff, not the full repo. Python test matching uses import analysis, while TypeScript/JavaScript coverage uses relative-import and filename heuristics only. The QA reviewer is informed this is a weak signal.
-- **Large file handling**: Files exceeding the token budget are truncated, not split at logical boundaries. Truncated files are labeled in the ReviewPack.
-- **GitHub API variability**: `--github-pr` supports sticky PR comments and workflow annotations, but still runs in best-effort mode. You can tune retries/timeouts with `COUNCIL_GITHUB_MAX_RETRIES`, `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS`, and `COUNCIL_GITHUB_HTTP_TIMEOUT` for noisy CI networks.
+- **Test coverage map**: Only detects test files present in the current diff, not the full repo. Python test matching uses import analysis, while TypeScript/JavaScript coverage uses relative-import and filename heuristics only. Files that stay in the filtered PR diff but fall outside the token budget still contribute to ReviewPack metadata and diff-local coverage hints.
+- **Large file handling**: Reviewers still see a budgeted/truncated diff, not logical parser-aware chunks. Files or hunks excluded by token budget are surfaced in ReviewPack metadata so skipped tests/docs/config still remain visible to reviewers as changed support context.
+- **GitHub API variability**: `--github-pr` now supports sticky PR summaries, workflow annotations, and best-effort inline PR comments for accepted findings with file/line evidence. GitHub auth, rate limits, or API failures degrade reporting only; they do not invalidate the review itself. You can tune retries/timeouts with `COUNCIL_GITHUB_MAX_RETRIES`, `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS`, and `COUNCIL_GITHUB_HTTP_TIMEOUT` for noisy CI networks.
 
 ---
 
 ## 🗺️ Roadmap
 
 - [x] V1 — GitHub Actions CI gate, 4 reviewers, 2 output modes, BYOK for forks
-- [ ] V2 — PR inline annotations, team dashboard, MCP server for agent self-review before opening a PR
-- [ ] V3 — Auto-fix generation: Council flags → coding agent patches → Council re-reviews → ship when it passes
+- [x] V2 — Python/TypeScript/JavaScript ReviewPack parity and shared test-path logic
+- [x] V3 — JSON transport fallback, `council doctor`, sticky + inline GitHub PR reporting
+- [ ] V4 — Friendlier onboarding, stronger fix guidance, full-repo context expansion, and safer self-serve defaults
 
 ---
 

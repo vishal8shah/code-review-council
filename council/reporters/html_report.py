@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
+from .transport import reviewer_output_mode, transport_notes
 from ..schemas import (
     ChairFinding,
     ChairVerdict,
@@ -391,6 +392,7 @@ def _owner_report_html(
     reviewer_outputs: list[ReviewerOutput] | None,
 ) -> str:
     """Build the owner-audience HTML report."""
+    notes = transport_notes(verdict, reviewer_outputs)
     icon, rec_label, fg, bg = MERGE_REC_DISPLAY.get(
         owner_presentation.merge_recommendation,
         ("?", owner_presentation.merge_recommendation, "#374151", "#f3f4f6"),
@@ -401,6 +403,14 @@ def _owner_report_html(
     if owner_presentation.degraded_warning:
         degraded_html = (
             f'<div class="degraded-warning">[WARN] {_e(owner_presentation.degraded_warning)}</div>'
+        )
+
+    transport_html = ""
+    if notes:
+        items = "".join(f"<li>{_e(note)}</li>" for note in notes)
+        transport_html = (
+            '<div class="inline-warning"><strong>Transport notes:</strong>'
+            f"<ul style=\"margin:8px 0 0 16px\">{items}</ul></div>"
         )
 
     has_tech_findings = bool(verdict.accepted_blockers or verdict.warnings)
@@ -477,6 +487,7 @@ def _owner_report_html(
             f"<td><code style='font-size:12px'>{_e(reviewer.model)}</code></td>"
             f"<td>{_e(reviewer.verdict)}</td>"
             f"<td>{len(reviewer.findings)}</td>"
+            f"<td>{_e(reviewer_output_mode(reviewer))}</td>"
             f"<td style='color:#dc2626'>{_e(reviewer.error or '')}</td></tr>"
             for reviewer in reviewer_outputs
         )
@@ -484,7 +495,7 @@ def _owner_report_html(
 <details>
   <summary>Reviewer panel ({len(reviewer_outputs)} reviewers)</summary>
   <table class="reviewer-table" style="margin-top:12px">
-    <thead><tr><th>Reviewer</th><th>Model</th><th>Verdict</th><th>Findings</th><th>Error</th></tr></thead>
+    <thead><tr><th>Reviewer</th><th>Model</th><th>Verdict</th><th>Findings</th><th>Output mode</th><th>Error</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
 </details>"""
@@ -534,6 +545,7 @@ def _owner_report_html(
   </div>
 
   {degraded_html}
+  {transport_html}
 
   <div class="summary-box">
     <p>{_e(owner_presentation.short_summary)}</p>
@@ -560,6 +572,7 @@ def _developer_report_html(
     reviewer_outputs: list[ReviewerOutput] | None,
 ) -> str:
     """Build the developer-audience HTML report."""
+    notes = transport_notes(verdict, reviewer_outputs)
     fg, bg, label = VERDICT_COLORS.get(verdict.verdict, ("#374151", "#f3f4f6", verdict.verdict))
     icon = {
         "PASS": "[PASS]",
@@ -578,6 +591,14 @@ def _developer_report_html(
     summary_html = ""
     if verdict.summary:
         summary_html = f'<div class="summary-box"><p>{_e(verdict.summary)}</p></div>'
+
+    transport_html = ""
+    if notes:
+        items = "".join(f"<li>{_e(note)}</li>" for note in notes)
+        transport_html = (
+            '<div class="inline-warning"><strong>Transport notes:</strong>'
+            f"<ul style=\"margin:8px 0 0 16px\">{items}</ul></div>"
+        )
 
     blocker_html = ""
     if verdict.accepted_blockers:
@@ -613,6 +634,7 @@ def _developer_report_html(
             f"<td><code style='font-size:12px'>{_e(reviewer.model)}</code></td>"
             f"<td>{_e(reviewer.verdict)}</td>"
             f"<td>{len(reviewer.findings)}</td>"
+            f"<td>{_e(reviewer_output_mode(reviewer))}</td>"
             f"<td>{reviewer.tokens_used}</td>"
             f"<td style='color:#dc2626'>{_e(reviewer.error or '')}</td></tr>"
             for reviewer in reviewer_outputs
@@ -620,7 +642,7 @@ def _developer_report_html(
         reviewer_html = f"""
 <div class="section-header">Reviewer Panel</div>
 <table class="reviewer-table">
-  <thead><tr><th>Reviewer</th><th>Model</th><th>Verdict</th><th>Findings</th><th>Tokens</th><th>Error</th></tr></thead>
+  <thead><tr><th>Reviewer</th><th>Model</th><th>Verdict</th><th>Findings</th><th>Output mode</th><th>Tokens</th><th>Error</th></tr></thead>
   <tbody>{rows}</tbody>
 </table>"""
 
@@ -663,6 +685,7 @@ def _developer_report_html(
   </div>
 
   {degraded_html}
+  {transport_html}
   {summary_html}
   {meta_html}
   {reviewer_html}

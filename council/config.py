@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -45,7 +45,7 @@ class PreprocessorPriorities(BaseModel):
 class PreprocessorConfig(BaseModel):
     """Diff preprocessor settings."""
 
-    max_review_tokens: int = 30_000
+    max_review_tokens: int = 20_000
     max_file_tokens: int = 8_000
     ignore_file: str = ".councilignore"
     detect_generated: bool = True
@@ -90,7 +90,7 @@ class ReportersConfig(BaseModel):
     terminal: bool = True
     markdown: bool = True
     json_report: str | bool = "ci"  # "ci" = auto-enabled with --ci; true = always; false = never
-    github_pr: bool = False  # not yet implemented — enable when reporter is added
+    github_pr: bool = False  # sticky summary + inline GitHub reporting (best effort)
 
 
 class CostConfig(BaseModel):
@@ -116,6 +116,7 @@ class CouncilConfig(BaseModel):
     chair_model: str = "openai/gpt-4o"
     fail_on: Literal["FAIL", "PASS_WITH_WARNINGS"] = "FAIL"
     timeout_seconds: int = 60
+    reviewer_timeout_seconds: int = 60
     reviewer_concurrency: int = 2
 
     enforcement: EnforcementConfig = EnforcementConfig()

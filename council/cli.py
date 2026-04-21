@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import sys
 from pathlib import Path
 
 import typer
@@ -19,10 +18,18 @@ from rich.console import Console
 
 app = typer.Typer(
     name="council",
-    help="🏛️ Code Review Council — Multi-agent LLM code review gate",
+    help="Code Review Council — Multi-agent LLM code review gate",
     no_args_is_help=True,
 )
 console = Console()
+
+
+def _status_style(status: str) -> str:
+    if status == "PASS":
+        return "green"
+    if status == "WARN":
+        return "yellow"
+    return "red"
 
 
 @app.command()
@@ -60,7 +67,7 @@ def review(
     # Safety: warn if --ci without explicit diff target (could review empty diff)
     if ci and not staged and not branch:
         console.print(
-            "  [yellow]⚠ Warning: --ci mode without --branch or --staged. "
+            "  [yellow][WARN] --ci mode without --branch or --staged. "
             "This may produce an empty diff in CI checkouts. "
             "Use --branch main (or your base branch) for PR reviews.[/]"
         )
@@ -175,7 +182,52 @@ def review(
     # Advisory mode — always exit 0
     if not ci:
         if verdict.verdict == "FAIL":
-            console.print("  💡 These findings will be enforced in CI.", style="yellow")
+            console.print("  [INFO] These findings will be enforced in CI.", style="yellow")
+
+
+@app.command()
+def doctor(
+    branch: str = typer.Option(None, "--branch", "-b", help="Validate this diff target branch/ref"),
+    audience: str = typer.Option(
+        None,
+        "--audience",
+        help="Validate this audience override (`developer` or `owner`) instead of the config default.",
+    ),
+    github_pr: bool = typer.Option(
+        False,
+        "--github-pr",
+        help="Also validate GitHub pull-request reporting environment variables.",
+    ),
+    repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),
+) -> None:
+    """Run practical preflight checks before a full council review."""
+    from pathlib import Path
+
+    from .config import load_config
+    from .doctor import run_doctor
+
+    root = Path(repo_root) if repo_root else Path.cwd()
+    config = load_config(root)
+    report = run_doctor(
+        repo_root=root,
+        config=config,
+        branch=branch,
+        audience=audience,
+        github_pr=github_pr,
+    )
+
+    console.print("\n[bold]Code Review Council Doctor[/]")
+    for check in report.checks:
+        style = _status_style(check.status)
+        console.print(f"  [{style}]{check.status:4}[/] {check.name}: {check.detail}")
+        if check.remediation:
+            console.print(f"        -> {check.remediation}", style="dim")
+
+    if report.exit_code != 0:
+        console.print("\n  Doctor found blocking setup issues.", style="bold red")
+        raise typer.Exit(code=1)
+
+    console.print("\n  Doctor completed with no blocking issues.", style="bold green")
 
 
 @app.command()
@@ -221,14 +273,14 @@ def init(
         workflow_path.write_text(_DEFAULT_WORKFLOW, encoding="utf-8")
         console.print(f"  [green]Created[/] {workflow_path}")
         console.print(
-            "  [dim]→ Add ANTHROPIC_API_KEY and OPENAI_API_KEY to your repo secrets[/]"
+            "  [dim]→ Add GOOGLE_API_KEY to your repo secrets for the Gemini-pinned workflow[/]"
         )
 
     if not byok_workflow_path.exists():
         byok_workflow_path.write_text(_DEFAULT_WORKFLOW_BYOK, encoding="utf-8")
         console.print(f"  [green]Created[/] {byok_workflow_path}")
 
-    console.print("\n  🏛️ Council initialized. Run [bold]council review[/] to review changes.")
+    console.print("\n  Council initialized. Run [bold]council review[/] to review changes.")
 
 
 _DEFAULT_CONFIG = """\
@@ -236,6 +288,7 @@ _DEFAULT_CONFIG = """\
 chair_model = "openai/gpt-4o"
 fail_on = "FAIL"
 timeout_seconds = 60
+reviewer_timeout_seconds = 60
 reviewer_concurrency = 2
 
 [council.enforcement]
@@ -245,7 +298,7 @@ local_mode = "advisory"
 on_integrity_issue = "fail"
 
 [preprocessor]
-max_review_tokens = 30000
+max_review_tokens = 20000
 max_file_tokens = 8000
 ignore_file = ".councilignore"
 detect_generated = true
@@ -346,27 +399,62 @@ jobs:
       - name: Install Code Review Council
         run: pip install .
 
-      - name: Check LLM credentials availability
+      - name: Check Gemini credentials availability
         id: llm_keys
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
-          if [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$OPENAI_API_KEY" ] || [ -n "$GOOGLE_API_KEY" ]; then
+          if [ -n "$GOOGLE_API_KEY" ]; then
             echo "has_key=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_key=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Code Review Council skipped::No LLM API keys available (common on fork PRs). Skipping council review step."
-            printf '{"skipped":"no_llm_api_keys","how_to_run_full":"Run the BYOK workflow in your fork: Actions -> Code Review Council (BYOK - Fork)"}\n' > council-report.json
+            echo "::notice title=Code Review Council skipped::No GOOGLE_API_KEY available. This workflow is pinned to Gemini and will skip instead of falling back to other providers."
+            printf '{"skipped":"no_google_api_key","how_to_fix":"Add GOOGLE_API_KEY as a repository Actions secret, then rerun this workflow."}\n' > council-report.json
           fi
+
+      - name: Write CI Gemini config
+        if: steps.llm_keys.outputs.has_key == 'true'
+        run: |
+          cat > .council.toml <<'EOF'
+          [council]
+          chair_model = "gemini/gemini-3-pro-preview"
+          timeout_seconds = 360
+          reviewer_timeout_seconds = 360
+          reviewer_concurrency = 1
+
+          [[reviewers]]
+          id = "secops"
+          name = "Security Operations Reviewer"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/secops.md"
+          enabled = true
+
+          [[reviewers]]
+          id = "qa"
+          name = "QA Engineer"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/qa.md"
+          enabled = true
+
+          [[reviewers]]
+          id = "architect"
+          name = "Solutions Architect"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/architecture.md"
+          enabled = true
+
+          [[reviewers]]
+          id = "docs"
+          name = "Documentation Reviewer"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/docs.md"
+          enabled = true
+          EOF
 
       - name: Run Council Review
         if: steps.llm_keys.outputs.has_key == 'true'
         run: council review --ci --github-pr --branch ${{ github.base_ref }} --output-json council-report.json
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -413,16 +501,14 @@ jobs:
       - name: Install Code Review Council
         run: pip install .
 
-      - name: Fail fast if no BYOK keys configured
+      - name: Fail fast if no Gemini key configured
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
-          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ]; then
-            printf '{"skipped":"no_byok_keys","how_to_fix":"Add OPENAI_API_KEY and/or ANTHROPIC_API_KEY and/or GOOGLE_API_KEY as Actions secrets in your fork, then rerun"}\n' > council-report.json
-            printf '# Council BYOK skipped\n\nNo BYOK secrets found. Add Actions secrets in your fork and rerun.\n' > council-review.md
-            echo "::error::No BYOK LLM API keys found. Add OPENAI_API_KEY and/or ANTHROPIC_API_KEY and/or GOOGLE_API_KEY as Actions secrets in your fork repository, then rerun this workflow."
+          if [ -z "$GOOGLE_API_KEY" ]; then
+            printf '{"skipped":"no_google_api_key","how_to_fix":"Add GOOGLE_API_KEY as an Actions secret in your fork, then rerun."}\n' > council-report.json
+            printf '# Council BYOK skipped\n\nNo GOOGLE_API_KEY secret found. This workflow is pinned to Gemini. Add GOOGLE_API_KEY in your fork and rerun.\n' > council-review.md
+            echo "::error::No GOOGLE_API_KEY found. This workflow is pinned to Gemini. Add GOOGLE_API_KEY as an Actions secret in your fork repository, then rerun this workflow."
             exit 1
           fi
 
@@ -522,10 +608,46 @@ Invalid input.
             echo "::warning::You are running on the base branch '$BASE_REF'. You probably meant to run this workflow on your PR branch."
           fi
 
+      - name: Write CI Gemini config
+        run: |
+          cat > .council.toml <<'EOF'
+          [council]
+          chair_model = "gemini/gemini-3-pro-preview"
+          timeout_seconds = 360
+          reviewer_timeout_seconds = 360
+          reviewer_concurrency = 1
+
+          [[reviewers]]
+          id = "secops"
+          name = "Security Operations Reviewer"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/secops.md"
+          enabled = true
+
+          [[reviewers]]
+          id = "qa"
+          name = "QA Engineer"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/qa.md"
+          enabled = true
+
+          [[reviewers]]
+          id = "architect"
+          name = "Solutions Architect"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/architecture.md"
+          enabled = true
+
+          [[reviewers]]
+          id = "docs"
+          name = "Documentation Reviewer"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/docs.md"
+          enabled = true
+          EOF
+
       - name: Run Council Review (BYOK)
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           TARGET_BRANCH: ${{ steps.review_base.outputs.target }}
           AUDIENCE: ${{ inputs.audience }}

@@ -36,7 +36,14 @@ from council.gate_zero import (
     check_readme_updated,
     check_secrets,
 )
-from council.diff_preprocessor import process, _should_ignore, _is_generated, _file_priority
+from council.diff_preprocessor import (
+    filter_context,
+    process,
+    _should_ignore,
+    _is_generated,
+    _file_priority,
+    effective_review_token_budget,
+)
 from council.review_pack import (
     assemble,
     _build_test_coverage_map,
@@ -393,6 +400,7 @@ class TestConfig:
         assert config.chair_model == "openai/gpt-4o"
         assert config.gate_zero.require_docs is True
         assert config.gate_zero.check_secrets is True
+        assert config.reviewer_timeout_seconds == 60
         assert len(config.reviewers) > 0
 
     def test_load_toml_config(self, tmp_path):
@@ -402,6 +410,7 @@ class TestConfig:
 [council]
 chair_model = "anthropic/claude-opus-4-6"
 timeout_seconds = 30
+reviewer_timeout_seconds = 45
 reviewer_concurrency = 1
 
 [gate_zero]
@@ -417,6 +426,7 @@ enabled = true
         config = load_config(tmp_path)
         assert config.chair_model == "anthropic/claude-opus-4-6"
         assert config.timeout_seconds == 30
+        assert config.reviewer_timeout_seconds == 45
         assert config.reviewer_concurrency == 1
         assert config.gate_zero.require_docs is False
         assert len(config.reviewers) == 1
@@ -1957,14 +1967,18 @@ class TestWorkflowScaffold:
     def test_workflow_skips_when_no_llm_keys(self):
         """Generated workflow should skip council run when fork PRs have no secrets."""
         from council.cli import _DEFAULT_WORKFLOW
-        assert "Check LLM credentials availability" in _DEFAULT_WORKFLOW
+        assert "Check Gemini credentials availability" in _DEFAULT_WORKFLOW
         assert "id: llm_keys" in _DEFAULT_WORKFLOW
         assert "env:" in _DEFAULT_WORKFLOW
-        assert "if [ -n \"$ANTHROPIC_API_KEY\" ] || [ -n \"$OPENAI_API_KEY\" ] || [ -n \"$GOOGLE_API_KEY\" ]; then" in _DEFAULT_WORKFLOW
+        assert 'if [ -n "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW
         assert "if: steps.llm_keys.outputs.has_key == 'true'" in _DEFAULT_WORKFLOW
-        assert "No LLM API keys available (common on fork PRs)" in _DEFAULT_WORKFLOW
-        assert '"skipped":"no_llm_api_keys"' in _DEFAULT_WORKFLOW
-        assert "Run the BYOK workflow in your fork: Actions -> Code Review Council (BYOK - Fork)" in _DEFAULT_WORKFLOW
+        assert "No GOOGLE_API_KEY available. This workflow is pinned to Gemini" in _DEFAULT_WORKFLOW
+        assert '"skipped":"no_google_api_key"' in _DEFAULT_WORKFLOW
+        assert "Write CI Gemini config" in _DEFAULT_WORKFLOW
+        assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW
+        assert "timeout_seconds = 360" in _DEFAULT_WORKFLOW
+        assert "reviewer_timeout_seconds = 360" in _DEFAULT_WORKFLOW
+        assert "reviewer_concurrency = 1" in _DEFAULT_WORKFLOW
 
     def test_workflow_passes_branch(self):
         """Generated workflow must pass --branch to avoid empty-diff reviews."""
@@ -1978,9 +1992,9 @@ class TestWorkflowScaffold:
 
         assert "workflow_dispatch" in _DEFAULT_WORKFLOW_BYOK
         assert "upstream_repo" in _DEFAULT_WORKFLOW_BYOK
-        assert "Fail fast if no BYOK keys configured" in _DEFAULT_WORKFLOW_BYOK
-        assert 'if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW_BYOK
-        assert '"skipped":"no_byok_keys"' in _DEFAULT_WORKFLOW_BYOK
+        assert "Fail fast if no Gemini key configured" in _DEFAULT_WORKFLOW_BYOK
+        assert 'if [ -z "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW_BYOK
+        assert '"skipped":"no_google_api_key"' in _DEFAULT_WORKFLOW_BYOK
         assert "Resolve review base ref" in _DEFAULT_WORKFLOW_BYOK
         assert "UPSTREAM_REPO: ${{ inputs.upstream_repo }}" in _DEFAULT_WORKFLOW_BYOK
         assert "BASE_REF: ${{ inputs.base_ref }}" in _DEFAULT_WORKFLOW_BYOK
@@ -1998,6 +2012,11 @@ class TestWorkflowScaffold:
         assert 'if [[ ! "$UPSTREAM_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then' in _DEFAULT_WORKFLOW_BYOK
         assert 'if ! git fetch --no-tags upstream -- "$BASE_REF"; then' in _DEFAULT_WORKFLOW_BYOK
         assert "Warn if workflow is running on the base branch" in _DEFAULT_WORKFLOW_BYOK
+        assert "Write CI Gemini config" in _DEFAULT_WORKFLOW_BYOK
+        assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW_BYOK
+        assert "timeout_seconds = 360" in _DEFAULT_WORKFLOW_BYOK
+        assert "reviewer_timeout_seconds = 360" in _DEFAULT_WORKFLOW_BYOK
+        assert "reviewer_concurrency = 1" in _DEFAULT_WORKFLOW_BYOK
         assert "TARGET_BRANCH: ${{ steps.review_base.outputs.target }}" in _DEFAULT_WORKFLOW_BYOK
         assert "AUDIENCE: ${{ inputs.audience }}" in _DEFAULT_WORKFLOW_BYOK
         assert '[ "$AUDIENCE" != "developer" ] && [ "$AUDIENCE" != "owner" ]' in _DEFAULT_WORKFLOW_BYOK
@@ -3575,9 +3594,11 @@ def test_instantiate_reviewers_resolves_relative_prompt_from_repo_root(tmp_path)
         ],
         on_integrity_issue="fail",
         repo_root=tmp_path,
+        reviewer_timeout=123.0,
     )
 
     assert reviewers[0].get_system_prompt() == "CUSTOM PROMPT"
+    assert reviewers[0].timeout == 123.0
 
 
 def test_instantiate_reviewers_custom_class_path_fallback_without_integrity_kwarg():
@@ -3600,10 +3621,39 @@ def test_instantiate_reviewers_custom_class_path_fallback_without_integrity_kwar
             ],
             on_integrity_issue="fail",
             repo_root=Path.cwd(),
+            reviewer_timeout=123.0,
         )
 
     assert len(reviewers) == 1
     assert isinstance(reviewers[0], LegacyReviewer)
+    assert reviewers[0].timeout == 123.0
+
+
+def test_instantiate_reviewers_custom_class_path_fallback_without_timeout_kwarg():
+    from council.config import ReviewerConfig
+    from council.orchestrator import _instantiate_reviewers
+
+    class MinimalReviewer(BaseReviewer):
+        def __init__(self, reviewer_id: str, model: str, prompt_path: str | None = None):
+            super().__init__(reviewer_id=reviewer_id, model=model, prompt_path=prompt_path)
+
+    with patch("council.orchestrator._load_class_path", return_value=MinimalReviewer):
+        reviewers = _instantiate_reviewers(
+            configs=[
+                ReviewerConfig(
+                    id="minimal",
+                    name="Minimal",
+                    model="test",
+                    class_path="minimal.reviewer.MinimalReviewer",
+                )
+            ],
+            on_integrity_issue="fail",
+            repo_root=Path.cwd(),
+            reviewer_timeout=123.0,
+        )
+
+    assert len(reviewers) == 1
+    assert isinstance(reviewers[0], MinimalReviewer)
 
 
 def test_github_pr_annotation_sanitizes_control_sequences(capsys):
@@ -3712,6 +3762,7 @@ async def test_orchestrator_minor_parse_error_does_not_mark_degraded():
 
     cfg = CouncilConfig()
     cfg.enforcement.on_integrity_issue = "fail"
+    cfg.reviewer_timeout_seconds = 123
     cfg.reviewers = []
 
     diff_ctx = DiffContext(files=[], changed_files=[])
@@ -3727,7 +3778,7 @@ async def test_orchestrator_minor_parse_error_does_not_mark_degraded():
         "council.orchestrator.rp_module.assemble", return_value=rp
     ), patch(
         "council.orchestrator._instantiate_reviewers", return_value=[_StubReviewer()]
-    ), patch(
+    ) as mock_instantiate, patch(
         "council.orchestrator.chair_module.synthesize", new_callable=AsyncMock
     ) as mock_synth:
         mock_synth.return_value = ChairVerdict(
@@ -3740,6 +3791,7 @@ async def test_orchestrator_minor_parse_error_does_not_mark_degraded():
         await run_council(config=cfg, diff_text="diff --git a/a.py b/a.py\n")
 
     assert mock_synth.await_count == 1
+    assert mock_instantiate.call_args.kwargs["reviewer_timeout"] == 123.0
     assert mock_synth.await_args.kwargs["degraded"] is False
 
 
@@ -3894,3 +3946,660 @@ def test_instantiate_reviewers_reraises_unrelated_typeerror():
                 on_integrity_issue="fail",
                 repo_root=Path.cwd(),
             )
+
+
+@pytest.mark.asyncio
+async def test_invoke_json_completion_uses_response_format_first():
+    from types import SimpleNamespace
+
+    from council.llm_transport import invoke_json_completion
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"verdict":"PASS"}'))],
+            usage=SimpleNamespace(total_tokens=17),
+        )
+
+    with patch("council.llm_transport.litellm.acompletion", new=fake_acompletion):
+        result = await invoke_json_completion(
+            model="openai/gpt-4o",
+            messages=[{"role": "user", "content": "hello"}],
+            timeout=10,
+            temperature=0.1,
+        )
+
+    assert result.output_mode == "response_format"
+    assert result.tokens_used == 17
+    assert calls[0]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_invoke_json_completion_falls_back_when_response_format_rejected():
+    from types import SimpleNamespace
+
+    from council.llm_transport import invoke_json_completion
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise RuntimeError("response_format is not supported by this model")
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"verdict":"PASS"}'))],
+            usage=SimpleNamespace(total_tokens=9),
+        )
+
+    with patch("council.llm_transport.litellm.acompletion", new=fake_acompletion):
+        result = await invoke_json_completion(
+            model="google/gemini-2.5-pro",
+            messages=[{"role": "user", "content": "hello"}],
+            timeout=10,
+            temperature=0.1,
+        )
+
+    assert result.output_mode == "prompt_json_fallback"
+    assert "response_format" not in calls[1]
+
+
+@pytest.mark.asyncio
+async def test_base_reviewer_review_uses_prompt_json_fallback_and_parses_fenced_json():
+    from types import SimpleNamespace
+
+    review_pack = ReviewPack(diff_text="+print('hi')", changed_files=["a.py"])
+    reviewer = BaseReviewer(reviewer_id="qa", model="google/gemini-2.5-pro")
+
+    async def fake_acompletion(**kwargs):
+        if "response_format" in kwargs:
+            raise RuntimeError("response_format is not supported by this model")
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=(
+                            "```json\n"
+                            '{"verdict":"PASS","confidence":0.8,"findings":[],"reasoning":"ok"}\n'
+                            "```"
+                        )
+                    )
+                )
+            ],
+            usage=SimpleNamespace(total_tokens=22),
+        )
+
+    with patch("council.llm_transport.litellm.acompletion", new=fake_acompletion):
+        output = await reviewer.review(review_pack)
+
+    assert output.output_mode == "prompt_json_fallback"
+    assert output.integrity_error is False
+    assert output.verdict == "PASS"
+
+
+@pytest.mark.asyncio
+async def test_chair_synthesize_records_prompt_json_fallback_output_mode():
+    from council.llm_transport import JSONCompletionResult
+
+    review_pack = ReviewPack(diff_text="+x", changed_files=["a.py"])
+    reviews = [ReviewerOutput(reviewer_id="qa", model="m", verdict="FAIL", confidence=0.8, findings=[])]
+
+    raw = json.dumps(
+        {
+            "verdict": "PASS_WITH_WARNINGS",
+            "confidence": 0.7,
+            "degraded": False,
+            "summary": "warning summary",
+            "accepted_blockers": [],
+            "warnings": [],
+            "dismissed_findings": [],
+            "all_findings": [],
+            "reviewer_agreement_score": 0.5,
+            "rationale": "ok",
+        }
+    )
+
+    with patch(
+        "council.chair.invoke_json_completion",
+        new=AsyncMock(
+            return_value=JSONCompletionResult(
+                raw_content=raw,
+                tokens_used=11,
+                output_mode="prompt_json_fallback",
+            )
+        ),
+    ):
+        verdict = await synthesize(review_pack, reviews)
+
+    assert verdict.chair_output_mode == "prompt_json_fallback"
+    assert verdict.verdict == "PASS_WITH_WARNINGS"
+
+
+@pytest.mark.asyncio
+async def test_generate_owner_presentation_marks_failed_output_mode_on_invalid_json():
+    from council.chair import generate_owner_presentation
+    from council.llm_transport import JSONCompletionResult
+
+    verdict = ChairVerdict(
+        verdict="FAIL",
+        confidence=0.9,
+        summary="Need fixes.",
+        rationale="Chair accepted a blocker.",
+        accepted_blockers=[
+            ChairFinding(
+                severity="HIGH",
+                category="security",
+                file="auth.py",
+                line_start=3,
+                description="Bug",
+                suggestion="Fix it",
+                chair_action="accepted",
+            )
+        ],
+    )
+
+    with patch(
+        "council.chair.invoke_json_completion",
+        new=AsyncMock(
+            return_value=JSONCompletionResult(
+                raw_content="not valid json",
+                tokens_used=4,
+                output_mode="prompt_json_fallback",
+            )
+        ),
+    ):
+        presentation = await generate_owner_presentation(verdict)
+
+    assert presentation.output_mode == "failed"
+    assert presentation.degraded_warning is not None
+
+
+def test_json_report_includes_transport_metadata(tmp_path):
+    from council.reporters.json_report import write_json_report
+
+    verdict = ChairVerdict(
+        verdict="PASS_WITH_WARNINGS",
+        confidence=0.8,
+        chair_output_mode="prompt_json_fallback",
+        summary="s",
+        rationale="r",
+    )
+    reviewers = [
+        ReviewerOutput(
+            reviewer_id="secops",
+            model="m",
+            verdict="PASS",
+            confidence=0.7,
+            output_mode="prompt_json_fallback",
+            tokens_used=21,
+        )
+    ]
+
+    out = tmp_path / "report.json"
+    write_json_report(verdict, out, reviewer_outputs=reviewers)
+    data = json.loads(out.read_text())
+
+    assert data["chair_output_mode"] == "prompt_json_fallback"
+    assert data["reviewers"][0]["output_mode"] == "prompt_json_fallback"
+    assert "transport" in data
+    assert data["transport"]["notes"]
+
+
+def test_markdown_report_includes_transport_notes(tmp_path):
+    from council.reporters.markdown import write_markdown_report
+
+    verdict = ChairVerdict(
+        verdict="PASS_WITH_WARNINGS",
+        confidence=0.8,
+        chair_output_mode="prompt_json_fallback",
+        summary="s",
+        rationale="r",
+    )
+    reviewers = [
+        ReviewerOutput(
+            reviewer_id="secops",
+            model="m",
+            verdict="PASS",
+            confidence=0.7,
+            output_mode="prompt_json_fallback",
+            tokens_used=21,
+        )
+    ]
+
+    out = tmp_path / "review.md"
+    write_markdown_report(verdict, out, reviewer_outputs=reviewers)
+    text = out.read_text(encoding="utf-8")
+
+    assert "Transport Notes" in text
+    assert "prompt-only JSON fallback" in text
+    assert "Output mode" in text
+
+
+def test_html_report_includes_transport_notes(tmp_path):
+    from council.reporters.html_report import write_html_report
+
+    verdict = ChairVerdict(
+        verdict="PASS_WITH_WARNINGS",
+        confidence=0.8,
+        chair_output_mode="prompt_json_fallback",
+        summary="s",
+        rationale="r",
+    )
+    reviewers = [
+        ReviewerOutput(
+            reviewer_id="secops",
+            model="m",
+            verdict="PASS",
+            confidence=0.7,
+            output_mode="prompt_json_fallback",
+            tokens_used=21,
+        )
+    ]
+
+    out = tmp_path / "review.html"
+    write_html_report(verdict, out, reviewer_outputs=reviewers)
+    text = out.read_text(encoding="utf-8")
+
+    assert "Transport notes" in text
+    assert "prompt_json_fallback" in text
+
+
+def test_github_pr_comment_body_includes_transport_notes():
+    from council.reporters.github_pr import MARKER, _build_comment_body
+
+    verdict = ChairVerdict(
+        verdict="PASS_WITH_WARNINGS",
+        confidence=0.8,
+        chair_output_mode="prompt_json_fallback",
+        summary="s",
+        rationale="r",
+    )
+    reviewers = [
+        ReviewerOutput(
+            reviewer_id="qa",
+            model="m",
+            verdict="PASS",
+            confidence=0.7,
+            output_mode="prompt_json_fallback",
+        )
+    ]
+
+    body = _build_comment_body(verdict, reviewers)
+    assert MARKER in body
+    assert "Transport notes" in body
+    assert "prompt_json_fallback" in body
+
+
+def test_transport_report_helpers_have_direct_coverage():
+    from council.reporters.transport import reviewer_output_mode, transport_notes
+
+    verdict = ChairVerdict(
+        verdict="PASS_WITH_WARNINGS",
+        confidence=0.7,
+        chair_output_mode="prompt_json_fallback",
+        summary="summary",
+        rationale="rationale",
+    )
+    reviewer = ReviewerOutput(
+        reviewer_id="architect",
+        model="m",
+        verdict="PASS",
+        confidence=0.8,
+        output_mode="prompt_json_fallback",
+    )
+
+    notes = transport_notes(verdict, [reviewer])
+    assert notes
+    assert reviewer_output_mode(reviewer) == "prompt_json_fallback"
+
+
+def test_github_pr_inline_comment_candidates_dedupe_and_skip_missing_lines():
+    from council.reporters.github_pr import _build_inline_comment_candidates
+
+    duplicate = ChairFinding(
+        severity="HIGH",
+        category="security",
+        file="auth.py",
+        line_start=7,
+        line_end=9,
+        symbol_name="login",
+        description="duplicate finding",
+        suggestion="Fix it",
+        chair_action="accepted",
+    )
+    verdict = ChairVerdict(
+        verdict="FAIL",
+        confidence=0.9,
+        summary="s",
+        rationale="r",
+        accepted_blockers=[
+            duplicate,
+            duplicate.model_copy(),
+            ChairFinding(
+                severity="MEDIUM",
+                category="testing",
+                file="auth.py",
+                description="no line info should stay summary only",
+                chair_action="accepted",
+            ),
+        ],
+    )
+
+    candidates = _build_inline_comment_candidates(verdict)
+    assert len(candidates) == 1
+    assert candidates[0]["path"] == "auth.py"
+    assert candidates[0]["start_line"] == 7
+    assert candidates[0]["line"] == 9
+
+
+def test_github_api_url_is_strictly_validated(monkeypatch):
+    from council.reporters.github_pr import _resolve_github_api_url
+
+    monkeypatch.setenv("GITHUB_API_URL", "http://169.254.169.254/latest/meta-data")
+    assert _resolve_github_api_url("http://169.254.169.254/latest/meta-data") == "https://api.github.com"
+    assert _resolve_github_api_url("https://ghe.example.com/api/v3") == "https://ghe.example.com/api/v3"
+
+
+def test_doctor_command_help_mentions_new_options():
+    from typer.testing import CliRunner
+    from council.cli import app
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["doctor", "--help"])
+
+    assert result.exit_code == 0
+    assert "--github-pr" in result.output
+    assert "--branch" in result.output
+
+
+def test_run_doctor_fails_for_missing_keys_and_invalid_branch(monkeypatch):
+    from council.doctor import run_doctor
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    report = run_doctor(repo_root=Path.cwd(), config=load_config(Path.cwd()), branch="definitely-not-a-real-branch")
+    statuses = {check.name: check.status for check in report.checks}
+
+    assert report.exit_code == 1
+    assert statuses["api_keys"] == "FAIL"
+    assert statuses["diff_target"] == "FAIL"
+
+
+def test_run_doctor_rejects_option_like_branch(monkeypatch):
+    from council.doctor import run_doctor
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    report = run_doctor(repo_root=Path.cwd(), config=load_config(Path.cwd()), branch="--help")
+    statuses = {check.name: check.status for check in report.checks}
+
+    assert report.exit_code == 1
+    assert statuses["diff_target"] == "FAIL"
+
+
+def test_run_doctor_warns_for_fallback_likely_models(monkeypatch):
+    from council.config import ReviewerConfig
+    from council.doctor import run_doctor
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    config = CouncilConfig(
+        chair_model="google/gemini-2.5-pro",
+        reviewers=[ReviewerConfig(id="qa", name="QA", model="google/gemini-2.5-flash", enabled=True)],
+    )
+
+    report = run_doctor(repo_root=Path.cwd(), config=config, branch="main")
+    json_transport = next(check for check in report.checks if check.name == "json_transport")
+
+    assert json_transport.status == "WARN"
+    assert "prompt-only JSON fallback" in json_transport.detail
+
+
+def test_run_doctor_fails_when_github_pr_context_missing(monkeypatch):
+    from council.doctor import run_doctor
+
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    report = run_doctor(repo_root=Path.cwd(), config=load_config(Path.cwd()), branch="main", github_pr=True)
+    github_check = next(check for check in report.checks if check.name == "github_pr")
+
+    assert github_check.status == "FAIL"
+
+
+def test_doctor_extract_pr_number_ignores_boolean(tmp_path):
+    from council.doctor import _extract_pr_number
+
+    event_path = tmp_path / "event.json"
+    event_path.write_text('{"pull_request": {"number": true}}', encoding="utf-8")
+
+    assert _extract_pr_number(str(event_path)) is None
+
+
+def test_effective_review_token_budget_caps_gpt4o_models():
+    from council.config import PreprocessorConfig
+
+    config = PreprocessorConfig(max_review_tokens=30_000)
+
+    assert effective_review_token_budget(config, ["openai/gpt-5.2"]) == 30_000
+    assert effective_review_token_budget(config, ["openai/gpt-4o"]) == 20_000
+    assert effective_review_token_budget(config, ["openai/gpt-5.2", "openai/gpt-4o-mini"]) == 20_000
+
+
+def test_llm_transport_helper_classification_and_provider_mapping():
+    from council.llm_transport import classify_model_json_support, provider_env_var_for_model
+
+    assert classify_model_json_support("openai/gpt-4o") == "native"
+    assert classify_model_json_support("google/gemini-2.5-pro") == "fallback_likely"
+    assert classify_model_json_support("custom/model") == "unknown"
+
+    assert provider_env_var_for_model("openai/gpt-5.2") == "OPENAI_API_KEY"
+    assert provider_env_var_for_model("anthropic/claude-sonnet-4-20250514") == "ANTHROPIC_API_KEY"
+    assert provider_env_var_for_model("google/gemini-2.5-pro") == "GOOGLE_API_KEY"
+    assert provider_env_var_for_model("custom/model") is None
+
+
+def test_llm_transport_helper_json_detection_and_loading():
+    from council.llm_transport import (
+        extract_json_object,
+        is_response_format_unsupported_error,
+        load_json_object,
+    )
+
+    payload = "prefix ```json\n{\"verdict\":\"PASS\",\"confidence\":0.8}\n``` suffix"
+
+    assert extract_json_object(payload) == '{"verdict":"PASS","confidence":0.8}'
+    assert load_json_object(payload) == {"verdict": "PASS", "confidence": 0.8}
+    assert is_response_format_unsupported_error(
+        RuntimeError("response_format json_object is not supported by this model")
+    ) is True
+    assert is_response_format_unsupported_error(RuntimeError("temporary timeout")) is False
+
+
+def test_doctor_run_git_uses_hardened_env():
+    import os
+    import subprocess
+
+    from council.doctor import _run_git
+
+    completed = MagicMock(returncode=0, stdout="ok", stderr="")
+
+    with patch("council.doctor.subprocess.run", return_value=completed) as mock_run:
+        result = _run_git(Path.cwd(), "rev-parse", "HEAD")
+
+    assert result is completed
+    _, kwargs = mock_run.call_args
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+    assert kwargs["cwd"] == Path.cwd()
+    assert kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert kwargs["env"]["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert kwargs["env"]["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert kwargs["env"]["GIT_CONFIG_SYSTEM"] == os.devnull
+    assert kwargs["env"]["GIT_ASKPASS"] == ""
+    assert kwargs["env"]["SSH_ASKPASS"] == ""
+    assert kwargs["env"]["GIT_PAGER"] == "cat"
+
+
+def test_reviewer_invalid_json_error_is_sanitized():
+    reviewer = BaseReviewer(reviewer_id="qa", model="test")
+
+    output = reviewer._parse_response("secret raw model output", tokens_used=5)
+
+    assert output.integrity_error is True
+    assert output.error == "integrity issue: Invalid JSON returned by reviewer model"
+    assert "secret raw model output" not in output.error
+
+
+@pytest.mark.asyncio
+async def test_chair_invalid_json_error_is_sanitized():
+    from council.llm_transport import JSONCompletionResult
+
+    review_pack = ReviewPack(diff_text="+x", changed_files=["a.py"])
+    reviews = [
+        ReviewerOutput(
+            reviewer_id="secops",
+            model="m",
+            verdict="FAIL",
+            confidence=0.9,
+            findings=[
+                Finding(
+                    severity="HIGH",
+                    category="security",
+                    file="a.py",
+                    description="issue",
+                    suggestion="fix",
+                )
+            ],
+        )
+    ]
+
+    with patch(
+        "council.chair.invoke_json_completion",
+        new=AsyncMock(
+            return_value=JSONCompletionResult(
+                raw_content="secret raw chair output",
+                tokens_used=3,
+                output_mode="response_format",
+            )
+        ),
+    ):
+        verdict = await synthesize(review_pack, reviews)
+
+    assert verdict.verdict == "FAIL"
+    assert verdict.summary == "Chair synthesis failed; review failed closed for safety."
+    assert "secret raw chair output" not in verdict.summary
+    assert "secret raw chair output" not in verdict.rationale
+    assert all("secret raw chair output" not in reason for reason in verdict.degraded_reasons)
+
+
+def test_review_pack_retains_full_diff_metadata_when_budget_skips_tests_and_docs():
+    source_content = (
+        "def important_fn() -> bool:\n"
+        "    return True\n"
+    )
+    test_content = (
+        "from src.app import important_fn\n\n"
+        + "\n\n".join(
+            f"def test_case_{i}() -> None:\n    assert important_fn() is True"
+            for i in range(40)
+        )
+        + "\n"
+    )
+    readme_content = "\n".join(f"# note {i}" for i in range(60)) + "\n"
+
+    diff_context = DiffContext(
+        files=[
+            DiffFile(
+                path="src/app.py",
+                language="python",
+                change_type="added",
+                additions=2,
+                hunks=[
+                    DiffHunk(
+                        source_start=0,
+                        source_length=0,
+                        target_start=1,
+                        target_length=2,
+                        content=source_content,
+                    )
+                ],
+                source_content=source_content,
+            ),
+            DiffFile(
+                path="tests/test_app.py",
+                language="python",
+                change_type="modified",
+                additions=80,
+                hunks=[
+                    DiffHunk(
+                        source_start=1,
+                        source_length=0,
+                        target_start=1,
+                        target_length=80,
+                        content=test_content,
+                    )
+                ],
+                source_content=test_content,
+            ),
+            DiffFile(
+                path="README.md",
+                language="markdown",
+                change_type="modified",
+                additions=60,
+                hunks=[
+                    DiffHunk(
+                        source_start=1,
+                        source_length=0,
+                        target_start=1,
+                        target_length=60,
+                        content=readme_content,
+                    )
+                ],
+                source_content=readme_content,
+            ),
+        ],
+        changed_files=["src/app.py", "tests/test_app.py", "README.md"],
+        added_files=["src/app.py"],
+        deleted_files=[],
+        branch="feature/full-diff-metadata",
+        total_additions=142,
+        total_deletions=0,
+    )
+
+    preprocessor_config = CouncilConfig().preprocessor.model_copy(
+        update={"max_review_tokens": 40, "max_file_tokens": 1_000}
+    )
+
+    filtered_full_diff, filtered_skipped = filter_context(diff_context, preprocessor_config)
+    processed_diff, budget_skipped, truncated_files = process(
+        filtered_full_diff,
+        preprocessor_config,
+        reviewer_models=["openai/gpt-4o"],
+    )
+    skipped_files = filtered_skipped + budget_skipped
+
+    review_pack = assemble(
+        diff_context=processed_diff,
+        gate_zero_findings=[],
+        config=CouncilConfig(),
+        skipped_files=skipped_files,
+        truncated_files=truncated_files,
+        metadata_context=filtered_full_diff,
+    )
+
+    assert [file.path for file in processed_diff.files] == ["src/app.py"]
+    assert "tests/test_app.py" in review_pack.changed_files
+    assert "README.md" in review_pack.changed_files
+    assert "tests/test_app.py" in review_pack.files_skipped
+    assert "README.md" in review_pack.files_skipped
+    assert "tests/test_app.py" in review_pack.test_coverage_map["src/app.py"]
+    assert any(
+        symbol.name == "important_fn" and symbol.has_tests and symbol.test_file == "tests/test_app.py"
+        for symbol in review_pack.changed_symbols
+    )

@@ -38,7 +38,7 @@ Before you start, make sure you have:
 - **Python 3.12 or newer** ← required; install will fail on older versions
 - **Git**
 - a local Git repository to review
-- an API key for a supported LLM provider (OpenAI or Anthropic)
+- an API key for a supported LLM provider; generated GitHub workflows currently use Google/Gemini
 - basic terminal familiarity
 
 ---
@@ -64,9 +64,14 @@ If your system uses a different Python launcher, adjust `python3.12` accordingly
 
 ## Set your API key
 
-Export an API key for the model provider you plan to use:
+Export an API key for the model provider you plan to use. The generated GitHub
+Actions workflows are pinned to Gemini, so `GOOGLE_API_KEY` is the key required
+for the default CI path.
 
 ```bash
+# Google / Gemini (required for generated GitHub workflows)
+export GOOGLE_API_KEY=your_key_here
+
 # OpenAI
 export OPENAI_API_KEY=your_key_here
 
@@ -74,7 +79,8 @@ export OPENAI_API_KEY=your_key_here
 export ANTHROPIC_API_KEY=your_key_here
 ```
 
-If you use a different provider supported by LiteLLM, set that provider's key instead.
+If your local `.council.toml` uses a different LiteLLM-supported provider, set
+that provider's key instead or in addition.
 
 ---
 
@@ -106,6 +112,7 @@ This creates:
 
 - `.council.toml` — configuration for models, reviewers, and enforcement
 - `.councilignore` — files to exclude from review (lock files, generated code, etc.)
+- `prompts/*.md` — default persona prompts referenced by `.council.toml`
 - `.github/workflows/council-review.yml` — GitHub Actions CI workflow
 - `.github/workflows/council-byok.yml` — manual BYOK workflow for fork contributors
 
@@ -138,7 +145,7 @@ Optional env tuning for flaky/rate-limited runners:
 - `COUNCIL_GITHUB_MAX_RETRIES` (default: `2`)
 - `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS` (default: `1.0`)
 - `COUNCIL_GITHUB_HTTP_TIMEOUT` (default: `10`)
-- If you hit model TPM/rate-limit errors, lower `[council].reviewer_concurrency` in `.council.toml` (for Anthropic, `1-2` is usually safest).
+- If you hit model TPM/rate-limit errors, lower `[council].reviewer_concurrency` in `.council.toml`. Generated Gemini CI uses `1` for reliability.
 - On fork PRs where repo secrets are unavailable, the default workflow now skips LLM review and writes a placeholder `council-report.json` artifact instead of failing.
 
 ---
@@ -147,10 +154,7 @@ Optional env tuning for flaky/rate-limited runners:
 
 When contributing from a fork, upstream repository secrets are often unavailable. Use the fork-safe BYOK workflow in your fork instead:
 
-1. In your fork repository, add one or more Actions secrets:
-   - `OPENAI_API_KEY` and/or
-   - `ANTHROPIC_API_KEY` and/or
-   - `GOOGLE_API_KEY`
+1. In your fork repository, add `GOOGLE_API_KEY` as an Actions secret.
 2. Open **Actions** in your fork and run workflow **Code Review Council (BYOK - Fork)**.
 3. Run the workflow from your PR branch (select the branch in the dispatch UI).
 4. Set `base_ref` (usually `main`), optional `audience` (`developer` or `owner`), and optional `upstream_repo` (`owner/repo`) if you want diffs against upstream instead of your fork's base branch.
@@ -234,7 +238,12 @@ These owner outputs use the same underlying analysis as developer mode. Only the
 
 ## Model presets (quick guidance)
 
-If you want low-friction defaults, use chair `openai/gpt-4o` with reviewer mix:
+If you want local parity with the generated GitHub workflows, use
+`gemini/gemini-3-pro-preview` for the Chair and all reviewers, set
+`reviewer_concurrency = 1`, and give both `timeout_seconds` and
+`reviewer_timeout_seconds` enough room for slower preview-model calls.
+
+If you want the local scaffold defaults, use chair `openai/gpt-4o` with reviewer mix:
 - secops/qa: `openai/gpt-5.2`
 - architect: `openai/gpt-4o`
 - docs: `openai/gpt-4o-mini`
@@ -263,6 +272,7 @@ If the review fails immediately, confirm your provider API key is set in your en
 ```bash
 echo $OPENAI_API_KEY
 echo $ANTHROPIC_API_KEY
+echo $GOOGLE_API_KEY
 ```
 Then run:
 ```bash

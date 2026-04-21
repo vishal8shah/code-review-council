@@ -141,12 +141,15 @@ No universal number is valid — cost and latency depend on configuration and wo
 
 | Factor | Lower Cost/Latency | Higher Cost/Latency |
 |--------|--------------------|---------------------|
-| Model selection | GPT-4o-mini for Docs/Arch | GPT-5.2 for all roles |
+| Model selection | Smaller models for lower-risk roles | Frontier preview models such as Gemini 3 Pro Preview |
 | Diff size | Small focused PR | Large multi-file refactor |
 | Concurrency | Parallel reviewers (default) | Sequential (debugging mode) |
 | Retry behavior | Single attempt | Aggressive retry on timeout |
 
-Operational guidance: start with the default model mix, review focused diffs, tune `reviewer_timeout_seconds` if you see tail latency on large PRs.
+Operational guidance: start with the generated defaults, review focused diffs,
+and tune `reviewer_timeout_seconds` if you see tail latency on large PRs. The
+generated GitHub workflows use Gemini with `reviewer_concurrency = 1` to avoid
+preview-model timeout and rate-limit noise.
 
 ---
 

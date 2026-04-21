@@ -8,7 +8,10 @@
 
 ### Do I need all three API keys?
 
-No. Council works with a single key. You only need keys for the providers your `.council.toml` assigns to reviewer roles. If you're using GPT-4o for all reviewers and Claude for the Chair, you need an OpenAI key and an Anthropic key — no Google key required.
+No. Council works with a single key when all configured models use the same
+provider. The generated GitHub workflows are pinned to Gemini, so they require
+`GOOGLE_API_KEY`. Local `.council.toml` files only need keys for the providers
+they actually reference.
 
 ### `council: command not found` — what's wrong?
 
@@ -78,19 +81,26 @@ council review --ci --branch main --output-json council-report.json
 
 ### How much does a review cost?
 
-It depends on your model selection and diff size. There's no universal number. A typical focused PR (200–400 lines changed) with GPT-4o reviewers and a Claude Chair runs in the range of a few cents. Large multi-file refactors with heavier models will cost more. Gate Zero and diff preprocessing are always free.
+It depends on your model selection and diff size. There's no universal number.
+A typical focused PR (200-400 lines changed) with mid-tier models may cost a
+few cents; preview frontier models such as Gemini 3 Pro Preview can cost more
+and take longer. Gate Zero and diff preprocessing are always free.
 
 ### How long does a review take?
 
-Typically 30–60 seconds for a focused PR with parallel reviewers enabled. The four specialist reviewers run concurrently, so wall-clock time is roughly the slowest single reviewer, not the sum of all four.
+It depends on model choice, diff size, retries, and reviewer concurrency. With
+parallel reviewers enabled, wall-clock time is roughly the slowest single
+reviewer plus Chair synthesis. Generated Gemini CI runs sequential reviewers
+with larger timeouts to avoid preview-model timeout noise, so it may take a few
+minutes on larger diffs.
 
 ### How do I reduce cost without losing quality?
 
 | Lever | How to adjust | Trade-off |
 |-------|--------------|----------|
-| Reviewer models | Use `gpt-4o-mini` for Docs/Architect | Slightly lower reasoning depth |
+| Reviewer models | Use cheaper models for Docs/Architect or a single-provider Gemini preset | Slightly lower reasoning depth or longer preview-model latency |
 | Diff size | Review smaller, focused PRs | Requires PR discipline |
-| Concurrency | Already parallel by default | No change needed |
+| Concurrency | Lower `reviewer_concurrency` for slow/rate-limited providers | More reliable but slower reviews |
 | Caching | Enable in `.council.toml` | Same-diff re-runs are free |
 | Gate Zero fail-fast | Catches obvious issues before LLM | Already on by default |
 
@@ -103,24 +113,29 @@ Typically 30–60 seconds for a focused PR with parallel reviewers enabled. The 
 Edit `.council.toml`. Each reviewer has a `model` key:
 
 ```toml
-[reviewers.secops]
-model = "gpt-4o"
+[council]
+chair_model = "gemini/gemini-3-pro-preview"
 
-[reviewers.qa]
-model = "gpt-4o"
-
-[chair]
-model = "claude-3-5-sonnet-20241022"
+[[reviewers]]
+id = "secops"
+name = "Security Operations Reviewer"
+model = "gemini/gemini-3-pro-preview"
+prompt = "prompts/secops.md"
 ```
 
-Any model supported by the configured provider SDK can be used.
+Any model supported by LiteLLM can be used, as long as the matching provider
+key is available in your environment or GitHub secrets.
 
 ### Can I disable a reviewer I don’t need?
 
 Yes. Set `enabled = false` in `.council.toml` for any reviewer:
 
 ```toml
-[reviewers.docs]
+[[reviewers]]
+id = "docs"
+name = "Documentation Reviewer"
+model = "gemini/gemini-3-pro-preview"
+prompt = "prompts/docs.md"
 enabled = false
 ```
 

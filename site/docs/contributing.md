@@ -11,7 +11,7 @@
 ```bash
 git clone https://github.com/vishal8shah/code-review-council
 cd code-review-council
-pip install -e ".[dev]"
+pip install -e .
 ```
 
 Editable install means your local changes take effect immediately — no reinstall needed.
@@ -30,12 +30,13 @@ All tests should pass on a clean checkout. If they don’t, open an issue before
 Unit tests are fully mocked and run without any API keys. Integration tests require at least one provider key:
 
 ```bash
+export GOOGLE_API_KEY=...
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 !!! tip "Use cheap models for local integration testing"
-    Set reviewer models to `gpt-4o-mini` in `.council.toml` for local integration runs. No need to burn GPT-5.2 credits on a test diff.
+    Set reviewer models to a cheaper provider/model in `.council.toml` for local integration runs. The generated GitHub workflows are Gemini-pinned, but local runs can use any LiteLLM-supported provider you have budget for.
 
 ---
 
@@ -101,10 +102,12 @@ Your prompt must:
 ### Step 2 — Register in `.council.toml`
 
 ```toml
-[reviewers.yourpersona]
+[[reviewers]]
+id = "yourpersona"
+name = "Your Persona"
 enabled = true
-model = "gpt-4o"
-prompt_file = "prompts/yourpersona.md"
+model = "gemini/gemini-3-pro-preview"
+prompt = "prompts/yourpersona.md"
 ```
 
 ### Step 3 — Verify schema compatibility
@@ -134,7 +137,7 @@ See the PR standards below.
 
 ### PR checklist
 
-- [ ] Editable install works cleanly (`pip install -e ".[dev]"`)
+- [ ] Editable install works cleanly (`pip install -e .`)
 - [ ] All unit tests pass (`pytest -q`)
 - [ ] New behaviour has test coverage
 - [ ] `.council.toml` changes are documented in the PR description

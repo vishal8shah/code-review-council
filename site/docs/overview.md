@@ -14,17 +14,22 @@ Code Review Council is the automated trust layer built for this reality. It does
 
 ## 🤖 The Multi-LLM Approach
 
-Council doesn't use a single LLM for everything. Each reviewer is matched to the model best suited for their domain:
+Council doesn't require a single LLM for everything. The local config is
+provider-configurable, while the generated GitHub workflows currently pin every
+CI reviewer and the Chair to Gemini for predictable secret handling:
 
-| Reviewer | Domain | Model |
-|----------|--------|-------|
-| 🛡️ SecOps | Security vulnerabilities, secret detection, injection chains | GPT-5.2 |
-| 🧪 QA | Test coverage, edge cases, error handling | GPT-5.2 |
-| 🏗️ Architect | Design patterns, coupling, scalability | GPT-4o |
-| 📝 Docs | Documentation completeness, clarity | GPT-4o-mini |
-| 🪑 Chair | Synthesis, evidence adjudication, final verdict | Claude |
+| Role | Domain | Local scaffold default | Generated CI default |
+|------|--------|------------------------|----------------------|
+| 🛡️ SecOps | Security vulnerabilities, secret detection, injection chains | `openai/gpt-5.2` | `gemini/gemini-3-pro-preview` |
+| 🧪 QA | Test coverage, edge cases, error handling | `openai/gpt-5.2` | `gemini/gemini-3-pro-preview` |
+| 🏗️ Architect | Design patterns, coupling, scalability | `openai/gpt-4o` | `gemini/gemini-3-pro-preview` |
+| 📝 Docs | Documentation completeness, clarity | `openai/gpt-4o-mini` | `gemini/gemini-3-pro-preview` |
+| 🪑 Chair | Synthesis, evidence adjudication, final verdict | `openai/gpt-4o` | `gemini/gemini-3-pro-preview` |
 
-This matters for two reasons. First, a single model reviewing everything has one blind spot profile — specialisation distributes that risk. Second, it's cost-efficient: heavier models only where the stakes justify it.
+This matters for two reasons. First, local teams can distribute blind-spot risk
+by assigning different providers or model families to different roles. Second,
+they can control cost by using heavier models only where the stakes justify it.
+Generated CI currently chooses single-provider reliability instead.
 
 ---
 
@@ -66,7 +71,7 @@ AI agent writes code  (e.g. OpenClaw)
         ↓
    PR opened automatically
         ↓
-Council reviews — 4 reviewers + Chair — < 60s
+Council reviews — 4 reviewers + Chair
         ↓
   PASS? → merge ✅
   FAIL? → findings fed back to coding agent
@@ -78,7 +83,11 @@ Council reviews — 4 reviewers + Chair — < 60s
  (loop until PASS, then merge)
 ```
 
-V1 delivers the review gate. V2 adds inline annotations and an MCP server for agent self-review. V3 closes the full loop with auto-fix generation.
+V1 delivered the review gate. V2 expanded ReviewPack parity for Python,
+TypeScript, and JavaScript. V3 hardened provider portability, `council doctor`,
+and GitHub PR reporting. V4 is split deliberately: V4A improves onboarding,
+fix guidance, local/CI parity, and full-repo context planning; V4B adds the
+intelligence layer such as opt-in autofix, repeated-debt detection, and metrics.
 
 ---
 

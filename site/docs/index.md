@@ -58,13 +58,15 @@ Runtime: 48 seconds
 
 ---
 
-## ⚡ Try It in 60 Seconds
+## ⚡ Try It Locally
 
 ```bash
 git clone https://github.com/vishal8shah/code-review-council
 cd code-review-council
 pip install .
 council init
+export GOOGLE_API_KEY=...
+council doctor --branch main
 council review --branch main
 ```
 
@@ -82,6 +84,6 @@ council review --branch main
 | [Design](design.md) | Architecture decisions, ReviewPack, evidence-based Chair |
 | [Security](security.md) | BYOK model, key scoping, threat mitigations, merge gates |
 | [Workflows](workflows.md) | PR workflow vs BYOK workflow, artifact locations |
-| [Self Review](self-review.md) | Council reviewing its own PR — real output, 26 fixes, 171 tests |
+| [Self Review](self-review.md) | Council reviewing its own PR — real output, 26 fixes, 286 collected tests |
 | [FAQ](faq.md) | Fork PRs, model config, cost tuning, PR comments |
 | [Contributing](contributing.md) | Setup, tests, adding a new reviewer persona |

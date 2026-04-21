@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-The **Code Review Council** is a multi-agent LLM orchestration system that acts as a rigorous, automated quality gate for AI-generated ("vibe-coded") code. Changes pass through a panel of specialized LLM reviewers — each with a distinct persona and review mandate — and a configurable "Council Chair" (GPT-4o by default) that synthesizes feedback, resolves conflicts, and renders the final pass/fail verdict.
+The **Code Review Council** is a multi-agent LLM orchestration system that acts as a rigorous, automated quality gate for AI-generated ("vibe-coded") code. Changes pass through a panel of specialized LLM reviewers — each with a distinct persona and review mandate — and a configurable "Council Chair" that synthesizes feedback, resolves conflicts, and renders the final pass/fail verdict. The local scaffold remains provider-configurable; generated GitHub workflows currently pin CI to Gemini via `GOOGLE_API_KEY`.
 
 The system operates at **two enforcement points**: a **CI/PR hard gate** (the primary enforcement mechanism — blocks merge on FAIL) and a **local CLI advisory mode** (fast feedback during development, never blocks push). This dual-mode design ensures the gate cannot be bypassed under pressure while keeping the local developer experience frictionless.
 
@@ -40,8 +40,8 @@ The system operates at **two enforcement points**: a **CI/PR hard gate** (the pr
 │   │          │                                                   │  │
 │   │          ▼                                                   │  │
 │   │   ┌──────────────┐     DIFF PREPROCESSOR                    │  │
-│   │   │  Filter &    │ → Ignore patterns, chunking, token       │  │
-│   │   │  Chunk       │   budgets, generated file detection       │  │
+│   │   │  Filter &    │ → Ignore patterns, truncation, token     │  │
+│   │   │  Budget      │   budgets, generated file detection       │  │
 │   │   └──────┬───────┘                                           │  │
 │   │          │                                                   │  │
 │   │          ▼                                                   │  │
@@ -75,7 +75,7 @@ The system operates at **two enforcement points**: a **CI/PR hard gate** (the pr
 │   │                         ▼                                    │  │
 │   │   ┌──────────────────────────────────────────────┐           │  │
 │   │   │         COUNCIL CHAIR (Stage 2)              │           │  │
-│   │   │              GPT-4o                         │           │  │
+│   │   │         Configurable Chair                  │           │  │
 │   │   │                                              │           │  │
 │   │   │  • Receives all reviewer verdicts             │           │  │
 │   │   │  • Resolves conflicting feedback              │           │  │
@@ -111,12 +111,12 @@ Given the goal of vibe-coding this quickly, the stack should minimize boilerplat
 | **Async Execution** | **asyncio + `asyncio.gather()`** | Fan-out reviewer calls in parallel — critical for keeping latency under control |
 | **Structured Output** | **Pydantic v2** | Define strict review schemas; prefer `response_format` when supported and retry with prompt-only JSON fallback when a provider rejects native JSON mode |
 | **Diff Parsing** | **`unidiff`** (Python lib) + `git` subprocess | Parse unified diffs into per-file, per-hunk structured objects |
-| **Diff Preprocessing** | **Custom filter/chunker** | Ignore patterns (like `.gitignore` for review scope), token budget management, generated file detection, chunking for large diffs |
+| **Diff Preprocessing** | **Custom filter/truncation layer** | Ignore patterns (like `.gitignore` for review scope), token budget management, generated file detection, and honest truncation for large diffs |
 | **Static Analysis (Gate Zero)** | **Python `ast`** + **dependency-free TS/JS heuristics** | Plugin system for per-language rules. Python uses `ast.parse()`; TypeScript/JavaScript scan exported symbols line-by-line without extra parser dependencies. |
 | **Symbol Extraction** | **Python `ast`** + **dependency-free TS/JS export heuristics** + deleted-symbol regex heuristics | ReviewPack extracts Python definitions with `ast.parse()`, TypeScript/JavaScript exports with line-based heuristics, and deleted symbols from diff hunks across languages. |
 | **CLI Interface** | **`typer`** | Beautiful CLI with minimal code; auto-generates `--help` |
 | **Configuration** | **TOML** (`.council.toml` in repo root) | Human-readable, git-committable config for reviewer personas, thresholds, model assignments |
-| **Git Integration** | **GitHub Action** (primary gate) + optional **`pre-push` hook** (advisory) | CI blocks merge on FAIL; local hook provides fast advisory feedback |
+| **Git Integration** | **GitHub Actions** (primary gate) + local CLI advisory runs | CI blocks merge on FAIL; local runs provide fast advisory feedback |
 | **Output/Reports** | **Rich** (terminal) + **Markdown** (file) + **GitHub PR reporter** (CI) | Pretty terminal output locally; persistent review artifacts; sticky summaries plus inline PR comments in CI |
 | **Testing** | **pytest + pytest-asyncio** | Test the council itself — dogfood the QA layer |
 
@@ -131,7 +131,7 @@ code-review-council/
 │   ├── config.py              # TOML config loader + Pydantic settings
 │   ├── doctor.py              # Preflight diagnostics for repo/model/GitHub setup
 │   ├── diff_parser.py         # Git diff → structured DiffContext
-│   ├── diff_preprocessor.py   # Filtering, chunking, token budgets
+│   ├── diff_preprocessor.py   # Filtering, truncation, token budgets
 │   ├── review_pack.py         # Assembles ReviewPack from diff + AST + policies
 │   ├── gate_zero.py           # Static pre-flight checks (docs, lint, types)
 │   ├── llm_transport.py       # Shared LiteLLM JSON transport + fallback helpers
@@ -149,14 +149,8 @@ code-review-council/
 │   │   ├── typescript.py      # TypeScript: TSDoc, exports, route docs
 │   │   ├── javascript.py      # JavaScript: JSDoc, exports
 │   │   └── registry.py        # Maps file extensions → analyzer
-│   ├── chair.py               # GPT-4o Council Chair synthesis
+│   ├── chair.py               # Configurable Council Chair synthesis
 │   ├── schemas.py             # Pydantic models for all structured I/O
-│   ├── prompts/
-│   │   ├── secops.md          # System prompt for SecOps persona
-│   │   ├── qa.md              # System prompt for QA persona
-│   │   ├── architecture.md    # System prompt for Architecture persona
-│   │   ├── docs.md            # System prompt for Docs persona
-│   │   └── chair.md           # System prompt for Council Chair
 │   └── reporters/
 │       ├── terminal.py        # Rich console output
 │       ├── markdown.py        # .council-review.md generator
@@ -164,8 +158,11 @@ code-review-council/
 │       ├── html_report.py     # Standalone HTML report output
 │       ├── transport.py       # Shared transport-note helpers for reporters
 │       └── github_pr.py       # Sticky PR summary + inline review reporting
-├── hooks/
-│   └── pre-push              # Git hook installer script (advisory mode)
+├── prompts/
+│   ├── secops.md             # System prompt for SecOps persona
+│   ├── qa.md                 # System prompt for QA persona
+│   ├── architecture.md       # System prompt for Architecture persona
+│   └── docs.md               # System prompt for Docs persona
 ├── .github/
 │   └── workflows/
 │       └── council-review.yml # GitHub Action (hard gate)
@@ -251,14 +248,14 @@ The Diff Preprocessor runs after Gate Zero and before ReviewPack assembly:
 | **Generated file detection** | Header comment patterns (`// @generated`, `# auto-generated`) + known paths | Exclude from LLM review; flag in report as "skipped" |
 | **Token budget enforcement** | tiktoken estimation per file | If total diff exceeds `max_review_tokens` (default: 20,000), truncate lowest-priority files first. Some model mixes may be capped more aggressively in practice to stay below provider request-size limits |
 | **File prioritization** | Security-sensitive files first (auth, crypto, API routes), then business logic, then tests, then config/docs | Ensures token budget is spent on highest-risk code |
-| **Chunking** | For files exceeding `max_file_tokens` (default: 8,000), truncate to the token limit | V1 truncates at the token boundary. Future versions may split at parser-aware function/class boundaries. Truncated files are labeled in the ReviewPack |
+| **Truncation** | For files exceeding `max_file_tokens` (default: 8,000), truncate to the token limit | Current behavior truncates at the token boundary. Future versions may split at parser-aware function/class boundaries. Truncated files are labeled in the ReviewPack |
 
 **Configuration in `.council.toml`:**
 
 ```toml
 [preprocessor]
 max_review_tokens = 20000          # total token budget for LLM reviewers
-max_file_tokens = 8000             # per-file limit before chunking
+max_file_tokens = 8000             # per-file limit before truncation
 ignore_file = ".councilignore"     # gitignore-style exclusion patterns
 
 [preprocessor.priorities]
@@ -332,7 +329,7 @@ Each reviewer receives the **same ReviewPack** but evaluates it through a specia
 
 The ReviewPack is serialized to JSON and included in each reviewer's user message. Reviewers are instructed to reference specific `changed_symbols` entries and `test_coverage_map` data in their findings — this produces evidence-backed, not opinion-based, reviews.
 
-### Stage 2 — Council Chair Synthesis (GPT-4o)
+### Stage 2 — Council Chair Synthesis
 
 The Chair receives all reviewer outputs and makes the final call. Details in Section 3.
 
@@ -346,7 +343,7 @@ Reports are generated in multiple formats simultaneously. The developer sees a R
 
 ### 3.1 Why a Dedicated Chair?
 
-The Chair role requires a specific capability profile: synthesizing multiple structured inputs, handling contradictions gracefully, reasoning about severity trade-offs, and producing a clear, authoritative verdict. The architecture is **model-agnostic at the Chair position** — you configure the Chair model in `.council.toml`, so you can use GPT-4o (the current default), Claude Opus, Gemini 2.5 Pro, or any model with strong structured reasoning. The V1 default is GPT-4o for pragmatic reasons (wide availability, strong JSON output support).
+The Chair role requires a specific capability profile: synthesizing multiple structured inputs, handling contradictions gracefully, reasoning about severity trade-offs, and producing a clear, authoritative verdict. The architecture is **model-agnostic at the Chair position** — you configure the Chair model in `.council.toml`. The local scaffold currently defaults to `openai/gpt-4o`, while generated GitHub workflows override CI to `gemini/gemini-3-pro-preview`.
 
 ### 3.2 Chair System Prompt Structure
 
@@ -506,7 +503,7 @@ async def run_council(diff_context: DiffContext, config: CouncilConfig) -> Chair
     if gate_result.hard_fail:
         return gate_result.as_early_exit()
     
-    # Stage 0.5: Diff Preprocessing (filter, chunk, budget)
+# Stage 0.5: Diff Preprocessing (filter, truncate, budget)
     processed_diff = diff_preprocessor.process(
         diff_context,
         ignore_file=config.preprocessor.ignore_file,
@@ -749,25 +746,25 @@ patterns = [
 
 Each reviewer has a tuned system prompt, a designated model, and a focused review scope. Here's the recommended default panel:
 
-| Persona | Model (V1 Default) | Aspirational Model | Focus | Rationale |
-|---------|--------------------|--------------------|-------|-----------|
-| **SecOps** | OpenAI GPT-5.2 | Claude Sonnet 4.6 | Injection, auth flaws, secrets, dependency risks, input validation | Strong at pattern recognition and security reasoning |
-| **QA Engineer** | OpenAI GPT-5.2 | Gemini 2.5 Pro | Test coverage gaps, error handling, edge cases, assertion quality | Excellent at long-context analysis of test ↔ implementation relationships |
-| **Architect** | OpenAI GPT-4o | Claude Opus 4.5 | SOLID violations, coupling, complexity, API design, tech debt indicators | Deep reasoning about structural implications |
-| **Docs Reviewer** | OpenAI GPT-4o-mini | Claude Haiku 4.5 | Docstring quality, README accuracy, comment usefulness | Fast, cheap — docs review doesn't need frontier reasoning |
+| Persona | Local Scaffold Default | Generated CI Default | Focus | Rationale |
+|---------|------------------------|----------------------|-------|-----------|
+| **SecOps** | `openai/gpt-5.2` | `gemini/gemini-3-pro-preview` | Injection, auth flaws, secrets, dependency risks, input validation | Strong at pattern recognition and security reasoning |
+| **QA Engineer** | `openai/gpt-5.2` | `gemini/gemini-3-pro-preview` | Test coverage gaps, error handling, edge cases, assertion quality | Benefits from broad code/test context |
+| **Architect** | `openai/gpt-4o` | `gemini/gemini-3-pro-preview` | SOLID violations, coupling, complexity, API design, tech debt indicators | Deep reasoning about structural implications |
+| **Docs Reviewer** | `openai/gpt-4o-mini` | `gemini/gemini-3-pro-preview` | Docstring quality, README accuracy, comment usefulness | Lower-risk role that can use cheaper local models when desired |
 
-> **V1 Alpha Note:** Default reviewers now use an OpenAI-based mix (`gpt-5.2`, `gpt-4o`, `gpt-4o-mini`). Multi-provider configurations are supported via LiteLLM, and the Chair model is optional/configurable per repository.
+> **Phase 3 Note:** Multi-provider configurations are supported via LiteLLM, and the Chair/reviewer models are configurable per repository. The generated GitHub Actions workflows intentionally write a temporary Gemini config in CI so the default hosted path needs only `GOOGLE_API_KEY`.
 
 ### 5.2 Custom Personas
 
 Users can define additional personas in `.council.toml`:
 
 ```toml
-[[reviewers.custom]]
+[[reviewers]]
 id = "performance"
 name = "Performance Engineer"
-model = "claude-sonnet-4-5-20250929"
-prompt_file = "prompts/performance.md"   # relative to .council/
+model = "gemini/gemini-3-pro-preview"
+prompt = "prompts/performance.md"        # relative to repo root
 focus = ["algorithmic complexity", "memory allocation", "N+1 queries", "caching"]
 enabled = true
 ```
@@ -786,7 +783,7 @@ Every component here exists and is proven:
 | Structured JSON output from LLMs | Production-grade | Native JSON mode is common but not universal; Council now retries with prompt-only JSON fallback and surfaces the transport mode in reports |
 | Git diff parsing | Trivial | `unidiff` library + `git diff` subprocess |
 | AST-based code analysis | Built into Python stdlib | `ast.parse()` has been stable for 15+ years |
-| Git pre-push hooks | Standard Git feature | Bash script that calls `council review` |
+| GitHub Actions | Standard CI platform | Generated workflows run the hard gate and BYOK path |
 | Parallel async API calls | Standard Python | `asyncio.gather()` |
 
 ### 6.2 Estimated Build Effort (Vibe-Coding)
@@ -797,30 +794,31 @@ Since you're vibe-coding this, here's a realistic timeline:
 |-------|--------|-------------|
 | **MVP (Weekend sprint)** | 8-12 hours | CLI that parses diffs, calls 2 reviewers in parallel, Chair synthesizes, terminal output |
 | **Gate Zero + Analyzers** | 4-6 hours | Static checks with Python AST analysis plus dependency-free TypeScript/JavaScript analyzer plugins |
-| **Diff Preprocessor** | 3-4 hours | Ignore patterns, token budgets, chunking, generated file detection |
+| **Diff Preprocessor** | 3-4 hours | Ignore patterns, token budgets, truncation, generated file detection |
 | **ReviewPack Assembly** | 3-4 hours | Symbol extraction, test map, policy context — the structured reviewer input |
 | **Polish** | 4-6 hours | Rich terminal UI, markdown report output, `.council.toml` config |
-| **CI Integration** | 3-4 hours | GitHub Action YAML, `--ci` mode, PR annotations, optional pre-push hook |
+| **CI Integration** | 3-4 hours | GitHub Action YAML, `--ci` mode, PR summaries, inline comments, and artifacts |
 | **Total MVP** | ~25-36 hours | Fully functional Code Review Council with dual-mode enforcement |
 
 Note: The estimate increased from the original ~20-25 hours because we added the diff preprocessor, ReviewPack, and language-agnostic analyzers. These components are worth the extra effort — they prevent the "raw diff + good prompt" degradation that kills review quality at scale.
 
 ### 6.3 Cost Estimate Per Review
 
-Assuming an average diff of ~500 lines across 5-10 files **after preprocessing** (generated files, lockfiles, and vendored code excluded):
+Cost depends on the configured provider, model tier, diff size, retry behavior,
+and whether reviewers run concurrently or sequentially. Assuming an average diff
+of ~500 lines across 5-10 files **after preprocessing** (generated files,
+lockfiles, and vendored code excluded), each reviewer receives roughly the same
+budgeted ReviewPack and the Chair receives the synthesized reviewer outputs.
 
-| Component | Input Tokens | Output Tokens | Approx. Cost |
-|-----------|-------------|---------------|-------------- |
-| SecOps (Sonnet 4.5) | ~4,000 | ~1,500 | ~$0.02 |
-| QA (Gemini 2.5 Pro) | ~4,000 | ~1,500 | ~$0.01 |
-| Architect (Opus 4.5) | ~4,000 | ~1,500 | ~$0.10 |
-| Docs (Haiku 4.5) | ~4,000 | ~1,500 | ~$0.005 |
-| Chair (GPT-4o) | ~8,000 | ~2,000 | ~$0.08 |
-| **Total per review** | | | **~$0.22** |
+**Real-world cost caveats:** Without the diff preprocessor, costs can blow up
+3-5x due to package-lock changes, vendored dependencies, generated files, large
+test fixtures, and framework boilerplate. The preprocessor's token budget
+enforcement caps reviewer-visible diff size, while ReviewPack metadata still
+surfaces skipped tests/docs/config context.
 
-**Real-world cost caveats:** These estimates assume clean, preprocessed diffs. Without the diff preprocessor, costs can blow up 3-5x due to: package-lock.json changes (easily 10K+ lines), vendored dependencies, generated files, large test fixtures, and framework boilerplate. The preprocessor's token budget enforcement (default: 30K tokens) caps worst-case cost at roughly $0.80-1.00 per review even for massive diffs.
-
-At $0.20-0.30 per typical review, running this 20 times a day costs roughly $4-6/day — trivial for the value of catching a security flaw or architectural anti-pattern before it ships.
+Generated CI currently favors reliability over speed/cost: it pins all roles to
+`gemini/gemini-3-pro-preview`, sets `reviewer_concurrency = 1`, and uses larger
+timeouts. Local configs can choose cheaper models for lower-risk roles.
 
 ### 6.4 Latency Profile
 
@@ -834,7 +832,7 @@ At $0.20-0.30 per typical review, running this 20 times a day costs roughly $4-6
 | Report Generation | < 1 second |
 | **Total** | **17-31 seconds** |
 
-**Latency caveats:** Large diffs with chunking may require multiple reviewer passes per file, adding 5-10s per additional chunk. In CI mode, latency is less critical (runs asynchronously in background). For local advisory mode, the preprocessor's aggressive filtering keeps most reviews under 25s.
+**Latency caveats:** Large diffs may trigger more truncation and less reviewer-visible code context. In CI mode, latency is less critical than deterministic fail-closed behavior. For local advisory mode, the preprocessor's aggressive filtering keeps most reviews practical.
 
 ---
 
@@ -853,13 +851,15 @@ council init
 # Creates .council/prompts/ with default persona prompts
 # Creates .councilignore with common exclusion patterns
 # Creates .github/workflows/council-review.yml (CI hard gate)
-# Optionally installs pre-push git hook (advisory mode)
+# Creates generated GitHub Actions workflows for CI review
 
 # Set API keys (one-time)
+# Generated GitHub workflows use Gemini:
+export GOOGLE_API_KEY=...
+
+# Optional for local configs that reference these providers:
 export ANTHROPIC_API_KEY=sk-...
 export OPENAI_API_KEY=sk-...
-export GOOGLE_API_KEY=...
-# Or: council config set-keys (interactive)
 ```
 
 ### 7.2 Daily Workflow — Local Advisory
@@ -879,11 +879,11 @@ $ council review
   Stage 0: Gate Zero ........... ✅ PASSED (1.2s)
   ReviewPack assembled: 5 changed symbols, 2 with tests
   Stage 1: Reviewer Panel
-    ├─ SecOps (claude-sonnet-4.5) ... ✅ PASS (0 findings)
-    ├─ QA (gemini-2.5-pro) ......... ⚠️  FAIL (2 findings)
-    ├─ Architect (claude-opus-4.5) .. ✅ PASS (1 finding)
-    └─ Docs (claude-haiku-4.5) ..... ✅ PASS (0 findings)
-  Stage 2: Chair Synthesis (gpt-5.2) ... done (6.3s)
+    ├─ SecOps (gemini/gemini-3-pro-preview) ... ✅ PASS (0 findings)
+    ├─ QA (gemini/gemini-3-pro-preview) ....... ⚠️  FAIL (2 findings)
+    ├─ Architect (gemini/gemini-3-pro-preview)  ✅ PASS (1 finding)
+    └─ Docs (gemini/gemini-3-pro-preview) ..... ✅ PASS (0 findings)
+  Stage 2: Chair Synthesis (gemini/gemini-3-pro-preview) ... done
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   VERDICT: ⚠️  PASS WITH WARNINGS (advisory — push not blocked)
@@ -926,11 +926,47 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install .
-      - run: council review --ci --output-json council-report.json
+      - name: Write CI Gemini config
+        run: |
+          cat > .council.toml <<'EOF'
+          [council]
+          chair_model = "gemini/gemini-3-pro-preview"
+          timeout_seconds = 360
+          reviewer_timeout_seconds = 360
+          reviewer_concurrency = 1
+
+          [[reviewers]]
+          id = "secops"
+          name = "Security Operations Reviewer"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/secops.md"
+          enabled = true
+
+          [[reviewers]]
+          id = "qa"
+          name = "QA Engineer"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/qa.md"
+          enabled = true
+
+          [[reviewers]]
+          id = "architect"
+          name = "Solutions Architect"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/architecture.md"
+          enabled = true
+
+          [[reviewers]]
+          id = "docs"
+          name = "Documentation Reviewer"
+          model = "gemini/gemini-3-pro-preview"
+          prompt = "prompts/docs.md"
+          enabled = true
+          EOF
+      - run: council review --ci --github-pr --branch ${{ github.base_ref }} --output-json council-report.json
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -978,9 +1014,11 @@ For genuine emergencies (production down, hotfix needed now):
 
 ```toml
 [council]
-chair_model = "openai/gpt-4o"
+chair_model = "openai/gpt-4o"       # local scaffold default; CI workflow overrides to Gemini
 fail_on = "FAIL"                    # FAIL | PASS_WITH_WARNINGS
-timeout_seconds = 60                # max wait before fallback
+timeout_seconds = 60                # Chair / owner-summary timeout
+reviewer_timeout_seconds = 60       # per-reviewer timeout
+reviewer_concurrency = 2            # lower this for slow/rate-limited providers
 
 [council.enforcement]
 mode = "ci"                         # ci | local | both
@@ -990,7 +1028,7 @@ local_mode = "advisory"            # advisory (never blocks) | gate (blocks push
 
 [preprocessor]
 max_review_tokens = 20000          # total token budget for LLM reviewers
-max_file_tokens = 8000             # per-file limit before chunking
+max_file_tokens = 8000             # per-file limit before truncation
 ignore_file = ".councilignore"     # gitignore-style exclusion patterns
 detect_generated = true            # auto-skip files with @generated headers
 
@@ -1069,23 +1107,21 @@ Everything described in this document up to this point. The core deliverable:
 
 1. **Typer CLI** with `council init`, `council review`, `council review --ci`
 2. **Gate Zero** with language-aware analyzer plugins (Python + TypeScript + JavaScript)
-3. **Diff Preprocessor** with ignore patterns, token budgets, chunking
+3. **Diff Preprocessor** with ignore patterns, token budgets, and honest truncation
 4. **ReviewPack** assembly from enriched diff context
 5. **4 reviewer personas** (SecOps, QA, Architect, Docs) running in parallel
-6. **GPT-4o Chair** with structured adjudication
+6. **Configurable Chair** with structured adjudication
 7. **Pydantic schemas** enforcing structure at every boundary
 8. **Output**: terminal (Rich), markdown (.council-review.md), JSON
-9. **GitHub Action** as primary CI gate + optional pre-push hook (advisory)
+9. **GitHub Actions** as the primary CI gate, plus local advisory CLI runs
 
-### V2 — Production Hardening (Implemented)
+### V2 — ReviewPack Parity + Hardening (Implemented)
 
-Once V1 is stable with low false-positive rates:
-
-1. **SQLite/Postgres storage** for review runs — enables trend analysis
-2. **PR inline reporting** — sticky PR summary, workflow annotations, and best-effort inline GitHub review comments on specific lines
-3. **Repo-specific policy bundles** — configurable per-repo or per-team rules beyond the defaults
-4. **Team dashboard** — web UI (could reuse frontend ideas from the Karpathy fork) showing review history, pass rates, common findings, cost tracking
-5. **MCP server** — expose the council as an MCP tool so Claude Code or other agents can self-review before suggesting commits
+1. **Python/TypeScript/JavaScript ReviewPack parity** — parser-free TS/JS export extraction plus Python AST extraction.
+2. **Shared test-path logic** — Gate Zero and ReviewPack reuse the same test-file classification.
+3. **Diff-local support context** — skipped tests/docs/config still surface to reviewers through ReviewPack metadata.
+4. **Owner/developer presentation support** — same underlying verdict, different audience output.
+5. **Expanded regression coverage** — analyzer, ReviewPack, reporter, and owner-output behavior covered by tests.
 
 ### V3 — Portability + PR Usability (Implemented)
 
@@ -1094,15 +1130,24 @@ Once V1 is stable with low false-positive rates:
 3. **`council doctor`** — preflight checks for repo state, branch targets, provider keys, likely fallback-only models, and GitHub PR context.
 4. **Transport-aware reporting** — terminal, markdown, HTML, JSON, and GitHub PR summaries show transport notes when fallback or failure occurs.
 
-### V4 — Intelligence Layer
+### V4A — Docs, Onboarding, and Safer Self-Serve Defaults
 
-Only after the portability and usability layers are solid:
+The next phase starts by reducing setup friction before adding more autonomy:
 
-1. **Auto-fix generation** (`council review --fix`) — chain back to a coding LLM to generate patches for CRITICAL/HIGH findings, then re-run the council on the patched code. **Prerequisite**: stable verdicts, low false positives, good evidence quality. Adding this too early is a trap — you'd be auto-fixing hallucinated issues.
+1. **Docs-first consistency** — keep README, Getting Started, design docs, and site docs aligned on provider defaults, GitHub workflow behavior, and local/CI parity.
+2. **Stronger fix guidance** — make developer and owner reports clearer about what to change, what to test, and when a human engineer should review the patch.
+3. **Safer self-serve defaults** — keep fail-closed CI integrity behavior, document Gemini workflow requirements, and make `council doctor` the standard first-run diagnostic.
+4. **Full-repo context expansion plan** — design repository-wide test/context discovery without pretending the current diff-local map already does it.
+
+### V4B — Intelligence Layer
+
+Only after onboarding and parity are solid:
+
+1. **Auto-fix generation** (`council review --fix`) — opt-in patch generation for CRITICAL/HIGH findings, followed by an automatic re-review. **Prerequisite**: stable verdicts, low false positives, and good evidence quality.
 2. **Learning loop** — store review verdicts and findings in a DB. Analyze patterns over time: "80% of your FAIL verdicts are missing error handling in parsers" → surface as pre-review tips.
-3. **Repeated-debt detection** — flag issues that keep recurring across PRs (same developer, same pattern).
+3. **Repeated-debt detection** — flag issues that keep recurring across PRs.
 4. **Confidence calibration** — track Chair verdict accuracy over time, tune conflict resolution weights.
-5. **Observability** — push council metrics (review latency, pass/fail rates, cost per review, finding categories) to Prometheus via a `/metrics` endpoint. Build a Grafana dashboard for code quality trends.
+5. **Observability** — push council metrics such as latency, pass/fail rates, cost per review, finding categories, and degraded-run causes to a metrics backend.
 
 ---
 
@@ -1120,7 +1165,7 @@ Only after the portability and usability layers are solid:
 | **Chair as separate stage** | Clean separation; Chair sees all context; adjudicates rather than summarizes | Extra API call adds ~5-10s latency and ~$0.08 cost |
 | **LiteLLM over raw SDKs** | Single interface for all providers | Adds a dependency; slight abstraction overhead |
 | **TOML config over CLI flags** | Git-committable; team-shareable; self-documenting | Need to write a config loader |
-| **Auto-fix deferred to V3** | Need stable verdicts and low false positives first; auto-fixing hallucinated issues is worse than no auto-fix | Users must fix issues manually in V1/V2 |
+| **Auto-fix deferred to V4B** | Need stable verdicts and low false positives first; auto-fixing hallucinated issues is worse than no auto-fix | Users fix issues manually until the evidence pipeline is trustworthy enough |
 
 ### Revision History
 
@@ -1131,3 +1176,4 @@ Only after the portability and usability layers are solid:
 | v1.2 | 2025-02-28 | 5 pre-build adjustments: evidence/policy-based Chair (not count-based), enriched Finding schemas with evidence_ref/symbol/confidence, forced JSON in CI mode, degraded-mode handling for reviewer timeouts, removed emergency bypass from V1. |
 | v1.3 | 2025-02-28 | Post-implementation update. Two rounds of peer review, 26 fixes applied. Key changes: Chair default GPT-4o (configurable), reviewer defaults updated to OpenAI model mix (configurable), deleted symbol detection via hunk scanning, unified degraded-mode with `degraded_reasons`, linter integration implemented (`shlex.split`, `{files}` placeholder), `repo_policies` populated from config, file boundary headers in diff text, `warnings` as first-class ChairVerdict field, path traversal protection, honest truncation (not "chunking"). 62 tests. See SELF-REVIEW.md for remaining known limitations. |
 | v1.4 | 2026-04-11 | Phase 2 and Phase 3 update. ReviewPack now covers Python plus parser-free TypeScript/JavaScript exports, shared test-path classification is reused across Gate Zero and ReviewPack, LiteLLM transport now retries without native JSON mode when providers reject `response_format`, reports surface `output_mode` / transport notes, `council doctor` was added for preflight checks, and GitHub PR reporting now combines sticky summaries with best-effort inline comments. |
+| v1.5 | 2026-04-22 | Post-PR #12 docs baseline. GitHub workflows are documented as Gemini-pinned via `GOOGLE_API_KEY`, reviewer timeout and concurrency knobs are part of the config reference, Windows-safe terminal and lossless diff ingestion hardening are captured, and the Phase 4 roadmap is split into V4A onboarding/parity and V4B intelligence. 286 tests collected. |

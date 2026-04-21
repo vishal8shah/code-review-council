@@ -144,8 +144,8 @@ Invalid input.
           cat > .council.toml <<'EOF'
           [council]
           chair_model = "gemini/gemini-3-pro-preview"
-          timeout_seconds = 180
-          reviewer_timeout_seconds = 180
+          timeout_seconds = 360
+          reviewer_timeout_seconds = 360
           reviewer_concurrency = 1
 
           [[reviewers]]

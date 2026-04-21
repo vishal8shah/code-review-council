@@ -1976,8 +1976,8 @@ class TestWorkflowScaffold:
         assert '"skipped":"no_google_api_key"' in _DEFAULT_WORKFLOW
         assert "Write CI Gemini config" in _DEFAULT_WORKFLOW
         assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW
-        assert "timeout_seconds = 180" in _DEFAULT_WORKFLOW
-        assert "reviewer_timeout_seconds = 180" in _DEFAULT_WORKFLOW
+        assert "timeout_seconds = 360" in _DEFAULT_WORKFLOW
+        assert "reviewer_timeout_seconds = 360" in _DEFAULT_WORKFLOW
         assert "reviewer_concurrency = 1" in _DEFAULT_WORKFLOW
 
     def test_workflow_passes_branch(self):
@@ -2014,8 +2014,8 @@ class TestWorkflowScaffold:
         assert "Warn if workflow is running on the base branch" in _DEFAULT_WORKFLOW_BYOK
         assert "Write CI Gemini config" in _DEFAULT_WORKFLOW_BYOK
         assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW_BYOK
-        assert "timeout_seconds = 180" in _DEFAULT_WORKFLOW_BYOK
-        assert "reviewer_timeout_seconds = 180" in _DEFAULT_WORKFLOW_BYOK
+        assert "timeout_seconds = 360" in _DEFAULT_WORKFLOW_BYOK
+        assert "reviewer_timeout_seconds = 360" in _DEFAULT_WORKFLOW_BYOK
         assert "reviewer_concurrency = 1" in _DEFAULT_WORKFLOW_BYOK
         assert "TARGET_BRANCH: ${{ steps.review_base.outputs.target }}" in _DEFAULT_WORKFLOW_BYOK
         assert "AUDIENCE: ${{ inputs.audience }}" in _DEFAULT_WORKFLOW_BYOK

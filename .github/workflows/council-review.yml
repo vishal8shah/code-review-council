@@ -39,6 +39,9 @@ jobs:
           cat > .council.toml <<'EOF'
           [council]
           chair_model = "gemini/gemini-3-pro-preview"
+          timeout_seconds = 180
+          reviewer_timeout_seconds = 180
+          reviewer_concurrency = 1
 
           [[reviewers]]
           id = "secops"

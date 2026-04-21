@@ -288,6 +288,7 @@ _DEFAULT_CONFIG = """\
 chair_model = "openai/gpt-4o"
 fail_on = "FAIL"
 timeout_seconds = 60
+reviewer_timeout_seconds = 60
 reviewer_concurrency = 2
 
 [council.enforcement]
@@ -417,6 +418,9 @@ jobs:
           cat > .council.toml <<'EOF'
           [council]
           chair_model = "gemini/gemini-3-pro-preview"
+          timeout_seconds = 180
+          reviewer_timeout_seconds = 180
+          reviewer_concurrency = 1
 
           [[reviewers]]
           id = "secops"
@@ -609,6 +613,9 @@ Invalid input.
           cat > .council.toml <<'EOF'
           [council]
           chair_model = "gemini/gemini-3-pro-preview"
+          timeout_seconds = 180
+          reviewer_timeout_seconds = 180
+          reviewer_concurrency = 1
 
           [[reviewers]]
           id = "secops"

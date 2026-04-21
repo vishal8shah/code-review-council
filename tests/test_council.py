@@ -400,6 +400,7 @@ class TestConfig:
         assert config.chair_model == "openai/gpt-4o"
         assert config.gate_zero.require_docs is True
         assert config.gate_zero.check_secrets is True
+        assert config.reviewer_timeout_seconds == 60
         assert len(config.reviewers) > 0
 
     def test_load_toml_config(self, tmp_path):
@@ -409,6 +410,7 @@ class TestConfig:
 [council]
 chair_model = "anthropic/claude-opus-4-6"
 timeout_seconds = 30
+reviewer_timeout_seconds = 45
 reviewer_concurrency = 1
 
 [gate_zero]
@@ -424,6 +426,7 @@ enabled = true
         config = load_config(tmp_path)
         assert config.chair_model == "anthropic/claude-opus-4-6"
         assert config.timeout_seconds == 30
+        assert config.reviewer_timeout_seconds == 45
         assert config.reviewer_concurrency == 1
         assert config.gate_zero.require_docs is False
         assert len(config.reviewers) == 1
@@ -1973,6 +1976,9 @@ class TestWorkflowScaffold:
         assert '"skipped":"no_google_api_key"' in _DEFAULT_WORKFLOW
         assert "Write CI Gemini config" in _DEFAULT_WORKFLOW
         assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW
+        assert "timeout_seconds = 180" in _DEFAULT_WORKFLOW
+        assert "reviewer_timeout_seconds = 180" in _DEFAULT_WORKFLOW
+        assert "reviewer_concurrency = 1" in _DEFAULT_WORKFLOW
 
     def test_workflow_passes_branch(self):
         """Generated workflow must pass --branch to avoid empty-diff reviews."""
@@ -2008,6 +2014,9 @@ class TestWorkflowScaffold:
         assert "Warn if workflow is running on the base branch" in _DEFAULT_WORKFLOW_BYOK
         assert "Write CI Gemini config" in _DEFAULT_WORKFLOW_BYOK
         assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW_BYOK
+        assert "timeout_seconds = 180" in _DEFAULT_WORKFLOW_BYOK
+        assert "reviewer_timeout_seconds = 180" in _DEFAULT_WORKFLOW_BYOK
+        assert "reviewer_concurrency = 1" in _DEFAULT_WORKFLOW_BYOK
         assert "TARGET_BRANCH: ${{ steps.review_base.outputs.target }}" in _DEFAULT_WORKFLOW_BYOK
         assert "AUDIENCE: ${{ inputs.audience }}" in _DEFAULT_WORKFLOW_BYOK
         assert '[ "$AUDIENCE" != "developer" ] && [ "$AUDIENCE" != "owner" ]' in _DEFAULT_WORKFLOW_BYOK
@@ -3585,9 +3594,11 @@ def test_instantiate_reviewers_resolves_relative_prompt_from_repo_root(tmp_path)
         ],
         on_integrity_issue="fail",
         repo_root=tmp_path,
+        reviewer_timeout=123.0,
     )
 
     assert reviewers[0].get_system_prompt() == "CUSTOM PROMPT"
+    assert reviewers[0].timeout == 123.0
 
 
 def test_instantiate_reviewers_custom_class_path_fallback_without_integrity_kwarg():
@@ -3610,10 +3621,39 @@ def test_instantiate_reviewers_custom_class_path_fallback_without_integrity_kwar
             ],
             on_integrity_issue="fail",
             repo_root=Path.cwd(),
+            reviewer_timeout=123.0,
         )
 
     assert len(reviewers) == 1
     assert isinstance(reviewers[0], LegacyReviewer)
+    assert reviewers[0].timeout == 123.0
+
+
+def test_instantiate_reviewers_custom_class_path_fallback_without_timeout_kwarg():
+    from council.config import ReviewerConfig
+    from council.orchestrator import _instantiate_reviewers
+
+    class MinimalReviewer(BaseReviewer):
+        def __init__(self, reviewer_id: str, model: str, prompt_path: str | None = None):
+            super().__init__(reviewer_id=reviewer_id, model=model, prompt_path=prompt_path)
+
+    with patch("council.orchestrator._load_class_path", return_value=MinimalReviewer):
+        reviewers = _instantiate_reviewers(
+            configs=[
+                ReviewerConfig(
+                    id="minimal",
+                    name="Minimal",
+                    model="test",
+                    class_path="minimal.reviewer.MinimalReviewer",
+                )
+            ],
+            on_integrity_issue="fail",
+            repo_root=Path.cwd(),
+            reviewer_timeout=123.0,
+        )
+
+    assert len(reviewers) == 1
+    assert isinstance(reviewers[0], MinimalReviewer)
 
 
 def test_github_pr_annotation_sanitizes_control_sequences(capsys):
@@ -3722,6 +3762,7 @@ async def test_orchestrator_minor_parse_error_does_not_mark_degraded():
 
     cfg = CouncilConfig()
     cfg.enforcement.on_integrity_issue = "fail"
+    cfg.reviewer_timeout_seconds = 123
     cfg.reviewers = []
 
     diff_ctx = DiffContext(files=[], changed_files=[])
@@ -3737,7 +3778,7 @@ async def test_orchestrator_minor_parse_error_does_not_mark_degraded():
         "council.orchestrator.rp_module.assemble", return_value=rp
     ), patch(
         "council.orchestrator._instantiate_reviewers", return_value=[_StubReviewer()]
-    ), patch(
+    ) as mock_instantiate, patch(
         "council.orchestrator.chair_module.synthesize", new_callable=AsyncMock
     ) as mock_synth:
         mock_synth.return_value = ChairVerdict(
@@ -3750,6 +3791,7 @@ async def test_orchestrator_minor_parse_error_does_not_mark_degraded():
         await run_council(config=cfg, diff_text="diff --git a/a.py b/a.py\n")
 
     assert mock_synth.await_count == 1
+    assert mock_instantiate.call_args.kwargs["reviewer_timeout"] == 123.0
     assert mock_synth.await_args.kwargs["degraded"] is False
 
 

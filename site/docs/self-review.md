@@ -90,6 +90,9 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 | Prompt guardrails | Additional SecOps and QA guardrails to reduce speculative findings |
 | BYOK workflow | Fork-safe workflow emitting `council-report.json` and `council-review.md` artifacts |
 | Config schema + defaults | `load_config()` accepts nested `[[council.reviewer]]` / `[[council.reviewers]]`; model mix updated to GPT-5.2/GPT-4o/GPT-4o-mini |
+| Phase 2 ReviewPack parity | ReviewPack and Gate Zero cover Python plus parser-free TypeScript/JavaScript exports and test-path heuristics |
+| Phase 3 portability | Shared LiteLLM transport falls back from native JSON mode, `council doctor` preflights setup, and reports surface transport notes |
+| Phase 3 PR + Windows hardening | GitHub PR summaries/inline comments are best-effort, Git diff decoding is lossless with `surrogateescape`, terminal output is Windows-safe, and generated CI is pinned to Gemini with configurable reviewer timeouts |
 
 ---
 
@@ -104,7 +107,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 - **Changed AND deleted symbol detection** — reviewers see what was removed, not just what was added
 - **Policy context flows end-to-end** — config settings reach reviewers and Chair
 - **Path traversal protection** and CI safety warnings built in
-- **204 tests across all modules** covering legacy flow plus Phase 3 transport fallback, doctor checks, and GitHub reporting behavior
+- **286 collected tests across all modules** covering legacy flow plus Phase 3 transport fallback, doctor checks, GitHub reporting behavior, Windows terminal safety, and lossless diff ingestion
 
 ---
 
@@ -122,10 +125,10 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 
 ### Not Yet Implemented
 
-- **Logical chunking** — large files are truncated, not split at function boundaries. Documented as truncation.
 - **Full-repo test coverage discovery** — coverage mapping still works from the diff, not a repository-wide index.
 - **GitHub reporting remains best-effort** — sticky summaries, workflow annotations, and inline PR comments should not fail the review if the GitHub API is flaky.
 - **Editable prompts without code changes** — prompts are still in code rather than repo-editable assets. Future scope.
+- **Phase 4 intelligence layer** — opt-in autofix, repeated-debt detection, confidence calibration, and metrics are planned after the Phase 4A onboarding/parity pass.
 
 ### Design Note
 

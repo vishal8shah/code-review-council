@@ -28,7 +28,7 @@ pip install .
 ### Development install (editable — for contributors)
 
 ```bash
-pip install -e ".[dev]"
+pip install -e .
 ```
 
 Verify the install:
@@ -47,11 +47,13 @@ Run this inside the repository you want to review:
 council init
 ```
 
-This creates two things:
+This creates the review config, ignore file, default prompts, and workflows:
 
 | File | Purpose |
 |------|---------|
 | `.council.toml` | Your reviewer config, model assignments, token budgets, policy rules |
+| `.councilignore` | Review-scope exclusions for lockfiles, generated output, vendored files, and similar noise |
+| `prompts/*.md` | Default persona prompts referenced by `.council.toml` |
 | `.github/workflows/council-*.yml` | CI workflow scaffolding (PR gate + BYOK variants) |
 
 !!! tip "Check `.council.toml` before your first review"
@@ -61,12 +63,14 @@ This creates two things:
 
 ## 🔑 Set Your API Keys (BYOK)
 
-Council is bring-your-own-key. Set one or more of:
+Council is bring-your-own-key. The generated GitHub workflows are pinned to
+Gemini, so `GOOGLE_API_KEY` is required for the default CI path. Set other keys
+only if your local `.council.toml` uses those providers.
 
 ```bash
+export GOOGLE_API_KEY=...
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
-export GOOGLE_API_KEY=...
 ```
 
 !!! warning "Use restricted keys"
@@ -109,7 +113,7 @@ council review --ci --branch main \
 ```
 
 !!! info "First run tip"
-    The first run fetches model responses — expect 30–60 seconds depending on diff size and model concurrency. Subsequent runs on the same diff are much faster if caching is enabled in `.council.toml`.
+    The first run fetches model responses — expect anything from under a minute to several minutes depending on diff size, model choice, and reviewer concurrency. Preview models can be slower, which is why generated CI sets explicit reviewer timeouts.
 
 ---
 
@@ -131,8 +135,12 @@ After `council init`, two workflow files are scaffolded:
 
 | Workflow | Trigger | Use Case |
 |----------|---------|----------|
-| `council-pr.yml` | `pull_request` | Automatic review on every PR from your own branches |
+| `council-review.yml` | `pull_request` | Automatic review on every PR from your own branches |
 | `council-byok.yml` | `workflow_dispatch` | Manual review for fork PRs, specific branches, or external contributors |
+
+Both generated workflows write a temporary Gemini config in CI using
+`gemini/gemini-3-pro-preview`, `reviewer_timeout_seconds = 360`, and
+`reviewer_concurrency = 1`.
 
 ### Add your secrets, then push:
 
@@ -145,7 +153,7 @@ git push
 Council will automatically review the next PR opened against your default branch.
 
 !!! danger "Fork PRs and secrets"
-    Fork PRs cannot access repository secrets (GitHub's security model). `council-pr.yml` detects this and skips the LLM step, uploading a report that explains the skip. For fork contributor PRs, use `council-byok.yml` with `workflow_dispatch` instead.
+    Fork PRs cannot access repository secrets (GitHub's security model). `council-review.yml` detects this and skips the LLM step, uploading a report that explains the skip. For fork contributor PRs, use `council-byok.yml` with `workflow_dispatch` and a fork-local `GOOGLE_API_KEY` instead.
 
 ---
 
@@ -156,7 +164,7 @@ Council will automatically review the next PR opened against your default branch
 | `council: command not found` | Not installed in active virtualenv | `pip install .` in the repo root |
 | Empty diff / 0 findings on all reviewers | Missing `--branch` flag in `--ci` mode | Add `--branch main` (or your base branch) |
 | Reviewer timeouts | Model API slow or rate-limited | Increase `reviewer_timeout_seconds` in `.council.toml` |
-| `ANTHROPIC_API_KEY not found` | Secret not set | Check `Settings → Secrets` or your local `export` |
+| `GOOGLE_API_KEY not found` | Gemini-pinned workflow has no key | Add `GOOGLE_API_KEY` in `Settings → Secrets` or export it locally |
 | Fork PR review skipped | Expected — not a bug | Use `council-byok.yml` for fork contributors |
 | `integrity_error` in JSON report | A reviewer returned unparseable output | Run `council doctor --branch main`; some models use prompt-only JSON fallback and Council now reports that transport mode explicitly |
 

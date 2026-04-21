@@ -10,13 +10,18 @@ Code Review Council is a **bring-your-own-key** system. There are no shared API 
 
 When you run Council:
 
-- Your code diff is sent **directly from your CI runner to your chosen LLM provider** (OpenAI, Anthropic, etc.)
+- Your code diff is sent **directly from your CI runner to your chosen LLM provider** (Google/Gemini in the generated workflows, or whichever provider your local config selects)
 - Council itself never sees, stores, or forwards your keys or your code
 - Your API keys live in **GitHub Actions secrets** on your own repository — not in this project
 - If you fork this repo, your keys stay in your fork's secret store
 
 !!! success "The short version"
     Your code never leaves your CI runner except to go directly to the LLM provider you configured. Council is the orchestration layer, not a data handler.
+
+!!! info "Generated workflow default"
+    The generated GitHub workflows are pinned to Gemini and require
+    `GOOGLE_API_KEY`. Local `.council.toml` files can still use OpenAI,
+    Anthropic, Google, or another LiteLLM-supported provider.
 
 ---
 
@@ -50,7 +55,7 @@ Council mitigates this with:
 - **`--ci` + `--branch` safety warning** — emitted if `--ci` is passed without an explicit branch (empty diff risk)
 
 !!! danger "Fork PRs and secrets"
-    Fork PRs do not have access to repository secrets by design (GitHub's security model). The PR workflow detects this and skips the LLM review step cleanly, uploading a `council-report.json` that explains the skip. **Do not work around this.** Use the BYOK workflow for fork contributor reviews instead.
+    Fork PRs do not have access to repository secrets by design (GitHub's security model). The PR workflow detects the missing `GOOGLE_API_KEY` and skips the LLM review step cleanly, uploading a `council-report.json` that explains the skip. **Do not work around this.** Use the BYOK workflow with a fork-local `GOOGLE_API_KEY` for fork contributor reviews instead.
 
 ---
 
@@ -106,4 +111,7 @@ If a reviewer times out, returns malformed output, or fails to parse, Council do
 - Surfaces **specific degraded reasons** to the user via `degraded_reasons` in the ChairVerdict
 - Makes the integrity issue visible in CI logs and JSON artifacts via per-reviewer `error` and `integrity_error` fields
 
-This means a partial failure is always visible and auditable, not hidden behind a clean-looking PASS.
+With the default fail-closed integrity policy, degraded CI reviews block the
+merge until the timeout, parsing, or provider issue is fixed. This means a
+partial failure is always visible and auditable, not hidden behind a
+clean-looking PASS.

@@ -1,6 +1,7 @@
-# Code Review Council — Self-Review (Post Round 2)
+# Code Review Council — Self-Review (Post Phase 3 Merge)
 
-Updated after initial self-review, two rounds of GPT-5.2 peer review, and three hardening passes.
+Updated after initial self-review, two rounds of GPT-5.2 peer review, Phase 2
+ReviewPack parity, and the Phase 3 portability / PR usability merge.
 
 ---
 
@@ -54,6 +55,9 @@ Updated after initial self-review, two rounds of GPT-5.2 peer review, and three 
 | Prompt guardrails | Added additional secops and QA guardrails to reduce speculative findings |
 | BYOK workflow | Added fork-safe BYOK workflow that emits `council-report.json` and `council-review.md` artifacts |
 | Config schema + defaults | `load_config()` now accepts nested `[[council.reviewer]]` / `[[council.reviewers]]`; default reviewer model mix updated to GPT-5.2/GPT-4o/GPT-4o-mini |
+| Phase 2 ReviewPack parity | ReviewPack and Gate Zero now cover Python plus parser-free TypeScript/JavaScript symbol and test-path heuristics |
+| Phase 3 transport + PR reporting | Shared LiteLLM JSON transport falls back from native JSON mode to prompt-only JSON, `council doctor` preflights setup, and GitHub PR reporting posts sticky summaries plus best-effort inline comments |
+| Phase 3 Windows/Gemini hardening | Git diff ingestion preserves undecodable bytes with `surrogateescape`, terminal output sanitizes legacy-console text, generated GitHub workflows pin Gemini with `GOOGLE_API_KEY`, and reviewer timeouts are configurable |
 
 ---
 
@@ -63,12 +67,13 @@ Updated after initial self-review, two rounds of GPT-5.2 peer review, and three 
 - **Test coverage map only searches diff files** — labeled "IN DIFF" in prompts. Full repo search deferred.
 - **Test coverage matching is substring-based** — false positives on short filenames.
 - **Deleted symbol detection is regex heuristic** — catches `def`/`class` patterns, not multiline signatures.
-- **`parse_diff` always runs `get_current_branch` subprocess** — unnecessary in test/CI.
+- **`parse_diff` still performs git subprocess work** — useful in real runs, but some test/CI paths could avoid redundant probes.
 
 ### Not Yet Implemented
 - **Logical chunking** — Large files truncated, not split at function boundaries. Documented honestly.
-- **`response_format` model fallback** — No fallback for models that don't support JSON mode.
-- **GitHub PR annotation reporter** — Config disabled by default. V2 scope.
+- **Full-repo test coverage discovery** — Coverage mapping still works from the diff, not a repository-wide index.
+- **Learning loop / repeated-debt detection** — Phase 4B scope after onboarding and local/CI parity are smoother.
+- **Autofix generation** — Deferred until verdict quality and evidence quality stay stable enough to avoid auto-fixing hallucinated issues.
 - **Prompts in code** — Works but not editable without code changes.
 
 ### Design Disagreement with Peer Reviewer
@@ -87,4 +92,4 @@ Updated after initial self-review, two rounds of GPT-5.2 peer review, and three 
 - Policy context from config flows to reviewers and Chair
 - Path traversal protection, CI safety warnings
 - Honest about what's implemented vs. claimed
-- 171 tests across all modules, all passing
+- 286 collected tests across all modules

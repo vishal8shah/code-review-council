@@ -25,7 +25,7 @@ council-review.yml    council-byok.yml
 | | `council-review.yml` | `council-byok.yml` |
 |---|---|---|
 | **Trigger** | `pull_request` (automatic) | `workflow_dispatch` (manual) |
-| **Secrets access** | Repository secrets only | Repository secrets (you supply them) |
+| **Secrets access** | Repository `GOOGLE_API_KEY` secret | Fork/repo `GOOGLE_API_KEY` secret that you supply |
 | **Fork PRs** | ⚠️ Skips LLM step (no secrets) | ✅ Full review (you trigger it) |
 | **Inputs** | None — runs on the PR branch | `base_ref`, `upstream_repo`, `audience` |
 | **Input validation** | N/A | ✅ Branch ref + repo format validated |
@@ -41,9 +41,9 @@ This is the always-on review gate. It fires automatically when a PR is opened or
 ### What it does
 
 1. Checks out the PR branch
-2. Runs Gate Zero (deterministic checks)
-3. If LLM secrets are available: runs the full 5-stage pipeline
-4. If secrets are unavailable (fork PR): skips LLM, uploads a report explaining the skip
+2. Checks whether `GOOGLE_API_KEY` is available
+3. If the key is available: writes a temporary Gemini config and runs the full 5-stage pipeline, including Gate Zero
+4. If the Gemini secret is unavailable (fork PR or missing repo secret): skips LLM, uploads a report explaining the skip
 5. Uploads `council-report.json` as a workflow artifact
 
 ### Where to find the artifact
@@ -53,13 +53,15 @@ Actions tab → [workflow run] → Artifacts → council-report
 ```
 
 !!! danger "Fork PRs"
-    Fork PRs cannot access repository secrets — this is GitHub's security model, not a Council bug. The PR workflow detects this, skips the LLM step, and uploads a `council-report.json` with a `fork_pr_skip` explanation. **Do not work around this.** Use `council-byok.yml` to review fork contributor PRs.
+    Fork PRs cannot access repository secrets — this is GitHub's security model, not a Council bug. The PR workflow detects missing `GOOGLE_API_KEY`, skips the LLM step, and uploads a `council-report.json` explaining the skip. **Do not work around this.** Use `council-byok.yml` with a fork-local `GOOGLE_API_KEY` to review fork contributor PRs.
 
 ---
 
 ## 🔑 BYOK Workflow — `council-byok.yml`
 
-This is the manual, key-controlled review workflow. You trigger it explicitly from the Actions tab.
+This is the manual, key-controlled review workflow. You trigger it explicitly
+from the Actions tab. It is also pinned to Gemini and fails fast if
+`GOOGLE_API_KEY` is not configured in the repository or fork where it runs.
 
 ### Workflow dispatch inputs
 
@@ -85,6 +87,10 @@ Before running, the BYOK workflow validates:
 ```
 Actions tab → council-byok → Run workflow → fill inputs → Run
 ```
+
+Both workflows use `gemini/gemini-3-pro-preview` in CI, set
+`reviewer_timeout_seconds = 360`, and run reviewers sequentially with
+`reviewer_concurrency = 1` to reduce preview-model timeout/rate-limit noise.
 
 ---
 

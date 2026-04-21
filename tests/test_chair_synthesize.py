@@ -135,3 +135,28 @@ def test_chair_verdict_from_payload_propagates_output_mode():
     assert verdict.degraded is True
     assert verdict.degraded_reasons == ["rate limit"]
     assert verdict.verdict == "PASS"
+
+
+def test_chair_payload_cannot_create_degraded_state():
+    parsed = {
+        "verdict": "PASS_WITH_WARNINGS",
+        "confidence": 0.8,
+        "degraded": True,
+        "summary": "model saw a reviewer warning",
+        "rationale": "non-blocking reviewer parse warning",
+        "accepted_blockers": [],
+        "warnings": [],
+        "dismissed_findings": [],
+        "all_findings": [],
+    }
+
+    verdict = _chair_verdict_from_payload(
+        parsed=parsed,
+        output_mode="response_format",
+        degraded=False,
+        degraded_reasons=None,
+    )
+
+    assert verdict.degraded is False
+    assert verdict.degraded_reasons == []
+    assert verdict.verdict == "PASS_WITH_WARNINGS"

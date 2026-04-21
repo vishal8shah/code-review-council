@@ -303,7 +303,7 @@ def _chair_verdict_from_payload(
         verdict=parsed.get("verdict", "PASS"),
         confidence=parsed.get("confidence", 0.5),
         chair_output_mode=output_mode,
-        degraded=degraded or parsed.get("degraded", False),
+        degraded=degraded,
         degraded_reasons=degraded_reasons or [],
         summary=parsed.get("summary", ""),
         accepted_blockers=_parse_chair_findings(parsed.get("accepted_blockers", [])),

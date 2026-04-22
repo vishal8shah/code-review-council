@@ -232,16 +232,10 @@ def record_review_history(
         run_metadata = _build_run_metadata(
             repo_root=repo_root,
             config=config,
-            verdict=verdict,
             review_pack=review_pack,
             reviewer_outputs=reviewer_outputs,
-            gate_result=gate_result,
-            ci_mode=ci_mode,
             staged=staged,
             branch=branch,
-            audience=audience,
-            output_modes=output_modes,
-            duration_ms=duration_ms,
         )
 
         with conn:
@@ -336,7 +330,6 @@ def prune_history(
 
     placeholders = ",".join("?" for _ in run_ids)
     with conn:
-        conn.execute(f"DELETE FROM findings WHERE run_id IN ({placeholders})", run_ids)
         conn.execute(f"DELETE FROM runs WHERE id IN ({placeholders})", run_ids)
     return len(run_ids)
 
@@ -509,18 +502,11 @@ def _build_run_metadata(
     *,
     repo_root: Path,
     config: Any,
-    verdict: ChairVerdict,
     review_pack: ReviewPack | None,
     reviewer_outputs: list[ReviewerOutput],
-    gate_result: GateZeroResult | None,
-    ci_mode: bool,
     staged: bool,
     branch: str | None,
-    audience: str,
-    output_modes: list[str],
-    duration_ms: int,
 ) -> dict[str, Any]:
-    del verdict, gate_result, ci_mode, audience, output_modes, duration_ms
     current_branch = _git_output(repo_root, "rev-parse", "--abbrev-ref", "HEAD") or ""
     commit_sha = _git_output(repo_root, "rev-parse", "HEAD") or ""
     diff_target = branch or ("staged" if staged else "")
@@ -662,6 +648,8 @@ def _repeat_summaries(
 
 
 def _current_consecutive_count(conn: sqlite3.Connection, repo_id: str, fingerprint: str) -> int:
+    # TODO: replace this per-fingerprint scan with a window-function query once
+    # local history volumes grow beyond the first-slice SQLite use case.
     runs = conn.execute(
         "SELECT id FROM runs WHERE repo_id = ? ORDER BY created_at DESC, id DESC",
         (repo_id,),

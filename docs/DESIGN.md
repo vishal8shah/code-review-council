@@ -1170,6 +1170,10 @@ validates path writability, schema currency, and retention/pruning health. It is
 INFO-only when healthy and WARN-only on storage/schema problems; it never blocks
 doctor or changes review verdicts.
 
+Retention pruning deletes expired run rows and relies on the `findings.run_id`
+foreign-key cascade to remove dependent finding rows. This keeps cleanup aligned
+with the schema contract instead of duplicating child-table deletion logic.
+
 ---
 
 ## 10. Key Design Decisions & Trade-offs

@@ -212,7 +212,7 @@ def test_safe_finding_storage_omits_forbidden_text_fields(tmp_path):
     assert all(value not in db_bytes for value in forbidden)
 
 
-def test_retention_pruning_removes_expired_runs_and_findings(tmp_path):
+def test_retention_pruning_removes_expired_runs_and_cascades_findings(tmp_path):
     db_path = tmp_path / "history.sqlite"
     conn = connect_history_db(db_path)
     try:
@@ -260,6 +260,8 @@ def test_retention_pruning_removes_expired_runs_and_findings(tmp_path):
 
         assert pruned == 1
         assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
+        # The implementation deletes expired run rows only; SQLite FK cascade
+        # owns dependent finding cleanup.
         assert conn.execute("SELECT COUNT(*) FROM findings").fetchone()[0] == 0
     finally:
         conn.close()

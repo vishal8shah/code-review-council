@@ -155,6 +155,10 @@ TEXT)` for forward-only, idempotent migrations. `council history summary`
 surfaces repeat candidates after two runs and labels `[DEBT]` only after three
 consecutive runs for the same repo.
 
+Retention pruning deletes expired run rows and relies on the `findings.run_id`
+foreign-key cascade to remove dependent finding rows, keeping cleanup aligned
+with the schema contract.
+
 ---
 
 ## Cost & Latency

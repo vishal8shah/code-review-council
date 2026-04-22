@@ -24,6 +24,10 @@ class HistorySchemaError(RuntimeError):
     """Raised when the on-disk history schema is incompatible."""
 
 
+class HistoryPathError(ValueError):
+    """Raised when a configured history path escapes the repository boundary."""
+
+
 @dataclass(slots=True)
 class RepeatFindingSummary:
     """Aggregated repeated-fingerprint row for the summary command."""
@@ -119,10 +123,20 @@ def resolve_history_path(config_path: str = "", repo_root: Path | None = None) -
     """Resolve the configured SQLite path, defaulting to the OS user cache."""
     raw_path = (config_path or "").strip()
     if raw_path:
-        path = Path(raw_path).expanduser()
-        if not path.is_absolute():
-            path = (repo_root or Path.cwd()) / path
-        return path.resolve()
+        path = Path(raw_path)
+        if path.is_absolute() or str(path).startswith("~"):
+            raise HistoryPathError(
+                "[history].path must be a relative path inside the repository"
+            )
+        base = (repo_root or Path.cwd()).resolve()
+        resolved = (base / path).resolve()
+        try:
+            resolved.relative_to(base)
+        except ValueError as exc:
+            raise HistoryPathError(
+                "[history].path must not traverse outside the repository"
+            ) from exc
+        return resolved
 
     return (_default_cache_dir() / "code-review-council" / "history.sqlite").resolve()
 
@@ -320,18 +334,12 @@ def prune_history(
     if retention_days <= 0:
         return 0
     cutoff = (now or datetime.now(UTC)) - timedelta(days=retention_days)
-    rows = conn.execute(
-        "SELECT id FROM runs WHERE repo_id = ? AND created_at < ?",
-        (repo_id, _format_utc(cutoff)),
-    ).fetchall()
-    run_ids = [row["id"] for row in rows]
-    if not run_ids:
-        return 0
-
-    placeholders = ",".join("?" for _ in run_ids)
     with conn:
-        conn.execute(f"DELETE FROM runs WHERE id IN ({placeholders})", run_ids)
-    return len(run_ids)
+        cursor = conn.execute(
+            "DELETE FROM runs WHERE repo_id = ? AND created_at < ?",
+            (repo_id, _format_utc(cutoff)),
+        )
+    return max(0, cursor.rowcount)
 
 
 def summarize_history(
@@ -445,9 +453,10 @@ def check_history_health(repo_root: Path, history_config: Any) -> HistoryHealth:
     if not history_config.enabled:
         return HistoryHealth("INFO", "History storage is disabled.")
 
-    db_path = resolve_history_path(history_config.path, repo_root)
-    repo_id, _repo_display = repository_identity(repo_root)
+    db_path: Path | None = None
     try:
+        db_path = resolve_history_path(history_config.path, repo_root)
+        repo_id, _repo_display = repository_identity(repo_root)
         conn = connect_history_db(db_path)
         try:
             ensure_schema(conn)
@@ -463,11 +472,12 @@ def check_history_health(repo_root: Path, history_config: Any) -> HistoryHealth:
             ).fetchone()["newest"]
         finally:
             conn.close()
-    except (OSError, sqlite3.Error, HistorySchemaError) as exc:
+    except (OSError, sqlite3.Error, HistoryPathError, HistorySchemaError) as exc:
+        target = db_path if db_path is not None else "[history].path"
         return HistoryHealth(
             "WARN",
-            f"History storage check failed for {db_path}: {exc}",
-            "Check [history].path permissions or remove an incompatible history database.",
+            f"History storage check failed for {target}: {exc}",
+            "Use a repo-relative [history].path or remove an incompatible history database.",
         )
 
     stale_note = ""
@@ -572,17 +582,31 @@ def _iter_verdict_findings(verdict: ChairVerdict) -> list[tuple[ChairFinding, st
 
 
 def _prior_run_fingerprint_sets(conn: sqlite3.Connection, repo_id: str) -> list[set[str]]:
-    runs = conn.execute(
-        "SELECT id FROM runs WHERE repo_id = ? ORDER BY created_at DESC, id DESC",
+    rows = conn.execute(
+        """
+        SELECT r.id AS run_id, f.fingerprint AS fingerprint
+        FROM runs r
+        LEFT JOIN findings f ON f.run_id = r.id
+        WHERE r.repo_id = ?
+        ORDER BY r.created_at DESC, r.id DESC
+        """,
         (repo_id,),
     ).fetchall()
+
     fingerprint_sets: list[set[str]] = []
-    for run in runs:
-        rows = conn.execute(
-            "SELECT DISTINCT fingerprint FROM findings WHERE run_id = ?",
-            (run["id"],),
-        ).fetchall()
-        fingerprint_sets.append({row["fingerprint"] for row in rows})
+    current_run_id: str | None = None
+    current_fingerprints: set[str] = set()
+    for row in rows:
+        run_id = row["run_id"]
+        if run_id != current_run_id:
+            if current_run_id is not None:
+                fingerprint_sets.append(current_fingerprints)
+            current_run_id = run_id
+            current_fingerprints = set()
+        if row["fingerprint"] is not None:
+            current_fingerprints.add(row["fingerprint"])
+    if current_run_id is not None:
+        fingerprint_sets.append(current_fingerprints)
     return fingerprint_sets
 
 

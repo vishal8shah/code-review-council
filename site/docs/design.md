@@ -143,6 +143,8 @@ does not make an extra LLM call or weaken fail-closed CI behavior.
 The first Phase 4B intelligence slice records local review history before any
 autofix work. History uses stdlib SQLite, defaults to the OS user cache, and is
 best-effort so storage failures never change review verdicts or CI exit codes.
+Configured history paths must be repo-relative and resolve inside the repo;
+absolute paths, `~` escapes, and parent traversal are rejected.
 
 With `store_finding_text = false`, finding history stores only `run_id`,
 `fingerprint`, `severity`, `category`, `file_path`, `reviewer_id`, `policy_id`,

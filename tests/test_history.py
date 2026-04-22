@@ -3,12 +3,14 @@ from __future__ import annotations
 import os
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from council.config import CouncilConfig, HistoryConfig, ReviewerConfig
 from council.history import (
     SCHEMA_VERSION,
+    HistoryPathError,
     HistorySchemaError,
     check_history_health,
     connect_history_db,
@@ -23,12 +25,12 @@ from council.history import (
 from council.schemas import ChairFinding, ChairVerdict, ReviewerOutput, ReviewPack
 
 
-def _config(db_path, retention_days: int = 180) -> CouncilConfig:
+def _config(history_path: str = "history.sqlite", retention_days: int = 180) -> CouncilConfig:
     return CouncilConfig(
         chair_model="gemini/gemini-3-pro-preview",
         history=HistoryConfig(
             enabled=True,
-            path=str(db_path),
+            path=history_path,
             retention_days=retention_days,
             store_finding_text=False,
         ),
@@ -85,7 +87,7 @@ def _verdict(
 
 
 def _record(repo_root, db_path, verdict: ChairVerdict | None = None, pack: ReviewPack | None = None):
-    config = _config(db_path)
+    config = _config(Path(db_path).name)
     return record_review_history(
         repo_root=repo_root,
         config=config,
@@ -132,6 +134,30 @@ def test_resolve_history_path_accepts_repo_relative_override(tmp_path):
     assert resolve_history_path(".council-history.sqlite", repo_root) == (
         repo_root / ".council-history.sqlite"
     ).resolve()
+
+
+def test_resolve_history_path_rejects_absolute_override(tmp_path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    with pytest.raises(HistoryPathError):
+        resolve_history_path(str(tmp_path / "outside.sqlite"), repo_root)
+
+
+def test_resolve_history_path_rejects_parent_traversal(tmp_path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    with pytest.raises(HistoryPathError):
+        resolve_history_path("../outside.sqlite", repo_root)
+
+
+def test_resolve_history_path_rejects_home_escape(tmp_path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    with pytest.raises(HistoryPathError):
+        resolve_history_path("~/history.sqlite", repo_root)
 
 
 def test_schema_creation_is_idempotent_and_versioned(tmp_path):
@@ -212,14 +238,15 @@ def test_safe_finding_storage_omits_forbidden_text_fields(tmp_path):
     assert all(value not in db_bytes for value in forbidden)
 
 
-def test_retention_pruning_removes_expired_runs_and_cascades_findings(tmp_path):
+def test_retention_pruning_direct_delete_handles_many_expired_runs_and_cascades(tmp_path):
     db_path = tmp_path / "history.sqlite"
     conn = connect_history_db(db_path)
     try:
         ensure_schema(conn)
         old = datetime.now(UTC) - timedelta(days=10)
         fresh = datetime.now(UTC)
-        conn.execute(
+        expired_count = 1_100
+        conn.executemany(
             """
             INSERT INTO runs (
                 id, repo_id, repo_display, created_at, ci_mode, audience, verdict,
@@ -227,10 +254,13 @@ def test_retention_pruning_removes_expired_runs_and_cascades_findings(tmp_path):
                 token_estimate, languages_json, reviewer_models_json, output_modes_json,
                 accepted_blockers_count, warnings_count, dismissed_count, total_findings_count,
                 severity_counts_json, category_counts_json, duration_ms
-            ) VALUES (?, ?, ?, ?, 0, 'developer', 'PASS', 1.0, 0, '[]', 0, 0, 0,
+            ) VALUES (?, 'repo', 'repo', ?, 0, 'developer', 'PASS', 1.0, 0, '[]', 0, 0, 0,
                 '[]', '{}', '[]', 0, 0, 0, 0, '{}', '{}', 0)
             """,
-            ("old-run", "repo", "repo", old.isoformat().replace("+00:00", "Z")),
+            [
+                (f"old-run-{index}", old.isoformat().replace("+00:00", "Z"))
+                for index in range(expired_count)
+            ],
         )
         conn.execute(
             """
@@ -245,24 +275,80 @@ def test_retention_pruning_removes_expired_runs_and_cascades_findings(tmp_path):
             """,
             ("fresh-run", "repo", "repo", fresh.isoformat().replace("+00:00", "Z")),
         )
-        conn.execute(
+        conn.executemany(
             """
             INSERT INTO findings (
                 run_id, fingerprint, severity, category, file_path, reviewer_id,
                 policy_id, verdict, is_repeated, debt_run_count
-            ) VALUES ('old-run', 'fp', 'HIGH', 'security', 'src/app.py',
+            ) VALUES (?, ?, 'HIGH', 'security', 'src/app.py',
                 'secops', 'security.auth', 'accepted_blocker', 0, 1)
-            """
+            """,
+            [(f"old-run-{index}", f"fp-{index}") for index in range(expired_count)],
         )
         conn.commit()
 
         pruned = prune_history(conn, "repo", retention_days=2)
 
-        assert pruned == 1
+        assert pruned == expired_count
         assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
         # The implementation deletes expired run rows only; SQLite FK cascade
         # owns dependent finding cleanup.
         assert conn.execute("SELECT COUNT(*) FROM findings").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_prior_run_fingerprint_sets_groups_in_run_order_with_one_query(tmp_path):
+    db_path = tmp_path / "history.sqlite"
+    conn = connect_history_db(db_path)
+    try:
+        ensure_schema(conn)
+        now = datetime.now(UTC)
+        for index in range(3):
+            conn.execute(
+                """
+                INSERT INTO runs (
+                    id, repo_id, repo_display, created_at, ci_mode, audience, verdict,
+                    confidence, degraded, degraded_reasons_json, files_changed, lines_changed,
+                    token_estimate, languages_json, reviewer_models_json, output_modes_json,
+                    accepted_blockers_count, warnings_count, dismissed_count, total_findings_count,
+                    severity_counts_json, category_counts_json, duration_ms
+                ) VALUES (?, 'repo', 'repo', ?, 0, 'developer', 'PASS', 1.0, 0, '[]', 0, 0, 0,
+                    '[]', '{}', '[]', 0, 0, 0, 0, '{}', '{}', 0)
+                """,
+                (f"run-{index}", (now - timedelta(minutes=index)).isoformat().replace("+00:00", "Z")),
+            )
+        conn.executemany(
+            """
+            INSERT INTO findings (
+                run_id, fingerprint, severity, category, file_path, reviewer_id,
+                policy_id, verdict, is_repeated, debt_run_count
+            ) VALUES (?, ?, 'HIGH', 'security', 'src/app.py',
+                'secops', 'security.auth', 'accepted_blocker', 0, 1)
+            """,
+            [
+                ("run-0", "fp-a"),
+                ("run-0", "fp-b"),
+                ("run-1", "fp-a"),
+            ],
+        )
+        conn.commit()
+
+        from council.history import _prior_run_fingerprint_sets
+
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        assert _prior_run_fingerprint_sets(conn, "repo") == [
+            {"fp-a", "fp-b"},
+            {"fp-a"},
+            set(),
+        ]
+        conn.set_trace_callback(None)
+        selects = [
+            statement for statement in statements
+            if statement.strip().upper().startswith("SELECT")
+        ]
+        assert len(selects) == 1
     finally:
         conn.close()
 
@@ -276,7 +362,7 @@ def test_summary_marks_repeat_candidates_and_debt_at_three_consecutive_runs(tmp_
 
     summary = summarize_history(
         repo_root=tmp_path,
-        history_config=_config(db_path).history,
+        history_config=_config().history,
         days=30,
         limit=10,
     )
@@ -305,7 +391,7 @@ def test_summary_resets_debt_when_latest_run_lacks_fingerprint(tmp_path):
 
     summary = summarize_history(
         repo_root=tmp_path,
-        history_config=_config(db_path).history,
+        history_config=_config().history,
         days=30,
         limit=10,
     )
@@ -318,15 +404,15 @@ def test_summary_resets_debt_when_latest_run_lacks_fingerprint(tmp_path):
 
 
 def test_doctor_history_health_reports_info_for_healthy_store(tmp_path):
-    health = check_history_health(tmp_path, _config(tmp_path / "history.sqlite").history)
+    health = check_history_health(tmp_path, _config().history)
 
     assert health.status == "INFO"
     assert "schema v" in health.detail
     assert health.remediation is None
 
 
-def test_doctor_history_health_warns_for_write_failure(tmp_path):
-    health = check_history_health(tmp_path, _config(tmp_path).history)
+def test_doctor_history_health_warns_for_invalid_path(tmp_path):
+    health = check_history_health(tmp_path, _config("../outside.sqlite").history)
 
     assert health.status == "WARN"
     assert "failed" in health.detail.lower()
@@ -346,7 +432,7 @@ def test_doctor_history_health_warns_for_schema_mismatch(tmp_path):
     finally:
         conn.close()
 
-    health = check_history_health(tmp_path, _config(db_path).history)
+    health = check_history_health(tmp_path, _config(db_path.name).history)
 
     assert health.status == "WARN"
     assert "schema" in health.detail.lower()

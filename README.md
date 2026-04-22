@@ -230,6 +230,10 @@ retention_days = 180
 store_finding_text = false
 ```
 
+Leave `history.path` empty for the OS user-cache database. If you set it, use a
+repo-relative path only; absolute paths and `..` traversal outside the repo are
+rejected because `.council.toml` can be committed by untrusted repositories.
+
 Model schema note: canonical reviewer config is `[[reviewers]]`, and nested forms `[[council.reviewer]]` / `[[council.reviewers]]` are also accepted for compatibility.
 
 ### 🧠 Model Presets

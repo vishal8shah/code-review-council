@@ -223,6 +223,10 @@ retention_days = 180
 store_finding_text = false
 ```
 
+Keep `path = ""` unless you need a repo-local database. Configured paths must
+be relative to the repo and must not traverse outside it; absolute paths and
+`~` escapes are rejected for safety.
+
 ---
 
 ## Recommended first workflow

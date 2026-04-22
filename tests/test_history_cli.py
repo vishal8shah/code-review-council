@@ -22,7 +22,7 @@ store_finding_text = false
 
 
 def _seed(repo_root, repeat_count: int) -> None:
-    config = CouncilConfig(history=HistoryConfig(path=str(repo_root / "history.sqlite")))
+    config = CouncilConfig(history=HistoryConfig(path="history.sqlite"))
     for _ in range(repeat_count):
         record_review_history(
             repo_root=repo_root,

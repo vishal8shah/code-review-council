@@ -142,6 +142,8 @@ History defaults to an OS-cache SQLite database, not a repo file. With
 fields only; it does not store raw diffs, evidence, suggestions, fix prompts,
 Chair reasoning, or model-generated finding descriptions. `[DEBT]` is shown
 only when the same fingerprint appears in three consecutive review runs.
+If `history.path` is set, it must be relative to the repo and stay inside it;
+absolute paths, `~` escapes, and parent traversal are rejected.
 
 ---
 

@@ -3629,6 +3629,38 @@ def test_cli_history_write_failure_does_not_change_ci_exit_behavior():
     assert "History not recorded" in result.output
 
 
+def test_cli_invalid_history_path_does_not_change_ci_exit_behavior():
+    from types import SimpleNamespace
+    from typer.testing import CliRunner
+    from council.cli import app
+
+    runner = CliRunner()
+    cfg = CouncilConfig()
+    cfg.history.path = "../outside.sqlite"
+
+    result_obj = SimpleNamespace(
+        verdict=ChairVerdict(
+            verdict="PASS_WITH_WARNINGS",
+            confidence=0.7,
+            degraded=False,
+            summary="Warnings only.",
+            rationale="No blockers.",
+        ),
+        review_pack=None,
+        reviewer_outputs=[],
+        gate_result=None,
+    )
+
+    with patch("council.config.load_config", return_value=cfg), patch(
+        "council.orchestrator.run_council", new=AsyncMock(return_value=result_obj)
+    ):
+        result = runner.invoke(app, ["review", "--ci", "--branch", "main"])
+
+    assert result.exit_code == 0
+    assert "History not recorded" in result.output
+    assert "must not traverse outside" in result.output
+
+
 def test_instantiate_reviewers_resolves_relative_prompt_from_repo_root(tmp_path):
     from council.config import ReviewerConfig
     from council.orchestrator import _instantiate_reviewers

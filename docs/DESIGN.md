@@ -1148,6 +1148,8 @@ history-first: local review history and debt signals, not autofix.
 
 1. **Local review history** — store run metadata in a per-user SQLite database
    under the OS cache directory by default. Repo-local history is opt-in only.
+   Configured history paths must be repo-relative and resolve inside the repo;
+   absolute paths, `~` escapes, and parent traversal are rejected.
 2. **Privacy-preserving finding fingerprints** — with `store_finding_text = false`,
    finding rows store only `run_id`, `fingerprint`, `severity`, `category`,
    `file_path`, `reviewer_id`, `policy_id`, `verdict`, `is_repeated`, and

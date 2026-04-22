@@ -110,6 +110,15 @@ class PresentationConfig(BaseModel):
     default_audience: Literal["developer", "owner"] = "developer"
 
 
+class HistoryConfig(BaseModel):
+    """Local review-history settings."""
+
+    enabled: bool = True
+    path: str = ""
+    retention_days: int = 180
+    store_finding_text: bool = False
+
+
 class CouncilConfig(BaseModel):
     """Top-level council configuration — the full .council.toml schema."""
 
@@ -126,6 +135,7 @@ class CouncilConfig(BaseModel):
     reporters: ReportersConfig = ReportersConfig()
     cost: CostConfig = CostConfig()
     presentation: PresentationConfig = PresentationConfig()
+    history: HistoryConfig = HistoryConfig()
 
     @property
     def active_reviewers(self) -> list[ReviewerConfig]:
@@ -208,6 +218,7 @@ def load_config(repo_root: Path | None = None) -> CouncilConfig:
     reporters_raw = raw.get("reporters", {})
     cost_raw = raw.get("cost", {})
     presentation_raw = raw.get("presentation", {})
+    history_raw = raw.get("history", {})
 
     # Parse reviewers — support both [[reviewers]] and [[reviewers.custom]]
     if nested_reviewer_list:
@@ -229,4 +240,5 @@ def load_config(repo_root: Path | None = None) -> CouncilConfig:
         reporters=ReportersConfig(**reporters_raw),
         cost=CostConfig(**cost_raw),
         presentation=PresentationConfig(**presentation_raw),
+        history=HistoryConfig(**history_raw),
     )

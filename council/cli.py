@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 import typer
@@ -22,11 +23,15 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+history_app = typer.Typer(help="Inspect local Council review history.", no_args_is_help=True)
+app.add_typer(history_app, name="history")
 
 
 def _status_style(status: str) -> str:
     if status == "PASS":
         return "green"
+    if status == "INFO":
+        return "cyan"
     if status == "WARN":
         return "yellow"
     return "red"
@@ -54,6 +59,8 @@ def review(
 
     root = Path(repo_root) if repo_root else Path.cwd()
     config = load_config(root)
+    started = time.monotonic()
+    output_modes: list[str] = []
 
     # Resolve audience: CLI flag > config default > "developer"
     resolved_audience = audience or config.presentation.default_audience or "developer"
@@ -106,6 +113,7 @@ def review(
         ci_mode=ci,
         audience=resolved_audience,
     )
+    output_modes.append("terminal")
 
     # Markdown report
     md_path = output_md
@@ -121,6 +129,7 @@ def review(
             audience=resolved_audience,
         )
         console.print(f"  Review saved to: {md_path}", style="dim")
+        output_modes.append("markdown")
 
     # JSON report (always in CI mode, or if explicitly requested)
     json_path = output_json
@@ -141,6 +150,7 @@ def review(
             reviewer_outputs=result.reviewer_outputs,
         )
         console.print(f"  JSON report saved to: {json_path}", style="dim")
+        output_modes.append("json")
 
     # HTML report
     if output_html:
@@ -153,6 +163,7 @@ def review(
             reviewer_outputs=result.reviewer_outputs,
         )
         console.print(f"  HTML report saved to: {output_html}", style="dim")
+        output_modes.append("html")
 
     # GitHub PR reporter (annotations + sticky comment)
     if github_pr or config.reporters.github_pr:
@@ -160,6 +171,29 @@ def review(
         posted = post_github_pr_review(verdict, reviewer_outputs=result.reviewer_outputs)
         if not posted:
             console.print("  [dim]GitHub PR comment not posted (missing env/PR context or API failure).[/]")
+        output_modes.append("github_pr")
+
+    if config.history.enabled:
+        try:
+            from .history import record_review_history
+
+            history_path = record_review_history(
+                repo_root=root,
+                config=config,
+                verdict=verdict,
+                review_pack=result.review_pack,
+                reviewer_outputs=result.reviewer_outputs,
+                gate_result=result.gate_result,
+                ci_mode=ci,
+                staged=staged,
+                branch=branch,
+                audience=resolved_audience,
+                output_modes=output_modes,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            console.print(f"  History recorded to: {history_path}", style="dim")
+        except Exception as exc:
+            console.print(f"  [dim]History not recorded: {exc}[/]")
 
     # Exit code
     if ci and verdict.degraded and config.enforcement.on_integrity_issue == "fail":
@@ -238,6 +272,32 @@ def doctor(
     console.print("\n  Doctor completed with no blocking issues.", style="bold green")
 
 
+@history_app.command("summary")
+def history_summary(
+    days: int = typer.Option(30, "--days", help="Number of recent days to summarize."),
+    limit: int = typer.Option(10, "--limit", help="Maximum repeated fingerprints to show."),
+    repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),
+) -> None:
+    """Print local repeated-finding and debt trends for this repository."""
+    from .config import load_config
+    from .history import format_history_summary, summarize_history
+
+    root = Path(repo_root) if repo_root else Path.cwd()
+    config = load_config(root)
+    if not config.history.enabled:
+        console.print("History is disabled for this repository.", style="dim")
+        return
+
+    summary = summarize_history(
+        repo_root=root,
+        history_config=config.history,
+        days=max(1, days),
+        limit=max(1, limit),
+    )
+    for line in format_history_summary(summary):
+        console.print(line)
+
+
 @app.command()
 def init(
     repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),
@@ -299,6 +359,7 @@ def init(
         style="dim",
     )
     console.print("    - Run `council review --branch main` for your first local advisory review.", style="dim")
+    console.print("    - Run `council history summary --days 30` after a few reviews to spot repeat debt.", style="dim")
 
 
 _DEFAULT_CONFIG = """\
@@ -369,6 +430,12 @@ terminal = true
 markdown = true
 json_report = "ci"
 github_pr = false
+
+[history]
+enabled = true
+path = ""
+retention_days = 180
+store_finding_text = false
 
 [cost]
 warn_threshold_usd = 1.00

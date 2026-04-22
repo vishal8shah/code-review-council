@@ -12,6 +12,12 @@ import uuid
 import litellm
 from pydantic import ValidationError
 
+from .guidance import (
+    build_engineer_review_note,
+    build_fix_prompt,
+    build_verification_step,
+    build_why_it_matters,
+)
 from .llm_transport import invoke_json_completion, load_json_object
 from .schemas import ChairFinding, ChairVerdict, OwnerFindingView, OwnerPresentation, ReviewerOutput, ReviewPack, SupportFileSummary
 
@@ -462,24 +468,6 @@ merge_recommendation must be one of: SAFE_TO_MERGE, MERGE_WITH_CAUTION, FIX_BEFO
 urgency must be one of: fix_before_merge, fix_soon, nice_to_have"""
 
 
-_WHY_IT_MATTERS = {
-    "security": "This could expose user data, account access, or other sensitive behavior to attackers.",
-    "testing": "Without tests, a broken change can slip through undetected and reach production.",
-    "architecture": "This could make the codebase brittle, harder to maintain, or more likely to fail under real usage.",
-    "documentation": "Missing or inaccurate documentation slows future work and increases the chance of misuse.",
-    "performance": "This could cause slower responses or higher infrastructure costs at scale.",
-    "style": "Inconsistent style makes the code harder to read and maintain over time.",
-}
-
-_TEST_AFTER_FIX = {
-    "security": "Re-run the affected auth or data flows and confirm the vulnerability is no longer reproducible.",
-    "testing": "Run the test suite and confirm all new tests pass cleanly in CI.",
-    "architecture": "Review the affected code paths manually and confirm edge cases are handled correctly.",
-    "documentation": "Read through the updated docs or README and confirm they accurately describe the change.",
-    "performance": "Run a quick load test or profiling pass on the affected endpoint or function.",
-    "style": "Re-run the project's lint checks and confirm all style warnings are resolved.",
-}
-
 _SEVERITY_LABELS = {
     "CRITICAL": "Critical issue",
     "HIGH": "High-risk issue",
@@ -494,10 +482,6 @@ _SEVERITY_URGENCY: dict[str, str] = {
     "LOW": "nice_to_have",
 }
 
-_ENGINEER_KEYWORDS = frozenset(
-    {"auth", "permission", "credential", "token", "secret", "delete", "infra", "config"}
-)
-
 
 def _build_fallback_owner_finding(f: ChairFinding) -> OwnerFindingView:
     """Convert a single technical ChairFinding into an owner-audience card.
@@ -506,7 +490,6 @@ def _build_fallback_owner_finding(f: ChairFinding) -> OwnerFindingView:
     fails or returns an incomplete result.
     """
     severity = f.severity
-    category = f.category
 
     if f.symbol_name:
         title = f"{_SEVERITY_LABELS.get(severity, 'Issue')} in {f.symbol_name} ({f.file})"
@@ -514,39 +497,16 @@ def _build_fallback_owner_finding(f: ChairFinding) -> OwnerFindingView:
         title = f"{_SEVERITY_LABELS.get(severity, 'Issue')} in {f.file}"
 
     urgency = _SEVERITY_URGENCY.get(severity, "fix_soon")
-    why_it_matters = _WHY_IT_MATTERS.get(
-        category, "This could create product risk if merged without review."
-    )
-
-    symbol_part = f" in `{f.symbol_name}`" if f.symbol_name else ""
-    suggestion_part = f" Recommended direction: {f.suggestion}." if f.suggestion else ""
-    fix_prompt = (
-        f"In {f.file}{symbol_part}, fix this issue: {f.description}.{suggestion_part} "
-        "Preserve existing behavior and add/update tests if needed."
-    )
-
-    involve_engineer: str | None = None
-    if category == "security" or any(
-        kw in f.description.lower() for kw in _ENGINEER_KEYWORDS
-    ):
-        involve_engineer = (
-            "Yes — this touches security-sensitive or infrastructure code. "
-            "Have a developer review the fix before merging."
-        )
-
-    test_after_fix = _TEST_AFTER_FIX.get(
-        category, "Re-run the affected flow and verify the issue no longer occurs."
-    )
 
     return OwnerFindingView(
         title=title,
         severity_label=_SEVERITY_LABELS.get(severity, severity.capitalize()),
         urgency=urgency,  # type: ignore[arg-type]
         plain_explanation=f.description,
-        why_it_matters=why_it_matters,
-        fix_prompt=fix_prompt,
-        test_after_fix=test_after_fix,
-        involve_engineer=involve_engineer,
+        why_it_matters=build_why_it_matters(f),
+        fix_prompt=build_fix_prompt(f),
+        test_after_fix=build_verification_step(f),
+        involve_engineer=build_engineer_review_note(f),
     )
 
 

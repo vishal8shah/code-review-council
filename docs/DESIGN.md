@@ -88,6 +88,7 @@ The system operates at **two enforcement points**: a **CI/PR hard gate** (the pr
 │   │   │         OUTPUT & FEEDBACK (Stage 3)          │           │  │
 │   │   │                                              │           │  │
 │   │   │  • Terminal report (pass/fail + findings)     │           │  │
+│   │   │  • Deterministic next steps + fix guidance    │           │  │
 │   │   │  • JSON artifact (for CI integration)         │           │  │
 │   │   │  • Markdown review file (.council-review.md)  │           │  │
 │   │   │  • PR comment + inline annotations (CI mode)  │           │  │
@@ -117,7 +118,7 @@ Given the goal of vibe-coding this quickly, the stack should minimize boilerplat
 | **CLI Interface** | **`typer`** | Beautiful CLI with minimal code; auto-generates `--help` |
 | **Configuration** | **TOML** (`.council.toml` in repo root) | Human-readable, git-committable config for reviewer personas, thresholds, model assignments |
 | **Git Integration** | **GitHub Actions** (primary gate) + local CLI advisory runs | CI blocks merge on FAIL; local runs provide fast advisory feedback |
-| **Output/Reports** | **Rich** (terminal) + **Markdown** (file) + **GitHub PR reporter** (CI) | Pretty terminal output locally; persistent review artifacts; sticky summaries plus inline PR comments in CI |
+| **Output/Reports** | **Rich** (terminal) + **Markdown/HTML** (files) + **GitHub PR reporter** (CI) | Pretty terminal output locally; persistent review artifacts; sticky summaries plus inline PR comments in CI |
 | **Testing** | **pytest + pytest-asyncio** | Test the council itself — dogfood the QA layer |
 
 ### 1.3 Project Structure
@@ -134,6 +135,7 @@ code-review-council/
 │   ├── diff_preprocessor.py   # Filtering, truncation, token budgets
 │   ├── review_pack.py         # Assembles ReviewPack from diff + AST + policies
 │   ├── gate_zero.py           # Static pre-flight checks (docs, lint, types)
+│   ├── guidance.py            # Deterministic fix prompts, verification steps, next-step guidance
 │   ├── llm_transport.py       # Shared LiteLLM JSON transport + fallback helpers
 │   ├── orchestrator.py        # Fan-out to reviewers, collect, pass to chair
 │   ├── reviewers/
@@ -335,7 +337,7 @@ The Chair receives all reviewer outputs and makes the final call. Details in Sec
 
 ### Stage 3 — Output & Feedback
 
-Reports are generated in multiple formats simultaneously. The developer sees a Rich terminal summary; a `.council-review.md` is optionally written to the repo for PR context; a JSON artifact is emitted for CI systems.
+Reports are generated in multiple formats simultaneously. The developer sees a Rich terminal summary; a `.council-review.md` is optionally written to the repo for PR context; a JSON artifact is emitted for CI systems. Terminal, Markdown, HTML, and GitHub PR summaries share deterministic next-step guidance. Accepted findings also get copy/paste fix prompts and verification steps derived from the Chair finding, not from a second LLM call.
 
 ---
 

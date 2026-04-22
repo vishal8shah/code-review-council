@@ -37,6 +37,53 @@ class DoctorReport:
         return 1 if any(check.status == "FAIL" for check in self.checks) else 0
 
 
+def build_review_profile(config: CouncilConfig) -> list[str]:
+    """Return a compact description of the review setup doctor validated."""
+    reviewers = ", ".join(
+        f"{reviewer.id}:{reviewer.model}" for reviewer in config.active_reviewers
+    ) or "none"
+    return [
+        f"Chair model: {config.chair_model}",
+        f"Reviewers: {reviewers}",
+        (
+            "Timeouts: "
+            f"chair/owner {config.timeout_seconds}s, "
+            f"reviewer {config.reviewer_timeout_seconds}s, "
+            f"concurrency {config.reviewer_concurrency}"
+        ),
+        f"Default audience: {config.presentation.default_audience}",
+        f"Integrity policy: {config.enforcement.on_integrity_issue}",
+    ]
+
+
+def build_doctor_next_steps(
+    report: DoctorReport,
+    branch: str | None = None,
+    github_pr: bool = False,
+) -> list[str]:
+    """Return recommended commands after a doctor run."""
+    target = branch or "main"
+    if report.exit_code:
+        return [
+            "Fix the FAIL checks above before running a review.",
+            f"Re-run `council doctor --branch {target}` after updating the setup.",
+        ]
+
+    steps = [
+        f"Run `council review --branch {target}` for a local advisory review.",
+        (
+            "Run "
+            f"`council review --ci --branch {target} --output-json council-report.json` "
+            "to mirror CI behavior locally."
+        ),
+    ]
+    if github_pr:
+        steps.append("Keep `--github-pr` enabled only inside a pull_request GitHub Actions job.")
+    else:
+        steps.append("Use `--github-pr` only in GitHub Actions when PR comment context is available.")
+    return steps
+
+
 def _run_git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run a git command in the target repo and capture text output."""
     env = os.environ.copy()

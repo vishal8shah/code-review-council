@@ -6,6 +6,7 @@ import sys
 
 from rich.console import Console
 
+from ..guidance import build_review_next_steps
 from .transport import transport_notes
 from ..schemas import ChairFinding, ChairVerdict, GateZeroResult, ReviewerOutput, ReviewPack
 
@@ -219,6 +220,12 @@ def print_verdict(
         for reason in verdict.degraded_reasons:
             console.print(f"    - {_safe_text(reason)}", style="yellow dim")
     console.rule(style=style.replace("bold ", ""), characters=_rule_characters())
+
+    next_steps = build_review_next_steps(verdict)
+    if next_steps:
+        console.print("\n  [bold]Next steps[/]")
+        for step in next_steps:
+            console.print(f"    - {_safe_text(step)}", style="dim")
 
     if audience == "owner":
         issue_count = len(verdict.accepted_blockers) + len(verdict.warnings)

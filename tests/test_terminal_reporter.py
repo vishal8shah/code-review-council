@@ -46,3 +46,4 @@ def test_print_verdict_sanitizes_skipped_file_names_for_cp1252(capsys):
 
     output = capsys.readouterr().out
     assert "Skipped 1 files: tests/test_?.py" in output
+    assert "Next steps" in output

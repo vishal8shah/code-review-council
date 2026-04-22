@@ -129,9 +129,12 @@ Only `FAIL`-level accepted findings block a merge. `PASS WITH WARNINGS` merges t
 | Preprocessor | Filtered diff, token metadata | ReviewPack |
 | ReviewPack | `ReviewPack` object | All 4 reviewers |
 | Reviewer Panel | 4 × `ReviewerFinding` | Chair |
-| Chair | `ChairVerdict` (verdict + rationale + per-reviewer decisions) | CI, artifacts, user |
+| Chair | `ChairVerdict` (verdict + rationale + per-reviewer decisions) | Guidance helper, CI, artifacts, user |
+| Guidance | Deterministic next steps, fix prompts, verification notes | Terminal, Markdown, HTML, GitHub PR summaries |
 
 This contract model means any stage can be replaced, upgraded, or mocked independently.
+Guidance is deterministic on purpose: it reuses the accepted Chair findings and
+does not make an extra LLM call or weaken fail-closed CI behavior.
 
 ---
 

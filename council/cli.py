@@ -204,7 +204,7 @@ def doctor(
     from pathlib import Path
 
     from .config import load_config
-    from .doctor import run_doctor
+    from .doctor import build_doctor_next_steps, build_review_profile, run_doctor
 
     root = Path(repo_root) if repo_root else Path.cwd()
     config = load_config(root)
@@ -222,6 +222,14 @@ def doctor(
         console.print(f"  [{style}]{check.status:4}[/] {check.name}: {check.detail}")
         if check.remediation:
             console.print(f"        -> {check.remediation}", style="dim")
+
+    console.print("\n  [bold]Review profile[/]")
+    for line in build_review_profile(config):
+        console.print(f"    - {line}", style="dim")
+
+    console.print("\n  [bold]Recommended next steps[/]")
+    for step in build_doctor_next_steps(report, branch=branch, github_pr=github_pr):
+        console.print(f"    - {step}", style="dim")
 
     if report.exit_code != 0:
         console.print("\n  Doctor found blocking setup issues.", style="bold red")
@@ -280,7 +288,17 @@ def init(
         byok_workflow_path.write_text(_DEFAULT_WORKFLOW_BYOK, encoding="utf-8")
         console.print(f"  [green]Created[/] {byok_workflow_path}")
 
-    console.print("\n  Council initialized. Run [bold]council review[/] to review changes.")
+    console.print("\n  Council initialized.", style="bold green")
+    console.print("  [bold]Recommended next steps[/]")
+    console.print(
+        "    - Add GOOGLE_API_KEY to GitHub Actions secrets for the generated Gemini workflows.",
+        style="dim",
+    )
+    console.print(
+        "    - Run `council doctor --branch main` to validate keys, models, and the diff target.",
+        style="dim",
+    )
+    console.print("    - Run `council review --branch main` for your first local advisory review.", style="dim")
 
 
 _DEFAULT_CONFIG = """\

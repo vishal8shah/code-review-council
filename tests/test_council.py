@@ -1558,6 +1558,9 @@ class TestReporters:
         assert "FAIL" in content
         assert "SQL injection" in content
         assert "Evidence clear" in content
+        assert "## Next Steps" in content
+        assert "**Fix prompt**" in content
+        assert "**Verify after fixing**" in content
 
     def test_markdown_report_is_windows_readable(self, tmp_path):
         """Markdown report stays readable under the default Windows cp1252 codec."""
@@ -1587,6 +1590,7 @@ class TestReporters:
         assert "[FAIL]" in content
         assert "SQL injection" in content
         assert "Use parameterized queries" in content
+        assert "Fix prompt" in content
 
 
 # ---------------------------------------------------------------------------
@@ -2513,6 +2517,9 @@ class TestHTMLReporter:
         content = out.read_text()
         assert "SQL injection" in content
         assert "auth.py" in content
+        assert "Next steps" in content
+        assert "Fix prompt" in content
+        assert "Verify after fixing" in content
 
     def test_developer_html_is_windows_readable(self, tmp_path):
         """Developer HTML stays readable under the default Windows cp1252 codec."""

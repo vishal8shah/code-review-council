@@ -11,6 +11,7 @@ import time
 from urllib.parse import urlparse
 from urllib import error, request
 
+from ..guidance import build_review_next_steps
 from .transport import reviewer_output_mode, transport_notes
 from ..schemas import ChairFinding, ChairVerdict, ReviewerOutput
 
@@ -107,6 +108,12 @@ def _build_comment_body(
         lines.extend(["", "### Degraded integrity signals"])
         for reason in verdict.degraded_reasons:
             lines.append(f"- {_sanitize_comment_text(reason, max_len=300)}")
+
+    next_steps = build_review_next_steps(verdict)
+    if next_steps:
+        lines.extend(["", "### Next steps"])
+        for step in next_steps:
+            lines.append(f"- {_sanitize_comment_text(step, max_len=300)}")
 
     if verdict.accepted_blockers:
         lines.extend(["", "### Accepted blockers"])

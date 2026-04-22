@@ -166,7 +166,7 @@ If you're unsure about a model or key setup, run:
 council doctor --branch main
 ```
 
-The doctor command flags missing provider keys, likely fallback-only models, invalid diff targets, and missing GitHub PR context.
+The doctor command flags missing provider keys, likely fallback-only models, invalid diff targets, and missing GitHub PR context. It also prints the active review profile and the next recommended command to run.
 
 ---
 
@@ -196,7 +196,7 @@ Not necessarily — but it's worth checking the evidence. Every SecOps blocker s
 
 The underlying analysis is identical. The presentation differs:
 
-- **Developer** — file/line references, finding rationale, policy evidence, fix suggestions
+- **Developer** — file/line references, finding rationale, policy evidence, fix suggestions, fix prompts, verification steps
 - **Owner** — plain-English risk summary, ship/no-ship recommendation, copy-paste fix prompt for an AI coding agent
 
 Set `audience = "owner"` in the BYOK workflow dispatch inputs to get owner output.

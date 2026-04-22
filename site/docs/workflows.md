@@ -44,7 +44,8 @@ This is the always-on review gate. It fires automatically when a PR is opened or
 2. Checks whether `GOOGLE_API_KEY` is available
 3. If the key is available: writes a temporary Gemini config and runs the full 5-stage pipeline, including Gate Zero
 4. If the Gemini secret is unavailable (fork PR or missing repo secret): skips LLM, uploads a report explaining the skip
-5. Uploads `council-report.json` as a workflow artifact
+5. Posts a PR summary with deterministic next steps and accepted-finding guidance
+6. Uploads `council-report.json` as a workflow artifact
 
 ### Where to find the artifact
 
@@ -99,7 +100,7 @@ Both workflows use `gemini/gemini-3-pro-preview` in CI, set
 | Artifact | File | Workflow | Contents |
 |----------|------|----------|----------|
 | `council-report` | `council-report.json` | Both | Full `ChairVerdict`: per-reviewer findings, confidence, degraded reasons, final verdict |
-| `council-report` | `council-review.md` | BYOK only | Human-readable markdown review (developer or owner format) |
+| `council-report` | `council-review.md` | BYOK only | Human-readable markdown review with next steps and accepted-finding fix guidance (developer or owner format) |
 
 ### Finding your artifacts
 

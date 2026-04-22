@@ -1143,13 +1143,32 @@ The next phase starts by reducing setup friction before adding more autonomy:
 
 ### V4B — Intelligence Layer
 
-Only after onboarding and parity are solid:
+Only after onboarding and parity are solid. The first V4B slice is deliberately
+history-first: local review history and debt signals, not autofix.
 
-1. **Auto-fix generation** (`council review --fix`) — opt-in patch generation for CRITICAL/HIGH findings, followed by an automatic re-review. **Prerequisite**: stable verdicts, low false positives, and good evidence quality.
-2. **Learning loop** — store review verdicts and findings in a DB. Analyze patterns over time: "80% of your FAIL verdicts are missing error handling in parsers" → surface as pre-review tips.
-3. **Repeated-debt detection** — flag issues that keep recurring across PRs.
-4. **Confidence calibration** — track Chair verdict accuracy over time, tune conflict resolution weights.
-5. **Observability** — push council metrics such as latency, pass/fail rates, cost per review, finding categories, and degraded-run causes to a metrics backend.
+1. **Local review history** — store run metadata in a per-user SQLite database
+   under the OS cache directory by default. Repo-local history is opt-in only.
+2. **Privacy-preserving finding fingerprints** — with `store_finding_text = false`,
+   finding rows store only `run_id`, `fingerprint`, `severity`, `category`,
+   `file_path`, `reviewer_id`, `policy_id`, `verdict`, `is_repeated`, and
+   `debt_run_count`. They never store raw diff, evidence, suggestions, diff
+   snippets, fix prompts, Chair reasoning text, or model-generated descriptions.
+3. **Repeated-debt detection** — `council history summary` surfaces fingerprints
+   seen in at least two runs as repeat candidates and annotates `[DEBT]` only
+   when the same fingerprint appears in three consecutive review runs for that
+   repo. A run without the fingerprint resets the consecutive count.
+4. **Forward-only migrations** — the SQLite database uses
+   `_schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT)`. Every
+   schema change bumps the version, migrations are idempotent, and migrations
+   never run backward.
+5. **Future intelligence** — opt-in autofix, confidence calibration, and metrics
+   backends remain future slices. Autofix stays deferred until verdict quality,
+   evidence quality, and repeated-debt signals are stable.
+
+`council doctor` checks history storage only when history is enabled. The check
+validates path writability, schema currency, and retention/pruning health. It is
+INFO-only when healthy and WARN-only on storage/schema problems; it never blocks
+doctor or changes review verdicts.
 
 ---
 
@@ -1167,7 +1186,7 @@ Only after onboarding and parity are solid:
 | **Chair as separate stage** | Clean separation; Chair sees all context; adjudicates rather than summarizes | Extra API call adds ~5-10s latency and ~$0.08 cost |
 | **LiteLLM over raw SDKs** | Single interface for all providers | Adds a dependency; slight abstraction overhead |
 | **TOML config over CLI flags** | Git-committable; team-shareable; self-documenting | Need to write a config loader |
-| **Auto-fix deferred to V4B** | Need stable verdicts and low false positives first; auto-fixing hallucinated issues is worse than no auto-fix | Users fix issues manually until the evidence pipeline is trustworthy enough |
+| **History before autofix** | Durable trends reveal repeated debt and verdict quality before Council suggests code changes | Users still fix issues manually while the evidence layer matures |
 
 ### Revision History
 
@@ -1179,3 +1198,4 @@ Only after onboarding and parity are solid:
 | v1.3 | 2025-02-28 | Post-implementation update. Two rounds of peer review, 26 fixes applied. Key changes: Chair default GPT-4o (configurable), reviewer defaults updated to OpenAI model mix (configurable), deleted symbol detection via hunk scanning, unified degraded-mode with `degraded_reasons`, linter integration implemented (`shlex.split`, `{files}` placeholder), `repo_policies` populated from config, file boundary headers in diff text, `warnings` as first-class ChairVerdict field, path traversal protection, honest truncation (not "chunking"). 62 tests. See SELF-REVIEW.md for remaining known limitations. |
 | v1.4 | 2026-04-11 | Phase 2 and Phase 3 update. ReviewPack now covers Python plus parser-free TypeScript/JavaScript exports, shared test-path classification is reused across Gate Zero and ReviewPack, LiteLLM transport now retries without native JSON mode when providers reject `response_format`, reports surface `output_mode` / transport notes, `council doctor` was added for preflight checks, and GitHub PR reporting now combines sticky summaries with best-effort inline comments. |
 | v1.5 | 2026-04-22 | Post-PR #12 docs baseline. GitHub workflows are documented as Gemini-pinned via `GOOGLE_API_KEY`, reviewer timeout and concurrency knobs are part of the config reference, Windows-safe terminal and lossless diff ingestion hardening are captured, and the Phase 4 roadmap is split into V4A onboarding/parity and V4B intelligence. 286 tests collected. |
+| v1.6 | 2026-04-22 | Phase 4B first-slice design. Local review history uses OS-cache SQLite by default, privacy-preserving finding fingerprints, forward-only schema migrations, and `[DEBT]` only after three consecutive runs. Autofix remains deferred. |

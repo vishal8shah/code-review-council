@@ -129,6 +129,22 @@ The JSON report includes the full `ChairVerdict` — per-reviewer findings, conf
 
 ---
 
+## Local Review History
+
+Phase 4B adds a local history summary for trends across runs:
+
+```bash
+council history summary --days 30 --limit 10
+```
+
+History defaults to an OS-cache SQLite database, not a repo file. With
+`store_finding_text = false`, Council stores fingerprints and classification
+fields only; it does not store raw diffs, evidence, suggestions, fix prompts,
+Chair reasoning, or model-generated finding descriptions. `[DEBT]` is shown
+only when the same fingerprint appears in three consecutive review runs.
+
+---
+
 ## 🔧 CI Setup (GitHub Actions)
 
 After `council init`, two workflow files are scaffolded:

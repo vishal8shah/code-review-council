@@ -200,6 +200,31 @@ Useful for Slack, email, PR comments, or docs.
 
 ---
 
+## Review history and debt signals
+
+Phase 4B adds local review history so you can see trends across runs without
+committing artifacts to the repo. By default Council stores history in the OS
+user cache and does not store raw diffs, evidence snippets, suggestions, fix
+prompts, Chair reasoning text, or model-generated finding descriptions.
+
+```bash
+council history summary --days 30 --limit 10
+```
+
+`[DEBT]` means the same privacy-preserving finding fingerprint appeared in
+three consecutive review runs for this repo. Findings seen in two or more runs
+are shown as repeat candidates, but are not labeled debt yet.
+
+```toml
+[history]
+enabled = true
+path = ""
+retention_days = 180
+store_finding_text = false
+```
+
+---
+
 ## Recommended first workflow
 
 For the fastest first success:
@@ -330,6 +355,7 @@ Once your first review works:
 1. Tune `.council.toml` — choose models, adjust reviewers, set enforcement mode
 2. Enable the GitHub Actions workflow for automatic PR reviews
 3. Share owner report artifacts with stakeholders when useful
+4. Use `council history summary` to spot repeated review patterns before adding heavier automation
 
 ---
 

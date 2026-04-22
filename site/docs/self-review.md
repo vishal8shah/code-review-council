@@ -130,7 +130,14 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 - **Local/CI parity and full-repo context planning** — remaining Phase 4A work after the guidance/onboarding slice.
 - **GitHub reporting remains best-effort** — sticky summaries, workflow annotations, and inline PR comments should not fail the review if the GitHub API is flaky.
 - **Editable prompts without code changes** — prompts are still in code rather than repo-editable assets. Future scope.
-- **Phase 4 intelligence layer** — opt-in autofix, repeated-debt detection, confidence calibration, and metrics are planned after the Phase 4A onboarding/parity pass.
+- **Phase 4 intelligence layer** — starts with local history and privacy-preserving repeated-debt signals; opt-in autofix, confidence calibration, and external metrics remain future work.
+
+### Phase 4B First Slice Guardrails
+
+- Local history defaults to the OS user cache so reviews do not dirty repositories.
+- Finding rows store fingerprints and classification fields only when `store_finding_text = false`.
+- `[DEBT]` is reserved for the same fingerprint appearing in three consecutive review runs for the repo.
+- SQLite schema changes use a forward-only `_schema_migrations` table.
 
 ### Design Note
 

@@ -220,6 +220,14 @@ enabled = true
 # Optional: set a default output audience
 [presentation]
 default_audience = "developer"
+
+# Optional local review history. Defaults store metadata in the OS user cache,
+# not the repo, and do not persist raw diff/model text.
+[history]
+enabled = true
+path = ""
+retention_days = 180
+store_finding_text = false
 ```
 
 Model schema note: canonical reviewer config is `[[reviewers]]`, and nested forms `[[council.reviewer]]` / `[[council.reviewers]]` are also accepted for compatibility.
@@ -337,6 +345,7 @@ prompt = "prompts/docs.md"
 - **Degraded mode**: If a reviewer times out or returns malformed output, the council continues with reduced confidence and surfaces specific integrity issues.
 - **JSON CI triage**: JSON reports include per-reviewer `error` and `integrity_error` so blocked runs are easier to debug in CI logs/artifacts.
 - **LiteLLM**: Single interface to call any LLM provider.
+- **Local history**: V4B records privacy-preserving run metadata and repeated-debt signals without storing raw diffs or model-generated finding text by default.
 
 ---
 
@@ -394,7 +403,7 @@ Add your infographic PNGs under `site/docs/assets/infographics/`. If you fork, u
 - [x] V2 — Python/TypeScript/JavaScript ReviewPack parity and shared test-path logic
 - [x] V3 — JSON transport fallback, `council doctor`, sticky + inline GitHub PR reporting
 - [ ] V4A — Friendlier onboarding and stronger fix guidance are underway; local/CI parity, full-repo context expansion planning, and safer self-serve defaults continue next
-- [ ] V4B — Intelligence layer: opt-in autofix, repeated-debt detection, confidence calibration, learning loop, and observability
+- [ ] V4B — Intelligence layer begins with local review history, privacy-preserving repeated-debt signals, and trend summaries; autofix remains deferred
 
 ---
 

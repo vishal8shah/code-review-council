@@ -5,6 +5,12 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
+from ..guidance import (
+    build_engineer_review_note,
+    build_fix_prompt,
+    build_review_next_steps,
+    build_verification_step,
+)
 from .transport import reviewer_output_mode, transport_notes
 from ..schemas import (
     ChairFinding,
@@ -228,6 +234,15 @@ _CSS = """
   }
   .finding-card.urgency-block { border-left: 4px solid #dc2626; }
   .finding-card.urgency-soon { border-left: 4px solid #ca8a04; }
+  .next-steps {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    color: #334155;
+  }
+  .next-steps ul { margin: 8px 0 0 18px; }
   .footer {
     margin-top: 48px;
     padding-top: 16px;
@@ -364,6 +379,15 @@ def _tech_finding_card(finding: ChairFinding) -> str:
         suggestion_html = (
             f'<div class="tech-field"><strong>Fix:</strong> {_e(finding.suggestion)}</div>'
         )
+    fix_prompt = build_fix_prompt(finding)
+    guidance_html = f"""
+    <div class="tech-field"><strong>Fix prompt:</strong></div>
+    <div class="fix-prompt">{_e(fix_prompt)}</div>
+    <div class="tech-field" style="margin-top:12px"><strong>Verify after fixing:</strong> {_e(build_verification_step(finding))}</div>
+    """
+    engineer_note = build_engineer_review_note(finding)
+    if engineer_note:
+        guidance_html += f'<div class="involve-engineer">{_e(engineer_note)}</div>'
 
     return f"""
 <div class="finding-card">
@@ -378,6 +402,7 @@ def _tech_finding_card(finding: ChairFinding) -> str:
   <div class="finding-card-body">
     <div class="tech-field">{_e(finding.description)}</div>
     {suggestion_html}
+    {guidance_html}
     {evidence_html}
     {reasoning_html}
     {sources_html}
@@ -412,6 +437,8 @@ def _owner_report_html(
             '<div class="inline-warning"><strong>Transport notes:</strong>'
             f"<ul style=\"margin:8px 0 0 16px\">{items}</ul></div>"
         )
+
+    next_steps_html = _next_steps_html(verdict)
 
     has_tech_findings = bool(verdict.accepted_blockers or verdict.warnings)
     has_engineer_involvement = owner_presentation.findings and any(
@@ -546,6 +573,7 @@ def _owner_report_html(
 
   {degraded_html}
   {transport_html}
+  {next_steps_html}
 
   <div class="summary-box">
     <p>{_e(owner_presentation.short_summary)}</p>
@@ -599,6 +627,8 @@ def _developer_report_html(
             '<div class="inline-warning"><strong>Transport notes:</strong>'
             f"<ul style=\"margin:8px 0 0 16px\">{items}</ul></div>"
         )
+
+    next_steps_html = _next_steps_html(verdict)
 
     blocker_html = ""
     if verdict.accepted_blockers:
@@ -686,6 +716,7 @@ def _developer_report_html(
 
   {degraded_html}
   {transport_html}
+  {next_steps_html}
   {summary_html}
   {meta_html}
   {reviewer_html}
@@ -700,6 +731,15 @@ def _developer_report_html(
 </div>
 </body>
 </html>"""
+
+
+def _next_steps_html(verdict: ChairVerdict) -> str:
+    """Render deterministic next steps for the whole review."""
+    steps = build_review_next_steps(verdict)
+    if not steps:
+        return ""
+    items = "".join(f"<li>{_e(step)}</li>" for step in steps)
+    return f'<div class="next-steps"><strong>Next steps</strong><ul>{items}</ul></div>'
 
 
 def write_html_report(

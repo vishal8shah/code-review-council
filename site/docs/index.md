@@ -34,7 +34,7 @@ Every PR passes through a five-stage pipeline — deterministic checks first, LL
 |---|---|---|
 | **Audience** | Engineers | Product / Leadership |
 | **Focus** | File/line findings, evidence, fix suggestions | Plain-English risk, ship/no-ship recommendation |
-| **Extra** | Policy references, Chair rationale | Copy-paste fix prompt for AI coding agent |
+| **Extra** | Policy references, Chair rationale, next steps, fix prompts | Copy-paste fix prompt for AI coding agent |
 | **Review strength** | Full | Full — same engine, different presentation |
 
 ---
@@ -70,6 +70,9 @@ council doctor --branch main
 council review --branch main
 ```
 
+`council doctor` prints the configured review profile and the next recommended
+command, so you can catch missing keys or model mismatches before a paid review.
+
 !!! warning "Quality gate, not a guarantee"
     Council is not a substitute for human engineering judgment. LLM findings are evidence-backed but not infallible — hallucination risk is reduced by design (structured context, mandatory file/line references, exploit chain requirements) but not eliminated. Cost and latency vary by model and diff size. Use restricted BYOK keys on repos you control.
 
@@ -84,6 +87,6 @@ council review --branch main
 | [Design](design.md) | Architecture decisions, ReviewPack, evidence-based Chair |
 | [Security](security.md) | BYOK model, key scoping, threat mitigations, merge gates |
 | [Workflows](workflows.md) | PR workflow vs BYOK workflow, artifact locations |
-| [Self Review](self-review.md) | Council reviewing its own PR — real output, 26 fixes, 286 collected tests |
+| [Self Review](self-review.md) | Council reviewing its own PR — real output, 26 fixes, 300 collected tests |
 | [FAQ](faq.md) | Fork PRs, model config, cost tuning, PR comments |
 | [Contributing](contributing.md) | Setup, tests, adding a new reviewer persona |

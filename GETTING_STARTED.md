@@ -11,7 +11,7 @@
 
 It supports two presentation styles:
 
-- **Developer audience** — technical findings, evidence, file/line references, and reviewer detail
+- **Developer audience** — technical findings, evidence, file/line references, fix guidance, and reviewer detail
 - **Owner audience** — plain-English summaries, business impact, fix prompts, and shareable reports for product owners, founders, or stakeholders
 
 This is especially useful when code is written or heavily assisted by AI tools like Cursor, Copilot, Lovable, Claude, and similar workflows.
@@ -95,7 +95,9 @@ council doctor --branch main
 
 `council doctor` warns when a configured model is likely to need prompt-only JSON
 fallback and fails fast on blocking setup issues such as missing keys, invalid branch
-targets, or missing GitHub PR context.
+targets, or missing GitHub PR context. It also prints the active review profile
+and the next command to run so you can confirm model, timeout, audience, and
+integrity settings before making a paid review call.
 
 ---
 
@@ -171,17 +173,18 @@ Security note: only run BYOK workflows on branches you control. Never run BYOK o
 You can also run the full CI-style review locally with your own environment keys:
 
 ```bash
-export OPENAI_API_KEY=your_key_here
-# or/and
-export ANTHROPIC_API_KEY=your_key_here
-# or/and
 export GOOGLE_API_KEY=your_key_here
+# Optional only if your local .council.toml references them:
+export OPENAI_API_KEY=your_key_here
+export ANTHROPIC_API_KEY=your_key_here
 
 council review --ci --branch main --audience developer --output-json council-report.json --output-md council-review.md
 ```
 
 This produces local JSON + Markdown outputs without posting to GitHub PR comments.
-The markdown file is written to the path passed with `--output-md` (for example `council-review.md`).
+The markdown file is written to the path passed with `--output-md` (for example
+`council-review.md`) and includes deterministic next steps, fix prompts, and
+verification guidance for accepted findings.
 
 **Generate an owner-friendly HTML report:**
 ```bash
@@ -307,6 +310,7 @@ Confirm that your CI workflow compares against the correct base branch and that 
 - code evidence
 - reviewer rationale
 - accepted blockers and warnings by category
+- copy/paste fix prompts, verification steps, and review next steps
 - per-reviewer `error` and `integrity_error` fields in JSON output for CI triage
 
 **Owner audience** — best for product owners, founders, or semi-technical stakeholders who want:

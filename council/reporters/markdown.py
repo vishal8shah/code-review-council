@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..guidance import (
+    build_engineer_review_note,
+    build_fix_prompt,
+    build_review_next_steps,
+    build_verification_step,
+)
 from .transport import reviewer_output_mode, transport_notes
 from ..schemas import ChairFinding, ChairVerdict, OwnerFindingView, ReviewerOutput, ReviewPack
 
@@ -69,6 +75,8 @@ def _write_owner_markdown(
     if op.degraded_warning:
         lines.append(f"> [WARN] **Note**: {op.degraded_warning}")
         lines.append("")
+
+    _write_next_steps(lines, verdict)
 
     if notes:
         lines.append("## Transport Notes")
@@ -207,6 +215,8 @@ def _write_developer_markdown(
         lines.append(f"**Summary**: {verdict.summary}")
         lines.append("")
 
+    _write_next_steps(lines, verdict)
+
     if notes:
         lines.append("## Transport Notes")
         lines.append("")
@@ -271,6 +281,27 @@ def _write_finding(lines: list[str], finding: ChairFinding) -> None:
         lines.append(f"\n> Evidence: {finding.evidence_ref}")
     if finding.suggestion:
         lines.append(f"\n**Fix**: {finding.suggestion}")
+    fix_prompt = build_fix_prompt(finding)
+    lines.append("\n**Fix prompt**:")
+    lines.append("```")
+    lines.append(fix_prompt)
+    lines.append("```")
+    lines.append(f"\n**Verify after fixing**: {build_verification_step(finding)}")
+    engineer_note = build_engineer_review_note(finding)
+    if engineer_note:
+        lines.append(f"\n> [ENGINEER] {engineer_note}")
     if finding.chair_reasoning:
         lines.append(f"\n*Chair*: {finding.chair_reasoning}")
+    lines.append("")
+
+
+def _write_next_steps(lines: list[str], verdict: ChairVerdict) -> None:
+    """Append deterministic next steps for the whole review."""
+    steps = build_review_next_steps(verdict)
+    if not steps:
+        return
+    lines.append("## Next Steps")
+    lines.append("")
+    for step in steps:
+        lines.append(f"- {step}")
     lines.append("")

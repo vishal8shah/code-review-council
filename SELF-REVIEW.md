@@ -1,7 +1,8 @@
-# Code Review Council — Self-Review (Post Phase 3 Merge)
+# Code Review Council — Self-Review (Post Phase 4A Guidance Slice)
 
 Updated after initial self-review, two rounds of GPT-5.2 peer review, Phase 2
-ReviewPack parity, and the Phase 3 portability / PR usability merge.
+ReviewPack parity, the Phase 3 portability / PR usability merge, and the first
+Phase 4A onboarding / fix-guidance slice.
 
 ---
 
@@ -58,6 +59,7 @@ ReviewPack parity, and the Phase 3 portability / PR usability merge.
 | Phase 2 ReviewPack parity | ReviewPack and Gate Zero now cover Python plus parser-free TypeScript/JavaScript symbol and test-path heuristics |
 | Phase 3 transport + PR reporting | Shared LiteLLM JSON transport falls back from native JSON mode to prompt-only JSON, `council doctor` preflights setup, and GitHub PR reporting posts sticky summaries plus best-effort inline comments |
 | Phase 3 Windows/Gemini hardening | Git diff ingestion preserves undecodable bytes with `surrogateescape`, terminal output sanitizes legacy-console text, generated GitHub workflows pin Gemini with `GOOGLE_API_KEY`, and reviewer timeouts are configurable |
+| Phase 4A guidance/onboarding | `council init` and `council doctor` now surface next steps, and terminal/Markdown/HTML/GitHub reports share deterministic fix prompts, verification steps, and review next steps |
 
 ---
 
@@ -72,6 +74,7 @@ ReviewPack parity, and the Phase 3 portability / PR usability merge.
 ### Not Yet Implemented
 - **Logical chunking** — Large files truncated, not split at function boundaries. Documented honestly.
 - **Full-repo test coverage discovery** — Coverage mapping still works from the diff, not a repository-wide index.
+- **Local/CI parity and full-repo context planning** — Remaining Phase 4A work after the guidance/onboarding slice.
 - **Learning loop / repeated-debt detection** — Phase 4B scope after onboarding and local/CI parity are smoother.
 - **Autofix generation** — Deferred until verdict quality and evidence quality stay stable enough to avoid auto-fixing hallucinated issues.
 - **Prompts in code** — Works but not editable without code changes.
@@ -92,4 +95,4 @@ ReviewPack parity, and the Phase 3 portability / PR usability merge.
 - Policy context from config flows to reviewers and Chair
 - Path traversal protection, CI safety warnings
 - Honest about what's implemented vs. claimed
-- 286 collected tests across all modules
+- 300 collected tests across all modules

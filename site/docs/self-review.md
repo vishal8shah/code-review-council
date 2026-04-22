@@ -93,6 +93,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 | Phase 2 ReviewPack parity | ReviewPack and Gate Zero cover Python plus parser-free TypeScript/JavaScript exports and test-path heuristics |
 | Phase 3 portability | Shared LiteLLM transport falls back from native JSON mode, `council doctor` preflights setup, and reports surface transport notes |
 | Phase 3 PR + Windows hardening | GitHub PR summaries/inline comments are best-effort, Git diff decoding is lossless with `surrogateescape`, terminal output is Windows-safe, and generated CI is pinned to Gemini with configurable reviewer timeouts |
+| Phase 4A guidance/onboarding | `council init` and `council doctor` now surface next steps, and terminal/Markdown/HTML/GitHub reports share deterministic fix prompts, verification steps, and review next steps |
 
 ---
 
@@ -107,7 +108,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 - **Changed AND deleted symbol detection** — reviewers see what was removed, not just what was added
 - **Policy context flows end-to-end** — config settings reach reviewers and Chair
 - **Path traversal protection** and CI safety warnings built in
-- **286 collected tests across all modules** covering legacy flow plus Phase 3 transport fallback, doctor checks, GitHub reporting behavior, Windows terminal safety, and lossless diff ingestion
+- **300 collected tests across all modules** covering legacy flow plus Phase 3 transport fallback, doctor checks, GitHub reporting behavior, Windows terminal safety, lossless diff ingestion, and Phase 4A guidance surfaces
 
 ---
 
@@ -126,6 +127,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 ### Not Yet Implemented
 
 - **Full-repo test coverage discovery** — coverage mapping still works from the diff, not a repository-wide index.
+- **Local/CI parity and full-repo context planning** — remaining Phase 4A work after the guidance/onboarding slice.
 - **GitHub reporting remains best-effort** — sticky summaries, workflow annotations, and inline PR comments should not fail the review if the GitHub API is flaky.
 - **Editable prompts without code changes** — prompts are still in code rather than repo-editable assets. Future scope.
 - **Phase 4 intelligence layer** — opt-in autofix, repeated-debt detection, confidence calibration, and metrics are planned after the Phase 4A onboarding/parity pass.

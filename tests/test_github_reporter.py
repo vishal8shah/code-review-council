@@ -54,6 +54,8 @@ def test_github_pr_comment_body_sanitizes_model_generated_content():
     assert "&lt;b&gt;unsafe&lt;/b&gt;" in body
     assert "Replace with &lt;safe&gt; output" in body
     assert "<raw>" not in body
+    assert "### Next steps" in body
+    assert "Fix each accepted blocker" in body
 
 
 def test_inline_comment_body_sanitizes_untrusted_text():

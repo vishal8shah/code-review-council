@@ -57,7 +57,7 @@ This creates the review config, ignore file, default prompts, and workflows:
 | `.github/workflows/council-*.yml` | CI workflow scaffolding (PR gate + BYOK variants) |
 
 !!! tip "Check `.council.toml` before your first review"
-    The defaults are sensible, but you'll want to confirm the `chair_model` and reviewer model assignments match your available keys. The generated `.council.toml` includes the current user-facing options inline. Run `council doctor --branch main` before the first real review if you want a quick setup check.
+    The defaults are sensible, but you'll want to confirm the `chair_model` and reviewer model assignments match your available keys. The generated `.council.toml` includes the current user-facing options inline. Run `council doctor --branch main` before the first real review to see the active review profile and the next recommended command.
 
 ---
 
@@ -125,7 +125,7 @@ council review --ci --branch main \
 | `council-review.md` | Markdown | `--output-md <path>` |
 | GitHub Actions artifact | Both | Auto-uploaded in CI workflows |
 
-The JSON report includes the full `ChairVerdict` — per-reviewer findings, confidence scores, `degraded_reasons` if any reviewer failed, and the final `PASS` / `FAIL` / `PASS WITH WARNINGS` verdict.
+The JSON report includes the full `ChairVerdict` — per-reviewer findings, confidence scores, `degraded_reasons` if any reviewer failed, and the final `PASS` / `FAIL` / `PASS WITH WARNINGS` verdict. Markdown, HTML, terminal, and PR summaries also include deterministic next steps; accepted findings include copy/paste fix prompts and verification guidance.
 
 ---
 

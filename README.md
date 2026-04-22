@@ -85,6 +85,10 @@ council review --ci --branch main --output-json council-report.json
 council review --audience owner --output-html owner-report.html
 ```
 
+`council init` now ends with recommended setup commands, and `council doctor`
+prints the active review profile plus recommended next steps before you spend
+money on a full model run.
+
 ---
 
 ## 🎯 Audience Modes
@@ -97,6 +101,7 @@ The standard technical output. Shows:
 - Gate Zero static findings
 - Reviewer panel results
 - Accepted blockers and warnings with file/line references, evidence, and policy IDs
+- Deterministic next steps, fix prompts, and verification guidance for accepted findings
 - Chair rationale
 
 This is the default. Existing usage without `--audience` is unchanged.
@@ -328,6 +333,7 @@ prompt = "prompts/docs.md"
 - **Schemas**: Pydantic v2 models enforce structure at every boundary.
 - **ReviewPack**: Reviewers get structured context (changed symbols, test coverage map, policy violations), not raw diff text.
 - **Evidence-based Chair**: Findings are accepted/dismissed individually with explicit reasoning. No count-based rules.
+- **Deterministic guidance**: Reports add copy/paste fix prompts, verification steps, and review next steps without making another model call.
 - **Degraded mode**: If a reviewer times out or returns malformed output, the council continues with reduced confidence and surfaces specific integrity issues.
 - **JSON CI triage**: JSON reports include per-reviewer `error` and `integrity_error` so blocked runs are easier to debug in CI logs/artifacts.
 - **LiteLLM**: Single interface to call any LLM provider.
@@ -387,7 +393,7 @@ Add your infographic PNGs under `site/docs/assets/infographics/`. If you fork, u
 - [x] V1 — GitHub Actions CI gate, 4 reviewers, 2 output modes, BYOK for forks
 - [x] V2 — Python/TypeScript/JavaScript ReviewPack parity and shared test-path logic
 - [x] V3 — JSON transport fallback, `council doctor`, sticky + inline GitHub PR reporting
-- [ ] V4A — Friendlier onboarding, stronger fix guidance, local/CI parity, full-repo context expansion planning, and safer self-serve defaults
+- [ ] V4A — Friendlier onboarding and stronger fix guidance are underway; local/CI parity, full-repo context expansion planning, and safer self-serve defaults continue next
 - [ ] V4B — Intelligence layer: opt-in autofix, repeated-debt detection, confidence calibration, learning loop, and observability
 
 ---

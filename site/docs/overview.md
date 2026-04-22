@@ -55,7 +55,7 @@ The same review engine produces two output formats depending on who needs to act
 
 | Output | Audience | What It Contains |
 |--------|----------|------------------|
-| 🧑‍💻 **Developer** | Engineers | File/line findings, evidence chains, fix suggestions, policy references |
+| 🧑‍💻 **Developer** | Engineers | File/line findings, evidence chains, fix suggestions, fix prompts, next steps, policy references |
 | 🧑‍💼 **Owner** | Product / Leadership | Plain-English risk summary, ship/no-ship recommendation, copy-paste fix prompt |
 
 Neither audience gets a weaker review. The analysis is identical — only the presentation changes.
@@ -85,9 +85,10 @@ Council reviews — 4 reviewers + Chair
 
 V1 delivered the review gate. V2 expanded ReviewPack parity for Python,
 TypeScript, and JavaScript. V3 hardened provider portability, `council doctor`,
-and GitHub PR reporting. V4 is split deliberately: V4A improves onboarding,
-fix guidance, local/CI parity, and full-repo context planning; V4B adds the
-intelligence layer such as opt-in autofix, repeated-debt detection, and metrics.
+and GitHub PR reporting. V4 is split deliberately: V4A starts with onboarding
+and deterministic fix guidance, then continues into local/CI parity and full-repo
+context planning; V4B adds the intelligence layer such as opt-in autofix,
+repeated-debt detection, and metrics.
 
 ---
 

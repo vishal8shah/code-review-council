@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from council.config import load_config
+from council.config import CouncilConfig, HistoryConfig, ReviewerConfig
 from council.doctor import DoctorCheck, DoctorReport, _git_timed_out, _is_valid_branch_name, _read_event_file, _run_git, run_doctor
 
 
@@ -132,3 +133,27 @@ def test_read_event_file_rejects_oversized(tmp_path):
 def test_read_event_file_rejects_missing_and_empty():
     assert _read_event_file("") is None
     assert _read_event_file("/nonexistent/path.json") is None
+
+
+def test_run_doctor_history_warn_does_not_block_exit(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    config = CouncilConfig(
+        chair_model="openai/gpt-4o",
+        history=HistoryConfig(path=str(tmp_path)),
+        reviewers=[
+            ReviewerConfig(
+                id="qa",
+                name="QA",
+                model="openai/gpt-4o",
+                enabled=True,
+            )
+        ],
+    )
+
+    ok = subprocess.CompletedProcess(args=["git"], returncode=0, stdout="main\n", stderr="")
+    with patch("council.doctor._run_git", return_value=ok):
+        report = run_doctor(repo_root=tmp_path, config=config, branch="main")
+
+    history = next(check for check in report.checks if check.name == "history")
+    assert history.status == "WARN"
+    assert report.exit_code == 0

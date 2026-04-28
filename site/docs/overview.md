@@ -85,10 +85,11 @@ Council reviews — 4 reviewers + Chair
 
 V1 delivered the review gate. V2 expanded ReviewPack parity for Python,
 TypeScript, and JavaScript. V3 hardened provider portability, `council doctor`,
-and GitHub PR reporting. V4 is split deliberately: V4A starts with onboarding
-and deterministic fix guidance, then continues into local/CI parity and full-repo
-context planning; V4B adds the intelligence layer such as opt-in autofix,
-repeated-debt detection, and metrics.
+and GitHub PR reporting. V4 is split deliberately: V4A delivered onboarding,
+deterministic fix guidance, local/CI parity docs, and safer self-serve defaults;
+full-repo context expansion remains deferred. V4B starts with local review
+history and privacy-preserving repeated-debt signals before any opt-in autofix
+work.
 
 ---
 

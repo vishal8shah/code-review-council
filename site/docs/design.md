@@ -138,7 +138,32 @@ does not make an extra LLM call or weaken fail-closed CI behavior.
 
 ---
 
-## 💰 Cost & Latency
+## Phase 4B History Contract
+
+The first Phase 4B intelligence slice records local review history before any
+autofix work. History uses stdlib SQLite, defaults to the OS user cache, and is
+best-effort so storage failures never change review verdicts or CI exit codes.
+Configured history paths must be repo-relative and resolve inside the repo;
+absolute paths, `~` escapes, and parent traversal are rejected.
+
+With `store_finding_text = false`, finding history stores only `run_id`,
+`fingerprint`, `severity`, `category`, `file_path`, `reviewer_id`, `policy_id`,
+`verdict`, `is_repeated`, and `debt_run_count`. It never stores raw diff,
+evidence, suggestions, diff snippets, fix prompts, Chair reasoning text, or
+model-generated descriptions by default.
+
+The database uses `_schema_migrations(version INTEGER PRIMARY KEY, applied_at
+TEXT)` for forward-only, idempotent migrations. `council history summary`
+surfaces repeat candidates after two runs and labels `[DEBT]` only after three
+consecutive runs for the same repo.
+
+Retention pruning deletes expired run rows and relies on the `findings.run_id`
+foreign-key cascade to remove dependent finding rows, keeping cleanup aligned
+with the schema contract.
+
+---
+
+## Cost & Latency
 
 No universal number is valid — cost and latency depend on configuration and workload. Primary factors:
 

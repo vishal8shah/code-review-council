@@ -200,6 +200,50 @@ Useful for Slack, email, PR comments, or docs.
 
 ---
 
+## Review history and debt signals
+
+Phase 4B adds local review history so you can see trends across runs without
+committing artifacts to the repo. By default Council stores history in the OS
+user cache and does not store raw diffs, evidence snippets, suggestions, fix
+prompts, Chair reasoning text, or model-generated finding descriptions.
+
+```bash
+council history summary --days 30 --limit 10
+```
+
+Example output:
+
+```text
+Council history summary for code-review-council
+Runs: 12 in the last 30 day(s)
+Degraded runs: 1
+Verdicts: FAIL=3, PASS=7, PASS_WITH_WARNINGS=2
+Severity counts: CRITICAL=2, HIGH=8, MEDIUM=14
+Category counts: security=4, testing=10, architecture=6, documentation=4
+Repeated fingerprints:
+  [DEBT]   HIGH/security council/history.py fingerprint=a3f2c1b4d5e6 seen=4, consecutive=4, reviewer=secops
+  [REPEAT] MEDIUM/testing council/cli.py fingerprint=9f1e2d3c4b5a seen=2, consecutive=2, reviewer=qa
+History database: C:\Users\you\AppData\Local\code-review-council\history.sqlite
+```
+
+`[DEBT]` means the same privacy-preserving finding fingerprint appeared in
+three consecutive review runs for this repo. Findings seen in two or more runs
+are shown as repeat candidates, but are not labeled debt yet.
+
+```toml
+[history]
+enabled = true
+path = ""
+retention_days = 180
+store_finding_text = false
+```
+
+Keep `path = ""` unless you need a repo-local database. Configured paths must
+be relative to the repo and must not traverse outside it; absolute paths and
+`~` escapes are rejected for safety.
+
+---
+
 ## Recommended first workflow
 
 For the fastest first success:
@@ -311,7 +355,7 @@ Confirm that your CI workflow compares against the correct base branch and that 
 - reviewer rationale
 - accepted blockers and warnings by category
 - copy/paste fix prompts, verification steps, and review next steps
-- per-reviewer `error` and `integrity_error` fields in JSON output for CI triage
+- per-reviewer `error` and `integrity_error` fields in JSON output for CI triage, including sanitized schema field/type diagnostics for malformed findings
 
 **Owner audience** — best for product owners, founders, or semi-technical stakeholders who want:
 - merge recommendation (SAFE TO MERGE / MERGE WITH CAUTION / FIX BEFORE MERGE)
@@ -330,6 +374,7 @@ Once your first review works:
 1. Tune `.council.toml` — choose models, adjust reviewers, set enforcement mode
 2. Enable the GitHub Actions workflow for automatic PR reviews
 3. Share owner report artifacts with stakeholders when useful
+4. Use `council history summary` to spot repeated review patterns before adding heavier automation
 
 ---
 

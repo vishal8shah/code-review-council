@@ -220,7 +220,21 @@ enabled = true
 # Optional: set a default output audience
 [presentation]
 default_audience = "developer"
+
+# Optional local review history. Defaults store metadata in the OS user cache,
+# not the repo, and do not persist raw diff/model text.
+[history]
+enabled = true
+# Leave empty for the OS user-cache database.
+# Custom paths must be repo-relative and stay inside the repo.
+path = ""
+retention_days = 180
+store_finding_text = false
 ```
+
+Leave `history.path` empty for the OS user-cache database. If you set it, use a
+repo-relative path only; absolute paths and `..` traversal outside the repo are
+rejected because `.council.toml` can be committed by untrusted repositories.
 
 Model schema note: canonical reviewer config is `[[reviewers]]`, and nested forms `[[council.reviewer]]` / `[[council.reviewers]]` are also accepted for compatibility.
 
@@ -334,9 +348,10 @@ prompt = "prompts/docs.md"
 - **ReviewPack**: Reviewers get structured context (changed symbols, test coverage map, policy violations), not raw diff text.
 - **Evidence-based Chair**: Findings are accepted/dismissed individually with explicit reasoning. No count-based rules.
 - **Deterministic guidance**: Reports add copy/paste fix prompts, verification steps, and review next steps without making another model call.
-- **Degraded mode**: If a reviewer times out or returns malformed output, the council continues with reduced confidence and surfaces specific integrity issues.
+- **Degraded mode**: If a reviewer times out or returns malformed output, the council continues with reduced confidence and surfaces specific integrity issues, including sanitized schema field/type diagnostics for dropped findings.
 - **JSON CI triage**: JSON reports include per-reviewer `error` and `integrity_error` so blocked runs are easier to debug in CI logs/artifacts.
 - **LiteLLM**: Single interface to call any LLM provider.
+- **Local history**: V4B records privacy-preserving run metadata and repeated-debt signals without storing raw diffs or model-generated finding text by default.
 
 ---
 
@@ -393,8 +408,8 @@ Add your infographic PNGs under `site/docs/assets/infographics/`. If you fork, u
 - [x] V1 — GitHub Actions CI gate, 4 reviewers, 2 output modes, BYOK for forks
 - [x] V2 — Python/TypeScript/JavaScript ReviewPack parity and shared test-path logic
 - [x] V3 — JSON transport fallback, `council doctor`, sticky + inline GitHub PR reporting
-- [ ] V4A — Friendlier onboarding and stronger fix guidance are underway; local/CI parity, full-repo context expansion planning, and safer self-serve defaults continue next
-- [ ] V4B — Intelligence layer: opt-in autofix, repeated-debt detection, confidence calibration, learning loop, and observability
+- [x] V4A — Delivered friendlier onboarding, stronger fix guidance, Gemini CI docs, and safer self-serve defaults; full-repo context expansion remains deferred
+- [x] V4B first slice — Delivered local review history, privacy-preserving repeated-debt signals, and trend summaries; autofix remains deferred
 
 ---
 

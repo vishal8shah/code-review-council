@@ -129,6 +129,39 @@ The JSON report includes the full `ChairVerdict` — per-reviewer findings, conf
 
 ---
 
+## Local Review History
+
+Phase 4B adds a local history summary for trends across runs:
+
+```bash
+council history summary --days 30 --limit 10
+```
+
+Example output:
+
+```text
+Council history summary for code-review-council
+Runs: 12 in the last 30 day(s)
+Degraded runs: 1
+Verdicts: FAIL=3, PASS=7, PASS_WITH_WARNINGS=2
+Severity counts: CRITICAL=2, HIGH=8, MEDIUM=14
+Category counts: security=4, testing=10, architecture=6, documentation=4
+Repeated fingerprints:
+  [DEBT]   HIGH/security council/history.py fingerprint=a3f2c1b4d5e6 seen=4, consecutive=4, reviewer=secops
+  [REPEAT] MEDIUM/testing council/cli.py fingerprint=9f1e2d3c4b5a seen=2, consecutive=2, reviewer=qa
+History database: C:\Users\you\AppData\Local\code-review-council\history.sqlite
+```
+
+History defaults to an OS-cache SQLite database, not a repo file. With
+`store_finding_text = false`, Council stores fingerprints and classification
+fields only; it does not store raw diffs, evidence, suggestions, fix prompts,
+Chair reasoning, or model-generated finding descriptions. `[DEBT]` is shown
+only when the same fingerprint appears in three consecutive review runs.
+If `history.path` is set, it must be relative to the repo and stay inside it;
+absolute paths, `~` escapes, and parent traversal are rejected.
+
+---
+
 ## 🔧 CI Setup (GitHub Actions)
 
 After `council init`, two workflow files are scaffolded:
@@ -166,7 +199,7 @@ Council will automatically review the next PR opened against your default branch
 | Reviewer timeouts | Model API slow or rate-limited | Increase `reviewer_timeout_seconds` in `.council.toml` |
 | `GOOGLE_API_KEY not found` | Gemini-pinned workflow has no key | Add `GOOGLE_API_KEY` in `Settings → Secrets` or export it locally |
 | Fork PR review skipped | Expected — not a bug | Use `council-byok.yml` for fork contributors |
-| `integrity_error` in JSON report | A reviewer returned unparseable output | Run `council doctor --branch main`; some models use prompt-only JSON fallback and Council now reports that transport mode explicitly |
+| `integrity_error` in JSON report | A reviewer timed out, returned unparseable JSON, or emitted malformed finding objects | Run `council doctor --branch main`; inspect the per-reviewer `error` for sanitized schema field/type details and transport mode |
 
 ---
 

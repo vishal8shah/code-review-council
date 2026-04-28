@@ -25,7 +25,7 @@ Phase 4A onboarding / fix-guidance slice.
 | 8 | Diff text lost file boundaries | `=== FILE: path (change_type) ===` headers |
 | 9 | No `warnings` field | First-class in schema, parsing, all reporters |
 | 10 | Chair pseudo-JSON schema | Valid JSON example object |
-| 11 | Malformed findings silently dropped | Tracked count, sets error field |
+| 11 | Malformed findings silently dropped | Tracked count, sets error field, and reports sanitized schema field/type diagnostics |
 | 12 | `_file_priority()` ignored config | Reads `config.priorities` |
 | 13 | Path traversal in `get_file_content()` | `is_relative_to()` containment check |
 | 14 | `--ci` without `--branch` empty diff risk | Warning emitted |
@@ -75,9 +75,17 @@ Phase 4A onboarding / fix-guidance slice.
 - **Logical chunking** — Large files truncated, not split at function boundaries. Documented honestly.
 - **Full-repo test coverage discovery** — Coverage mapping still works from the diff, not a repository-wide index.
 - **Local/CI parity and full-repo context planning** — Remaining Phase 4A work after the guidance/onboarding slice.
-- **Learning loop / repeated-debt detection** — Phase 4B scope after onboarding and local/CI parity are smoother.
-- **Autofix generation** — Deferred until verdict quality and evidence quality stay stable enough to avoid auto-fixing hallucinated issues.
+- **Learning loop / repeated-debt detection** — Phase 4B starts with local history and privacy-preserving debt signals.
+- **Autofix generation** — Still deferred until verdict quality, evidence quality, and repeated-debt signals stay stable enough to avoid auto-fixing hallucinated issues.
 - **Prompts in code** — Works but not editable without code changes.
+
+### Phase 4B First Slice Guardrails
+- Local history defaults to the OS user cache so reviews do not dirty repositories.
+- Configured history paths must be repo-relative and stay inside the repo; absolute paths, `~` escapes, and parent traversal raise `HistoryPathError`.
+- Finding rows store fingerprints and classification fields only when `store_finding_text = false`.
+- `[DEBT]` is reserved for the same fingerprint appearing in three consecutive review runs for the repo.
+- SQLite schema changes use a forward-only `_schema_migrations` table.
+- Reviewer integrity diagnostics must never echo raw model output, prompts, diffs, or finding text.
 
 ### Design Disagreement with Peer Reviewer
 - **Reviewer payload format** — Peer reviewer recommends compact JSON transport. We use markdown with all fields present. Rationale: LLMs consume readable text more effectively than nested JSON blobs. The information is complete; the format is optimized for the consumer. We acknowledge this is a design choice worth revisiting with real-world false-positive data.

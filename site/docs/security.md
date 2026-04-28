@@ -110,6 +110,7 @@ If a reviewer times out, returns malformed output, or fails to parse, Council do
 - Reduces the confidence score
 - Surfaces **specific degraded reasons** to the user via `degraded_reasons` in the ChairVerdict
 - Makes the integrity issue visible in CI logs and JSON artifacts via per-reviewer `error` and `integrity_error` fields
+- Reports malformed finding details as sanitized schema field/type diagnostics, without echoing raw model output, prompts, diffs, or finding text
 
 With the default fail-closed integrity policy, degraded CI reviews block the
 merge until the timeout, parsing, or provider issue is fixed. This means a

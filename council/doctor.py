@@ -53,6 +53,11 @@ def build_review_profile(config: CouncilConfig) -> list[str]:
         ),
         f"Default audience: {config.presentation.default_audience}",
         f"Integrity policy: {config.enforcement.on_integrity_issue}",
+        (
+            "History: "
+            f"{'enabled' if config.history.enabled else 'disabled'}"
+            + (f" ({config.history.retention_days}d retention)" if config.history.enabled else "")
+        ),
     ]
 
 
@@ -382,6 +387,19 @@ def run_doctor(
     else:
         checks.append(
             DoctorCheck("json_transport", "PASS", "Configured models likely support native JSON mode.")
+        )
+
+    if config.history.enabled:
+        from .history import check_history_health
+
+        history_health = check_history_health(root, config.history)
+        checks.append(
+            DoctorCheck(
+                "history",
+                history_health.status,
+                history_health.detail,
+                history_health.remediation,
+            )
         )
 
     if github_pr:

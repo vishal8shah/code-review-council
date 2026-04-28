@@ -25,7 +25,7 @@ Phase 4A onboarding / fix-guidance slice.
 | 8 | Diff text lost file boundaries | `=== FILE: path (change_type) ===` headers |
 | 9 | No `warnings` field | First-class in schema, parsing, all reporters |
 | 10 | Chair pseudo-JSON schema | Valid JSON example object |
-| 11 | Malformed findings silently dropped | Tracked count, sets error field |
+| 11 | Malformed findings silently dropped | Tracked count, sets error field, and reports sanitized schema field/type diagnostics |
 | 12 | `_file_priority()` ignored config | Reads `config.priorities` |
 | 13 | Path traversal in `get_file_content()` | `is_relative_to()` containment check |
 | 14 | `--ci` without `--branch` empty diff risk | Warning emitted |
@@ -85,6 +85,7 @@ Phase 4A onboarding / fix-guidance slice.
 - Finding rows store fingerprints and classification fields only when `store_finding_text = false`.
 - `[DEBT]` is reserved for the same fingerprint appearing in three consecutive review runs for the repo.
 - SQLite schema changes use a forward-only `_schema_migrations` table.
+- Reviewer integrity diagnostics must never echo raw model output, prompts, diffs, or finding text.
 
 ### Design Disagreement with Peer Reviewer
 - **Reviewer payload format** — Peer reviewer recommends compact JSON transport. We use markdown with all fields present. Rationale: LLMs consume readable text more effectively than nested JSON blobs. The information is complete; the format is optimized for the consumer. We acknowledge this is a design choice worth revisiting with real-world false-positive data.

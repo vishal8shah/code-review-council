@@ -199,7 +199,7 @@ Council will automatically review the next PR opened against your default branch
 | Reviewer timeouts | Model API slow or rate-limited | Increase `reviewer_timeout_seconds` in `.council.toml` |
 | `GOOGLE_API_KEY not found` | Gemini-pinned workflow has no key | Add `GOOGLE_API_KEY` in `Settings → Secrets` or export it locally |
 | Fork PR review skipped | Expected — not a bug | Use `council-byok.yml` for fork contributors |
-| `integrity_error` in JSON report | A reviewer returned unparseable output | Run `council doctor --branch main`; some models use prompt-only JSON fallback and Council now reports that transport mode explicitly |
+| `integrity_error` in JSON report | A reviewer timed out, returned unparseable JSON, or emitted malformed finding objects | Run `council doctor --branch main`; inspect the per-reviewer `error` for sanitized schema field/type details and transport mode |
 
 ---
 

@@ -496,6 +496,12 @@ class ChairVerdict(BaseModel):
     rationale: str
 ```
 
+Reviewer parsing uses the same schema boundary. Malformed finding objects are
+dropped, the reviewer output is marked with `error`, and severe drop rates set
+`integrity_error=true`. Error text reports only sanitized schema locations and
+validation types, never raw model output, prompt text, diff content, or finding
+descriptions.
+
 ### 3.4 Orchestration Flow (orchestrator.py)
 
 ```python
@@ -1204,4 +1210,4 @@ with the schema contract instead of duplicating child-table deletion logic.
 | v1.3 | 2025-02-28 | Post-implementation update. Two rounds of peer review, 26 fixes applied. Key changes: Chair default GPT-4o (configurable), reviewer defaults updated to OpenAI model mix (configurable), deleted symbol detection via hunk scanning, unified degraded-mode with `degraded_reasons`, linter integration implemented (`shlex.split`, `{files}` placeholder), `repo_policies` populated from config, file boundary headers in diff text, `warnings` as first-class ChairVerdict field, path traversal protection, honest truncation (not "chunking"). 62 tests. See SELF-REVIEW.md for remaining known limitations. |
 | v1.4 | 2026-04-11 | Phase 2 and Phase 3 update. ReviewPack now covers Python plus parser-free TypeScript/JavaScript exports, shared test-path classification is reused across Gate Zero and ReviewPack, LiteLLM transport now retries without native JSON mode when providers reject `response_format`, reports surface `output_mode` / transport notes, `council doctor` was added for preflight checks, and GitHub PR reporting now combines sticky summaries with best-effort inline comments. |
 | v1.5 | 2026-04-22 | Post-PR #12 docs baseline. GitHub workflows are documented as Gemini-pinned via `GOOGLE_API_KEY`, reviewer timeout and concurrency knobs are part of the config reference, Windows-safe terminal and lossless diff ingestion hardening are captured, and the Phase 4 roadmap is split into V4A onboarding/parity and V4B intelligence. 286 tests collected. |
-| v1.6 | 2026-04-22 | Phase 4B first-slice design. Local review history uses OS-cache SQLite by default, privacy-preserving finding fingerprints, forward-only schema migrations, and `[DEBT]` only after three consecutive runs. Autofix remains deferred. |
+| v1.6 | 2026-04-22 | Phase 4B first-slice design. Local review history uses OS-cache SQLite by default, privacy-preserving finding fingerprints, forward-only schema migrations, `[DEBT]` only after three consecutive runs, and sanitized reviewer integrity diagnostics. Autofix remains deferred. |

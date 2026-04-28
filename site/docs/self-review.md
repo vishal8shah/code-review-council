@@ -60,7 +60,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 | 8 | Diff text lost file boundaries | `=== FILE: path (change_type) ===` headers added |
 | 9 | No `warnings` field in schema | First-class in schema, parsing, and all reporters |
 | 10 | Chair pseudo-JSON schema | Replaced with valid JSON example object |
-| 11 | Malformed findings silently dropped | Tracked count, sets error field |
+| 11 | Malformed findings silently dropped | Tracked count, sets error field, and reports sanitized schema field/type diagnostics |
 | 12 | `_file_priority()` ignored config | Reads `config.priorities` correctly |
 | 13 | Path traversal in `get_file_content()` | `is_relative_to()` containment check added |
 | 14 | `--ci` without `--branch` empty diff risk | Warning emitted |
@@ -138,6 +138,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 - Finding rows store fingerprints and classification fields only when `store_finding_text = false`.
 - `[DEBT]` is reserved for the same fingerprint appearing in three consecutive review runs for the repo.
 - SQLite schema changes use a forward-only `_schema_migrations` table.
+- Reviewer integrity diagnostics must never echo raw model output, prompts, diffs, or finding text.
 
 ### Design Note
 

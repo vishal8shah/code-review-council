@@ -348,7 +348,7 @@ prompt = "prompts/docs.md"
 - **ReviewPack**: Reviewers get structured context (changed symbols, test coverage map, policy violations), not raw diff text.
 - **Evidence-based Chair**: Findings are accepted/dismissed individually with explicit reasoning. No count-based rules.
 - **Deterministic guidance**: Reports add copy/paste fix prompts, verification steps, and review next steps without making another model call.
-- **Degraded mode**: If a reviewer times out or returns malformed output, the council continues with reduced confidence and surfaces specific integrity issues.
+- **Degraded mode**: If a reviewer times out or returns malformed output, the council continues with reduced confidence and surfaces specific integrity issues, including sanitized schema field/type diagnostics for dropped findings.
 - **JSON CI triage**: JSON reports include per-reviewer `error` and `integrity_error` so blocked runs are easier to debug in CI logs/artifacts.
 - **LiteLLM**: Single interface to call any LLM provider.
 - **Local history**: V4B records privacy-preserving run metadata and repeated-debt signals without storing raw diffs or model-generated finding text by default.

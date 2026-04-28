@@ -6,9 +6,13 @@ import uuid
 from pathlib import Path
 
 import litellm
+from pydantic import ValidationError
 
 from ..llm_transport import extract_json_object, invoke_json_completion, load_json_object
 from ..schemas import Finding, ReviewPack, ReviewerOutput, SupportFileSummary
+
+
+_MAX_MALFORMED_DETAIL_COUNT = 3
 
 
 def _render_support_file_summaries(summaries: list[SupportFileSummary]) -> str:
@@ -195,6 +199,18 @@ Respond with ONLY valid JSON:
         """Parse model JSON with lenient fallback for fenced/wrapped outputs."""
         return load_json_object(raw_json)
 
+    def _summarize_finding_validation_error(self, index: int, exc: Exception) -> str:
+        """Return schema diagnostics without echoing model-generated values."""
+        prefix = f"finding[{index}]"
+        if isinstance(exc, ValidationError):
+            parts: list[str] = []
+            for error in exc.errors()[:_MAX_MALFORMED_DETAIL_COUNT]:
+                loc = ".".join(str(part) for part in error.get("loc", ())) or "root"
+                error_type = str(error.get("type", "validation_error"))
+                parts.append(f"{prefix}.{loc}: {error_type}")
+            return "; ".join(parts) if parts else f"{prefix}: validation_error"
+        return f"{prefix}: expected object"
+
     def _parse_response(
         self,
         raw_json: str,
@@ -217,25 +233,19 @@ Respond with ONLY valid JSON:
 
         findings: list[Finding] = []
         malformed_count = 0
+        malformed_details: list[str] = []
         raw_findings = data.get("findings", [])
-        for f in raw_findings:
+        for index, f in enumerate(raw_findings):
             try:
-                findings.append(Finding(
-                    severity=f.get("severity", "LOW"),
-                    category=f.get("category", "style"),
-                    file=f.get("file", "unknown"),
-                    line_start=f.get("line_start"),
-                    line_end=f.get("line_end"),
-                    symbol_name=f.get("symbol_name"),
-                    symbol_kind=f.get("symbol_kind"),
-                    description=f.get("description", ""),
-                    suggestion=f.get("suggestion", ""),
-                    evidence_ref=f.get("evidence_ref"),
-                    policy_id=f.get("policy_id"),
-                    confidence=f.get("confidence", 0.8),
-                ))
-            except Exception:
+                if not isinstance(f, dict):
+                    raise TypeError("finding must be an object")
+                findings.append(Finding.model_validate(f))
+            except (TypeError, ValidationError) as exc:
                 malformed_count += 1
+                if len(malformed_details) < _MAX_MALFORMED_DETAIL_COUNT:
+                    malformed_details.append(
+                        self._summarize_finding_validation_error(index, exc)
+                    )
                 continue
 
         verdict = data.get("verdict", "PASS")
@@ -245,6 +255,8 @@ Respond with ONLY valid JSON:
             total_raw = len(raw_findings)
             dropped_ratio = malformed_count / max(total_raw, 1)
             error_msg = f"Parsed {len(findings)}/{total_raw} findings ({malformed_count} malformed/dropped)"
+            if malformed_details:
+                error_msg = f"{error_msg}; details: {'; '.join(malformed_details)}"
             if dropped_ratio > 0.5:
                 verdict = self._integrity_verdict()
                 error_msg = f"integrity issue: {error_msg}"

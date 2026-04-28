@@ -591,7 +591,7 @@ def _prior_run_fingerprint_sets(conn: sqlite3.Connection, repo_id: str) -> list[
         ORDER BY r.created_at DESC, r.id DESC
         """,
         (repo_id,),
-    ).fetchall()
+    )
 
     fingerprint_sets: list[set[str]] = []
     current_run_id: str | None = None
@@ -672,19 +672,23 @@ def _repeat_summaries(
 
 
 def _current_consecutive_count(conn: sqlite3.Connection, repo_id: str, fingerprint: str) -> int:
-    # TODO: replace this per-fingerprint scan with a window-function query once
-    # local history volumes grow beyond the first-slice SQLite use case.
-    runs = conn.execute(
-        "SELECT id FROM runs WHERE repo_id = ? ORDER BY created_at DESC, id DESC",
-        (repo_id,),
-    ).fetchall()
     count = 0
-    for run in runs:
-        present = conn.execute(
-            "SELECT 1 FROM findings WHERE run_id = ? AND fingerprint = ? LIMIT 1",
-            (run["id"], fingerprint),
-        ).fetchone()
-        if present is None:
+    rows = conn.execute(
+        """
+        SELECT r.id AS run_id, matched.run_id AS matched_run_id
+        FROM runs r
+        LEFT JOIN (
+            SELECT DISTINCT run_id
+            FROM findings
+            WHERE fingerprint = ?
+        ) matched ON matched.run_id = r.id
+        WHERE r.repo_id = ?
+        ORDER BY r.created_at DESC, r.id DESC
+        """,
+        (fingerprint, repo_id),
+    )
+    for row in rows:
+        if row["matched_run_id"] is None:
             break
         count += 1
     return count

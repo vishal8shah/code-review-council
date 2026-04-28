@@ -353,6 +353,60 @@ def test_prior_run_fingerprint_sets_groups_in_run_order_with_one_query(tmp_path)
         conn.close()
 
 
+def test_current_consecutive_count_uses_latest_contiguous_runs(tmp_path):
+    db_path = tmp_path / "history.sqlite"
+    conn = connect_history_db(db_path)
+    try:
+        ensure_schema(conn)
+        now = datetime.now(UTC)
+        for index in range(4):
+            conn.execute(
+                """
+                INSERT INTO runs (
+                    id, repo_id, repo_display, created_at, ci_mode, audience, verdict,
+                    confidence, degraded, degraded_reasons_json, files_changed, lines_changed,
+                    token_estimate, languages_json, reviewer_models_json, output_modes_json,
+                    accepted_blockers_count, warnings_count, dismissed_count, total_findings_count,
+                    severity_counts_json, category_counts_json, duration_ms
+                ) VALUES (?, 'repo', 'repo', ?, 0, 'developer', 'PASS', 1.0, 0, '[]', 0, 0, 0,
+                    '[]', '{}', '[]', 0, 0, 0, 0, '{}', '{}', 0)
+                """,
+                (f"run-{index}", (now - timedelta(minutes=index)).isoformat().replace("+00:00", "Z")),
+            )
+        conn.executemany(
+            """
+            INSERT INTO findings (
+                run_id, fingerprint, severity, category, file_path, reviewer_id,
+                policy_id, verdict, is_repeated, debt_run_count
+            ) VALUES (?, ?, 'HIGH', 'security', 'src/app.py',
+                'secops', 'security.auth', 'accepted_blocker', 0, 1)
+            """,
+            [
+                ("run-0", "fp-a"),
+                ("run-1", "fp-a"),
+                ("run-2", "fp-b"),
+                ("run-3", "fp-a"),
+            ],
+        )
+        conn.commit()
+
+        from council.history import _current_consecutive_count
+
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        assert _current_consecutive_count(conn, "repo", "fp-a") == 2
+        assert _current_consecutive_count(conn, "repo", "fp-b") == 0
+        assert _current_consecutive_count(conn, "repo", "fp-missing") == 0
+        conn.set_trace_callback(None)
+        selects = [
+            statement for statement in statements
+            if statement.strip().upper().startswith("SELECT")
+        ]
+        assert len(selects) == 3
+    finally:
+        conn.close()
+
+
 def test_summary_marks_repeat_candidates_and_debt_at_three_consecutive_runs(tmp_path):
     db_path = tmp_path / "history.sqlite"
 

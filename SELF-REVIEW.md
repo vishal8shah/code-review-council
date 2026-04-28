@@ -81,6 +81,7 @@ Phase 4A onboarding / fix-guidance slice.
 
 ### Phase 4B First Slice Guardrails
 - Local history defaults to the OS user cache so reviews do not dirty repositories.
+- Configured history paths must be repo-relative and stay inside the repo; absolute paths, `~` escapes, and parent traversal raise `HistoryPathError`.
 - Finding rows store fingerprints and classification fields only when `store_finding_text = false`.
 - `[DEBT]` is reserved for the same fingerprint appearing in three consecutive review runs for the repo.
 - SQLite schema changes use a forward-only `_schema_migrations` table.

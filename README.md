@@ -225,6 +225,8 @@ default_audience = "developer"
 # not the repo, and do not persist raw diff/model text.
 [history]
 enabled = true
+# Leave empty for the OS user-cache database.
+# Custom paths must be repo-relative and stay inside the repo.
 path = ""
 retention_days = 180
 store_finding_text = false
@@ -406,8 +408,8 @@ Add your infographic PNGs under `site/docs/assets/infographics/`. If you fork, u
 - [x] V1 — GitHub Actions CI gate, 4 reviewers, 2 output modes, BYOK for forks
 - [x] V2 — Python/TypeScript/JavaScript ReviewPack parity and shared test-path logic
 - [x] V3 — JSON transport fallback, `council doctor`, sticky + inline GitHub PR reporting
-- [ ] V4A — Friendlier onboarding and stronger fix guidance are underway; local/CI parity, full-repo context expansion planning, and safer self-serve defaults continue next
-- [ ] V4B — Intelligence layer begins with local review history, privacy-preserving repeated-debt signals, and trend summaries; autofix remains deferred
+- [x] V4A — Delivered friendlier onboarding, stronger fix guidance, Gemini CI docs, and safer self-serve defaults; full-repo context expansion remains deferred
+- [x] V4B first slice — Delivered local review history, privacy-preserving repeated-debt signals, and trend summaries; autofix remains deferred
 
 ---
 

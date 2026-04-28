@@ -216,6 +216,13 @@ two review runs. It adds `[DEBT]` only when that fingerprint appears in three
 consecutive review runs for the same repo. A clean intervening run resets the
 consecutive count.
 
+### Why is my custom history path being rejected?
+
+`history.path` comes from repo config, so Council treats it as untrusted input.
+Leave it empty to use the OS user-cache database. If you set it, the path must
+be relative to the repo and must resolve inside the repo root. Absolute paths,
+`~` expansions, and parent traversal are rejected with `HistoryPathError`.
+
 ### What does `PASS WITH WARNINGS` mean?
 
 The Chair accepted one or more findings as real issues but not severe enough to block the merge. The findings are documented in the report and markdown review. The CI step exits zero — merge is allowed. Engineers should still review the warnings before the next sprint.

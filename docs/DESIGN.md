@@ -1134,12 +1134,12 @@ Everything described in this document up to this point. The core deliverable:
 
 ### V4A — Docs, Onboarding, and Safer Self-Serve Defaults
 
-The next phase starts by reducing setup friction before adding more autonomy:
+V4A delivered the setup and guidance work needed before adding more autonomy:
 
-1. **Docs-first consistency** — keep README, Getting Started, design docs, and site docs aligned on provider defaults, GitHub workflow behavior, and local/CI parity.
-2. **Stronger fix guidance** — make developer and owner reports clearer about what to change, what to test, and when a human engineer should review the patch.
-3. **Safer self-serve defaults** — keep fail-closed CI integrity behavior, document Gemini workflow requirements, and make `council doctor` the standard first-run diagnostic.
-4. **Full-repo context expansion plan** — design repository-wide test/context discovery without pretending the current diff-local map already does it.
+1. **Docs-first consistency** — README, Getting Started, design docs, and site docs now align on provider defaults, GitHub workflow behavior, and local/CI parity.
+2. **Stronger fix guidance** — developer and owner reports are clearer about what to change, what to test, and when a human engineer should review the patch.
+3. **Safer self-serve defaults** — fail-closed CI integrity behavior remains the default, Gemini workflow requirements are documented, and `council doctor` is the standard first-run diagnostic.
+4. **Full-repo context expansion** — deferred to a later phase. Current ReviewPack context remains diff-local, and the docs should not imply repository-wide discovery until it ships.
 
 ### V4B — Intelligence Layer
 

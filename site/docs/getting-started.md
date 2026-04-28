@@ -137,6 +137,21 @@ Phase 4B adds a local history summary for trends across runs:
 council history summary --days 30 --limit 10
 ```
 
+Example output:
+
+```text
+Council history summary for code-review-council
+Runs: 12 in the last 30 day(s)
+Degraded runs: 1
+Verdicts: FAIL=3, PASS=7, PASS_WITH_WARNINGS=2
+Severity counts: CRITICAL=2, HIGH=8, MEDIUM=14
+Category counts: security=4, testing=10, architecture=6, documentation=4
+Repeated fingerprints:
+  [DEBT]   HIGH/security council/history.py fingerprint=a3f2c1b4d5e6 seen=4, consecutive=4, reviewer=secops
+  [REPEAT] MEDIUM/testing council/cli.py fingerprint=9f1e2d3c4b5a seen=2, consecutive=2, reviewer=qa
+History database: C:\Users\you\AppData\Local\code-review-council\history.sqlite
+```
+
 History defaults to an OS-cache SQLite database, not a repo file. With
 `store_finding_text = false`, Council stores fingerprints and classification
 fields only; it does not store raw diffs, evidence, suggestions, fix prompts,

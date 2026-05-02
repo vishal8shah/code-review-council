@@ -242,6 +242,11 @@ Keep `path = ""` unless you need a repo-local database. Configured paths must
 be relative to the repo and must not traverse outside it; absolute paths and
 `~` escapes are rejected for safety.
 
+If the history database cannot be opened, has a newer unsupported schema, or is
+corrupt, `council history summary` exits with a concise error instead of a
+Python traceback. This only affects the explicit inspection command; review
+runs still treat history writes as best-effort and do not change verdicts.
+
 ---
 
 ## Recommended first workflow

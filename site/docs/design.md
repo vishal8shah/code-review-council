@@ -157,6 +157,11 @@ TEXT)` for forward-only, idempotent migrations. `council history summary`
 surfaces repeat candidates after two runs and labels `[DEBT]` only after three
 consecutive runs for the same repo.
 
+Because `council history summary` is explicitly inspecting local storage, it
+exits non-zero with a concise error when the database is unavailable, corrupt,
+or newer than this Council version supports. Review-mode history writes remain
+best-effort and never change verdicts or CI exit codes.
+
 Retention pruning deletes expired run rows and relies on the `findings.run_id`
 foreign-key cascade to remove dependent finding rows, keeping cleanup aligned
 with the schema contract.

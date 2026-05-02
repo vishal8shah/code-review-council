@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import time
 from pathlib import Path
 
@@ -37,6 +38,142 @@ def _status_style(status: str) -> str:
     return "red"
 
 
+def _write_artifact_reports(
+    *,
+    verdict,
+    review_pack,
+    reviewer_outputs,
+    config,
+    ci: bool,
+    output_md: str | None,
+    output_json: str | None,
+    output_html: str | None,
+    audience: str,
+) -> list[str]:
+    """Write file-based reports and return persisted output mode names."""
+    output_modes: list[str] = []
+    md_path = output_md
+    if md_path is None and config.reporters.markdown:
+        md_path = ".council-review.md"
+    if md_path:
+        from .reporters.markdown import write_markdown_report
+        write_markdown_report(
+            verdict=verdict,
+            output_path=md_path,
+            review_pack=review_pack,
+            reviewer_outputs=reviewer_outputs,
+            audience=audience,
+        )
+        console.print(f"  Review saved to: {md_path}", style="dim")
+        output_modes.append("markdown")
+
+    json_path = output_json
+    if json_path is None and ci:
+        json_path = "council-report.json"
+    json_config = config.reporters.json_report
+    if json_path is None and json_config is True:
+        json_path = "council-report.json"
+    if json_path is None and json_config == "ci" and ci:
+        json_path = "council-report.json"
+    if json_path:
+        from .reporters.json_report import write_json_report
+        write_json_report(
+            verdict=verdict,
+            output_path=json_path,
+            review_pack=review_pack,
+            reviewer_outputs=reviewer_outputs,
+        )
+        console.print(f"  JSON report saved to: {json_path}", style="dim")
+        output_modes.append("json")
+
+    if output_html:
+        from .reporters.html_report import write_html_report
+        write_html_report(
+            verdict=verdict,
+            output_path=output_html,
+            audience=audience,
+            review_pack=review_pack,
+            reviewer_outputs=reviewer_outputs,
+        )
+        console.print(f"  HTML report saved to: {output_html}", style="dim")
+        output_modes.append("html")
+
+    return output_modes
+
+
+def _post_github_pr_report(*, verdict, reviewer_outputs, enabled: bool) -> str | None:
+    """Post the GitHub PR report when enabled and return its output mode."""
+    if not enabled:
+        return None
+
+    from .reporters.github_pr import post_github_pr_review
+    posted = post_github_pr_review(verdict, reviewer_outputs=reviewer_outputs)
+    if not posted:
+        console.print("  [dim]GitHub PR comment not posted (missing env/PR context or API failure).[/]")
+    return "github_pr"
+
+
+def _record_history_best_effort(
+    *,
+    root: Path,
+    config,
+    result,
+    ci: bool,
+    staged: bool,
+    branch: str | None,
+    audience: str,
+    output_modes: list[str],
+    started: float,
+) -> None:
+    """Persist review history without changing review exit behavior."""
+    if not config.history.enabled:
+        return
+
+    try:
+        from .history import record_review_history
+
+        history_path = record_review_history(
+            repo_root=root,
+            config=config,
+            verdict=result.verdict,
+            review_pack=result.review_pack,
+            reviewer_outputs=result.reviewer_outputs,
+            gate_result=result.gate_result,
+            ci_mode=ci,
+            staged=staged,
+            branch=branch,
+            audience=audience,
+            output_modes=output_modes,
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+        console.print(f"  History recorded to: {history_path}", style="dim")
+    except Exception as exc:
+        console.print(f"  [dim]History not recorded: {exc}[/]")
+
+
+def _enforce_ci_exit_code(*, ci: bool, verdict, config) -> None:
+    """Apply existing CI/advisory exit semantics."""
+    if ci and verdict.degraded and config.enforcement.on_integrity_issue == "fail":
+        console.print(
+            "\n  Merge blocked: integrity issues detected in degraded review run "
+            "(on_integrity_issue=fail).",
+            style="bold red",
+        )
+        raise typer.Exit(code=1)
+
+    if ci and verdict.verdict == "FAIL":
+        console.print("\n  Merge blocked. Fix issues and push again.", style="bold red")
+        raise typer.Exit(code=1)
+    if ci and verdict.verdict == "PASS_WITH_WARNINGS":
+        block_on = config.enforcement.ci_block_on
+        if block_on == "PASS_WITH_WARNINGS":
+            console.print("\n  Merge blocked (ci_block_on=PASS_WITH_WARNINGS).", style="bold red")
+            raise typer.Exit(code=1)
+
+    if not ci and verdict.verdict == "FAIL":
+        console.print("  [INFO] These findings will be enforced in CI.", style="yellow")
+
+
 @app.command()
 def review(
     ci: bool = typer.Option(False, "--ci", help="CI mode: exit 1 on FAIL, force JSON output"),
@@ -60,7 +197,6 @@ def review(
     root = Path(repo_root) if repo_root else Path.cwd()
     config = load_config(root)
     started = time.monotonic()
-    output_modes: list[str] = []
 
     # Resolve audience: CLI flag > config default > "developer"
     resolved_audience = audience or config.presentation.default_audience or "developer"
@@ -113,110 +249,37 @@ def review(
         ci_mode=ci,
         audience=resolved_audience,
     )
-    output_modes.append("terminal")
+    output_modes = _write_artifact_reports(
+        verdict=verdict,
+        review_pack=result.review_pack,
+        reviewer_outputs=result.reviewer_outputs,
+        config=config,
+        ci=ci,
+        output_md=output_md,
+        output_json=output_json,
+        output_html=output_html,
+        audience=resolved_audience,
+    )
+    pr_mode = _post_github_pr_report(
+        verdict=verdict,
+        reviewer_outputs=result.reviewer_outputs,
+        enabled=github_pr or config.reporters.github_pr,
+    )
+    if pr_mode is not None:
+        output_modes.append(pr_mode)
 
-    # Markdown report
-    md_path = output_md
-    if md_path is None and config.reporters.markdown:
-        md_path = ".council-review.md"
-    if md_path:
-        from .reporters.markdown import write_markdown_report
-        write_markdown_report(
-            verdict=verdict,
-            output_path=md_path,
-            review_pack=result.review_pack,
-            reviewer_outputs=result.reviewer_outputs,
-            audience=resolved_audience,
-        )
-        console.print(f"  Review saved to: {md_path}", style="dim")
-        output_modes.append("markdown")
-
-    # JSON report (always in CI mode, or if explicitly requested)
-    json_path = output_json
-    if json_path is None and ci:
-        json_path = "council-report.json"
-    json_config = config.reporters.json_report
-    if json_path is None and json_config is True:
-        json_path = "council-report.json"
-    if json_path is None and json_config == "ci" and ci:
-        json_path = "council-report.json"
-
-    if json_path:
-        from .reporters.json_report import write_json_report
-        write_json_report(
-            verdict=verdict,
-            output_path=json_path,
-            review_pack=result.review_pack,
-            reviewer_outputs=result.reviewer_outputs,
-        )
-        console.print(f"  JSON report saved to: {json_path}", style="dim")
-        output_modes.append("json")
-
-    # HTML report
-    if output_html:
-        from .reporters.html_report import write_html_report
-        write_html_report(
-            verdict=verdict,
-            output_path=output_html,
-            audience=resolved_audience,
-            review_pack=result.review_pack,
-            reviewer_outputs=result.reviewer_outputs,
-        )
-        console.print(f"  HTML report saved to: {output_html}", style="dim")
-        output_modes.append("html")
-
-    # GitHub PR reporter (annotations + sticky comment)
-    if github_pr or config.reporters.github_pr:
-        from .reporters.github_pr import post_github_pr_review
-        posted = post_github_pr_review(verdict, reviewer_outputs=result.reviewer_outputs)
-        if not posted:
-            console.print("  [dim]GitHub PR comment not posted (missing env/PR context or API failure).[/]")
-        output_modes.append("github_pr")
-
-    if config.history.enabled:
-        try:
-            from .history import record_review_history
-
-            history_path = record_review_history(
-                repo_root=root,
-                config=config,
-                verdict=verdict,
-                review_pack=result.review_pack,
-                reviewer_outputs=result.reviewer_outputs,
-                gate_result=result.gate_result,
-                ci_mode=ci,
-                staged=staged,
-                branch=branch,
-                audience=resolved_audience,
-                output_modes=output_modes,
-                duration_ms=int((time.monotonic() - started) * 1000),
-            )
-            console.print(f"  History recorded to: {history_path}", style="dim")
-        except Exception as exc:
-            console.print(f"  [dim]History not recorded: {exc}[/]")
-
-    # Exit code
-    if ci and verdict.degraded and config.enforcement.on_integrity_issue == "fail":
-        console.print(
-            "\n  Merge blocked: integrity issues detected in degraded review run "
-            "(on_integrity_issue=fail).",
-            style="bold red",
-        )
-        raise typer.Exit(code=1)
-
-    if ci and verdict.verdict == "FAIL":
-        console.print("\n  Merge blocked. Fix issues and push again.", style="bold red")
-        raise typer.Exit(code=1)
-    elif ci and verdict.verdict == "PASS_WITH_WARNINGS":
-        block_on = config.enforcement.ci_block_on
-        if block_on == "PASS_WITH_WARNINGS":
-            console.print("\n  Merge blocked (ci_block_on=PASS_WITH_WARNINGS).", style="bold red")
-            raise typer.Exit(code=1)
-
-    # Advisory mode — always exit 0
-    if not ci:
-        if verdict.verdict == "FAIL":
-            console.print("  [INFO] These findings will be enforced in CI.", style="yellow")
+    _record_history_best_effort(
+        root=root,
+        config=config,
+        result=result,
+        ci=ci,
+        staged=staged,
+        branch=branch,
+        audience=resolved_audience,
+        output_modes=output_modes,
+        started=started,
+    )
+    _enforce_ci_exit_code(ci=ci, verdict=verdict, config=config)
 
 
 @app.command()
@@ -280,7 +343,12 @@ def history_summary(
 ) -> None:
     """Print local repeated-finding and debt trends for this repository."""
     from .config import load_config
-    from .history import format_history_summary, summarize_history
+    from .history import (
+        HistoryPathError,
+        HistorySchemaError,
+        format_history_summary,
+        summarize_history,
+    )
 
     root = Path(repo_root) if repo_root else Path.cwd()
     config = load_config(root)
@@ -288,12 +356,17 @@ def history_summary(
         console.print("History is disabled for this repository.", style="dim")
         return
 
-    summary = summarize_history(
-        repo_root=root,
-        history_config=config.history,
-        days=max(1, days),
-        limit=max(1, limit),
-    )
+    try:
+        summary = summarize_history(
+            repo_root=root,
+            history_config=config.history,
+            days=max(1, days),
+            limit=max(1, limit),
+        )
+    except (OSError, sqlite3.Error, HistoryPathError, HistorySchemaError) as exc:
+        console.print(f"History summary failed: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
     for line in format_history_summary(summary):
         console.print(line)
 

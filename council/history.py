@@ -226,7 +226,14 @@ def record_review_history(
     output_modes: list[str],
     duration_ms: int,
 ) -> Path:
-    """Persist one review run using the configured best-effort history store."""
+    """Persist one completed review run and return the SQLite database path.
+
+    The caller owns best-effort error handling: this function may raise storage,
+    path, or schema exceptions, but review verdicts and exit codes should not
+    change when history recording fails. `output_modes` should contain persisted
+    side-effect modes such as markdown, json, html, and github_pr; terminal
+    rendering is intentionally not stored as a history output mode.
+    """
     history_config = config.history
     db_path = resolve_history_path(history_config.path, repo_root)
     repo_id, repo_display = repository_identity(repo_root)
@@ -330,7 +337,11 @@ def prune_history(
     retention_days: int,
     now: datetime | None = None,
 ) -> int:
-    """Delete run rows older than the retention window for this repository."""
+    """Delete expired run rows for one repository and return rows pruned.
+
+    Dependent finding rows are removed by the `findings.run_id` foreign-key
+    cascade. A non-positive retention window disables pruning and returns 0.
+    """
     if retention_days <= 0:
         return 0
     cutoff = (now or datetime.now(UTC)) - timedelta(days=retention_days)
@@ -627,42 +638,63 @@ def _repeat_summaries(
 ) -> list[RepeatFindingSummary]:
     repeat_rows = conn.execute(
         """
-        SELECT f.fingerprint, COUNT(DISTINCT f.run_id) AS run_count, MAX(r.created_at) AS latest_seen
-        FROM findings f
-        JOIN runs r ON r.id = f.run_id
-        WHERE r.repo_id = ? AND r.created_at >= ?
-        GROUP BY f.fingerprint
-        HAVING COUNT(DISTINCT f.run_id) >= 2
-        ORDER BY run_count DESC, latest_seen DESC
-        LIMIT ?
+        WITH repeated AS (
+            SELECT
+                f.fingerprint,
+                COUNT(DISTINCT f.run_id) AS run_count,
+                MAX(r.created_at) AS latest_seen
+            FROM findings f
+            JOIN runs r ON r.id = f.run_id
+            WHERE r.repo_id = ? AND r.created_at >= ?
+            GROUP BY f.fingerprint
+            HAVING COUNT(DISTINCT f.run_id) >= 2
+            ORDER BY run_count DESC, latest_seen DESC
+            LIMIT ?
+        ),
+        latest_metadata AS (
+            SELECT
+                f.fingerprint,
+                f.severity,
+                f.category,
+                f.file_path,
+                f.reviewer_id,
+                f.policy_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY f.fingerprint
+                    ORDER BY r.created_at DESC, f.rowid DESC
+                ) AS row_num
+            FROM findings f
+            JOIN runs r ON r.id = f.run_id
+            JOIN repeated rep ON rep.fingerprint = f.fingerprint
+            WHERE r.repo_id = ?
+        )
+        SELECT
+            rep.fingerprint,
+            rep.run_count,
+            meta.severity,
+            meta.category,
+            meta.file_path,
+            meta.reviewer_id,
+            meta.policy_id
+        FROM repeated rep
+        JOIN latest_metadata meta
+            ON meta.fingerprint = rep.fingerprint AND meta.row_num = 1
+        ORDER BY rep.run_count DESC, rep.latest_seen DESC
         """,
-        (repo_id, since, limit),
+        (repo_id, since, limit, repo_id),
     ).fetchall()
 
     summaries: list[RepeatFindingSummary] = []
     for repeat in repeat_rows:
-        metadata = conn.execute(
-            """
-            SELECT f.severity, f.category, f.file_path, f.reviewer_id, f.policy_id
-            FROM findings f
-            JOIN runs r ON r.id = f.run_id
-            WHERE r.repo_id = ? AND f.fingerprint = ?
-            ORDER BY r.created_at DESC, f.rowid DESC
-            LIMIT 1
-            """,
-            (repo_id, repeat["fingerprint"]),
-        ).fetchone()
-        if metadata is None:
-            continue
         consecutive_count = _current_consecutive_count(conn, repo_id, repeat["fingerprint"])
         summaries.append(
             RepeatFindingSummary(
                 fingerprint=repeat["fingerprint"],
-                severity=metadata["severity"],
-                category=metadata["category"],
-                file_path=metadata["file_path"],
-                reviewer_id=metadata["reviewer_id"],
-                policy_id=metadata["policy_id"],
+                severity=repeat["severity"],
+                category=repeat["category"],
+                file_path=repeat["file_path"],
+                reviewer_id=repeat["reviewer_id"],
+                policy_id=repeat["policy_id"],
                 run_count=int(repeat["run_count"]),
                 consecutive_count=consecutive_count,
                 is_debt=consecutive_count >= 3,

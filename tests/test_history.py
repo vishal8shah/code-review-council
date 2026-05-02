@@ -60,6 +60,7 @@ def _verdict(
     *,
     description: str = "repeatable unsafe auth check",
     file_path: str = "src/app.py",
+    source_reviewers: list[str] | None = None,
     verdict: str = "FAIL",
 ) -> ChairVerdict:
     return ChairVerdict(
@@ -78,7 +79,7 @@ def _verdict(
                 suggestion="secret suggestion text must not be stored",
                 evidence_ref="secret evidence text must not be stored",
                 policy_id="security.auth",
-                source_reviewers=["secops"],
+                source_reviewers=source_reviewers or ["secops"],
                 chair_action="accepted",
                 chair_reasoning="secret chair reasoning must not be stored",
             )
@@ -108,7 +109,7 @@ def _record(repo_root, db_path, verdict: ChairVerdict | None = None, pack: Revie
         staged=False,
         branch="main",
         audience="developer",
-        output_modes=["terminal"],
+        output_modes=["markdown"],
         duration_ms=42,
     )
 
@@ -455,6 +456,34 @@ def test_summary_resets_debt_when_latest_run_lacks_fingerprint(tmp_path):
     assert summary.repeats[0].consecutive_count == 0
     assert summary.repeats[0].is_debt is False
     assert "[REPEAT]" in "\n".join(format_history_summary(summary))
+
+
+def test_repeat_summaries_batch_metadata_lookup_keeps_latest_metadata(tmp_path):
+    db_path = tmp_path / "history.sqlite"
+
+    _record(
+        tmp_path,
+        db_path,
+        verdict=_verdict(source_reviewers=["secops"]),
+    )
+    _record(
+        tmp_path,
+        db_path,
+        verdict=_verdict(source_reviewers=["qa"]),
+    )
+
+    summary = summarize_history(
+        repo_root=tmp_path,
+        history_config=_config().history,
+        days=30,
+        limit=10,
+    )
+
+    assert len(summary.repeats) == 1
+    assert summary.repeats[0].file_path == "src/app.py"
+    assert summary.repeats[0].reviewer_id == "qa"
+    assert summary.repeats[0].run_count == 2
+    assert summary.repeats[0].consecutive_count == 2
 
 
 def test_doctor_history_health_reports_info_for_healthy_store(tmp_path):

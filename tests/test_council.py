@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from pathlib import Path
 from urllib.error import HTTPError
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -3704,6 +3705,59 @@ def test_cli_invalid_history_path_does_not_change_ci_exit_behavior():
     assert result.exit_code == 0
     assert "History not recorded" in result.output
     assert "must not traverse outside" in result.output
+
+
+def test_cli_github_pr_mode_is_recorded_without_terminal_output_mode(tmp_path):
+    from types import SimpleNamespace
+
+    from typer.testing import CliRunner
+
+    from council.cli import app
+
+    runner = CliRunner()
+    cfg = CouncilConfig()
+    cfg.history.path = "history.sqlite"
+    cfg.reporters.markdown = False
+    cfg.reporters.json_report = False
+    cfg.reporters.github_pr = False
+
+    result_obj = SimpleNamespace(
+        verdict=ChairVerdict(
+            verdict="PASS",
+            confidence=0.95,
+            degraded=False,
+            summary="Clean.",
+            rationale="No blockers.",
+        ),
+        review_pack=ReviewPack(
+            diff_text="+print('ok')",
+            changed_files=["src/app.py"],
+            languages_detected=["python"],
+            total_lines_changed=1,
+            token_estimate=5,
+        ),
+        reviewer_outputs=[],
+        gate_result=None,
+    )
+
+    with patch("council.config.load_config", return_value=cfg), patch(
+        "council.orchestrator.run_council", new=AsyncMock(return_value=result_obj)
+    ), patch("council.reporters.github_pr.post_github_pr_review", return_value=True):
+        result = runner.invoke(
+            app,
+            ["review", "--branch", "main", "--repo", str(tmp_path), "--github-pr"],
+        )
+
+    assert result.exit_code == 0
+    conn = sqlite3.connect(tmp_path / "history.sqlite")
+    try:
+        output_modes = json.loads(
+            conn.execute("SELECT output_modes_json FROM runs").fetchone()[0]
+        )
+    finally:
+        conn.close()
+    assert output_modes == ["github_pr"]
+    assert "terminal" not in output_modes
 
 
 def test_instantiate_reviewers_resolves_relative_prompt_from_repo_root(tmp_path):

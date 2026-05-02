@@ -160,6 +160,11 @@ only when the same fingerprint appears in three consecutive review runs.
 If `history.path` is set, it must be relative to the repo and stay inside it;
 absolute paths, `~` escapes, and parent traversal are rejected.
 
+If history inspection cannot complete because the database is unavailable,
+corrupt, or has a newer unsupported schema, `council history summary` exits
+non-zero with a concise error. Review runs remain best-effort for history
+writes and do not change verdicts when local history cannot be recorded.
+
 ---
 
 ## 🔧 CI Setup (GitHub Actions)

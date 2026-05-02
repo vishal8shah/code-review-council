@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from typer.testing import CliRunner
 
 from council.cli import app
@@ -57,7 +59,7 @@ def _seed(repo_root, repeat_count: int) -> None:
             staged=False,
             branch="main",
             audience="developer",
-            output_modes=["terminal"],
+            output_modes=["markdown"],
             duration_ms=10,
         )
 
@@ -100,3 +102,50 @@ def test_history_summary_command_marks_debt_at_three_consecutive_runs(tmp_path):
     assert result.exit_code == 0
     assert "[DEBT]" in result.output
     assert "consecutive=3" in result.output
+
+
+def test_history_summary_invalid_path_exits_nonzero_with_friendly_error(tmp_path):
+    _write_config(tmp_path, "../outside.sqlite")
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["history", "summary", "--repo", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "History summary failed" in result.output
+    assert "must not traverse outside" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_history_summary_future_schema_exits_nonzero_with_friendly_error(tmp_path):
+    _write_config(tmp_path)
+    conn = sqlite3.connect(tmp_path / "history.sqlite")
+    try:
+        conn.execute(
+            "CREATE TABLE _schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO _schema_migrations(version, applied_at) VALUES (999, '2026-01-01T00:00:00Z')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["history", "summary", "--repo", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "History summary failed" in result.output
+    assert "schema" in result.output.lower()
+    assert "Traceback" not in result.output
+
+
+def test_history_summary_corrupt_database_exits_nonzero_with_friendly_error(tmp_path):
+    _write_config(tmp_path)
+    (tmp_path / "history.sqlite").write_bytes(b"not a sqlite database")
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["history", "summary", "--repo", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "History summary failed" in result.output
+    assert "Traceback" not in result.output

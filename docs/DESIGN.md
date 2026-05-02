@@ -1178,6 +1178,12 @@ validates path writability, schema currency, and retention/pruning health. It is
 INFO-only when healthy and WARN-only on storage/schema problems; it never blocks
 doctor or changes review verdicts.
 
+`council history summary` is an explicit inspection command, so storage,
+schema, or corrupt-database failures exit non-zero with a concise user-facing
+error instead of a Python traceback. Review runs keep the separate best-effort
+contract: failed history writes are reported as dim warnings and never change
+verdicts or CI exit semantics.
+
 Retention pruning deletes expired run rows and relies on the `findings.run_id`
 foreign-key cascade to remove dependent finding rows. This keeps cleanup aligned
 with the schema contract instead of duplicating child-table deletion logic.

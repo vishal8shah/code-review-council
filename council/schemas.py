@@ -154,6 +154,16 @@ class SupportFileSummary(BaseModel):
     summary: str
 
 
+class RepoTestContext(BaseModel):
+    """Bounded full-repo test discovery for changed source files."""
+
+    enabled: bool = False
+    scanned_test_files: list[str] = []
+    skipped_test_files: list[str] = []
+    limited: bool = False
+    coverage_map: dict[str, list[str]] = {}
+
+
 class ReviewPack(BaseModel):
     """Structured context assembled once, consumed by all reviewers.
 
@@ -170,6 +180,7 @@ class ReviewPack(BaseModel):
     # Enriched context
     changed_symbols: list[ChangedSymbol] = []
     test_coverage_map: dict[str, list[str]] = {}  # {source_file: [test_files]}
+    repo_test_context: RepoTestContext = RepoTestContext()
     languages_detected: list[str] = []
     support_files_outside_budget: list[SupportFileSummary] = []
 

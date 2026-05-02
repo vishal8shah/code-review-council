@@ -405,6 +405,9 @@ class TestConfig:
         assert config.history.path == ""
         assert config.history.retention_days == 180
         assert config.history.store_finding_text is False
+        assert config.context.full_repo_tests is True
+        assert config.context.max_test_files == 500
+        assert config.context.max_test_file_bytes == 20_000
         assert len(config.reviewers) > 0
 
     def test_load_toml_config(self, tmp_path):
@@ -427,6 +430,11 @@ path = ".local-history.sqlite"
 retention_days = 90
 store_finding_text = false
 
+[context]
+full_repo_tests = false
+max_test_files = 12
+max_test_file_bytes = 3456
+
 [[reviewers]]
 id = "secops"
 name = "SecOps"
@@ -442,6 +450,9 @@ enabled = true
         assert config.history.path == ".local-history.sqlite"
         assert config.history.retention_days == 90
         assert config.history.store_finding_text is False
+        assert config.context.full_repo_tests is False
+        assert config.context.max_test_files == 12
+        assert config.context.max_test_file_bytes == 3456
         assert len(config.reviewers) == 1
 
     def test_load_nested_council_reviewer_config(self, tmp_path):
@@ -3572,6 +3583,52 @@ def test_json_report_reviewer_includes_integrity_error(tmp_path):
     data = json.loads(out.read_text())
     assert data["reviewers"][0]["integrity_error"] is True
 
+
+def test_json_report_includes_repo_test_context_metadata(tmp_path):
+    from council.reporters.json_report import write_json_report
+    from council.schemas import RepoTestContext
+
+    verdict = ChairVerdict(verdict="PASS", confidence=0.9, summary="s", rationale="r")
+    review_pack = ReviewPack(
+        diff_text="+x",
+        changed_files=["src/app.py"],
+        repo_test_context=RepoTestContext(
+            enabled=True,
+            scanned_test_files=["tests/test_app.py"],
+            skipped_test_files=["tests/test_big.py"],
+            limited=True,
+            coverage_map={"src/app.py": ["tests/test_app.py"]},
+        ),
+    )
+    out = tmp_path / "report.json"
+
+    write_json_report(verdict, out, review_pack=review_pack)
+
+    data = json.loads(out.read_text())
+    assert data["metadata"]["repo_test_context"] == {
+        "enabled": True,
+        "scanned_test_files": 1,
+        "skipped_test_files": 1,
+        "limited": True,
+        "matched_source_files": 1,
+    }
+
+
+def test_terminal_reporter_warns_when_repo_test_context_limited(capsys):
+    from council.reporters.terminal import print_review_pack_summary
+    from council.schemas import RepoTestContext
+
+    print_review_pack_summary(
+        ReviewPack(
+            diff_text="+x",
+            repo_test_context=RepoTestContext(enabled=True, limited=True),
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "Repo-wide test context was capped" in output
+
+
 def test_github_pr_comment_and_annotations(capsys):
     from council.reporters.github_pr import _build_comment_body, _emit_annotations, MARKER
     findings = [
@@ -3977,6 +4034,37 @@ async def test_orchestrator_minor_parse_error_does_not_mark_degraded():
     assert mock_synth.await_count == 1
     assert mock_instantiate.call_args.kwargs["reviewer_timeout"] == 123.0
     assert mock_synth.await_args.kwargs["degraded"] is False
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_threads_explicit_repo_root_to_review_pack(tmp_path):
+    from council.orchestrator import run_council
+
+    cfg = CouncilConfig()
+    cfg.reviewers = []
+    diff_ctx = DiffContext(
+        files=[DiffFile(path="src/app.py", language="python", change_type="modified")],
+        changed_files=["src/app.py"],
+    )
+    rp = ReviewPack(diff_text="+x", changed_files=["src/app.py"])
+
+    with patch("council.orchestrator.parse_diff", return_value=diff_ctx), patch(
+        "council.orchestrator.gate_zero.check",
+        return_value=GateZeroResult(passed=True, hard_fail=False, findings=[]),
+    ), patch(
+        "council.orchestrator.diff_preprocessor.filter_context",
+        return_value=(diff_ctx, []),
+    ), patch(
+        "council.orchestrator.diff_preprocessor.process",
+        return_value=(diff_ctx, [], []),
+    ), patch("council.orchestrator.rp_module.assemble", return_value=rp) as mock_assemble:
+        await run_council(
+            repo_root=tmp_path,
+            config=cfg,
+            diff_text="diff --git a/src/app.py b/src/app.py\n",
+        )
+
+    assert mock_assemble.call_args.kwargs["repo_root"] == tmp_path
 
 
 def test_orchestrator_integrity_error_helper_strictness():

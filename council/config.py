@@ -110,6 +110,14 @@ class PresentationConfig(BaseModel):
     default_audience: Literal["developer", "owner"] = "developer"
 
 
+class ContextConfig(BaseModel):
+    """Repository context discovery settings."""
+
+    full_repo_tests: bool = True
+    max_test_files: int = 500
+    max_test_file_bytes: int = 20_000
+
+
 class HistoryConfig(BaseModel):
     """Local review-history settings."""
 
@@ -135,6 +143,7 @@ class CouncilConfig(BaseModel):
     reporters: ReportersConfig = ReportersConfig()
     cost: CostConfig = CostConfig()
     presentation: PresentationConfig = PresentationConfig()
+    context: ContextConfig = ContextConfig()
     history: HistoryConfig = HistoryConfig()
 
     @property
@@ -218,6 +227,7 @@ def load_config(repo_root: Path | None = None) -> CouncilConfig:
     reporters_raw = raw.get("reporters", {})
     cost_raw = raw.get("cost", {})
     presentation_raw = raw.get("presentation", {})
+    context_raw = raw.get("context", {})
     history_raw = raw.get("history", {})
 
     # Parse reviewers — support both [[reviewers]] and [[reviewers.custom]]
@@ -240,5 +250,6 @@ def load_config(repo_root: Path | None = None) -> CouncilConfig:
         reporters=ReportersConfig(**reporters_raw),
         cost=CostConfig(**cost_raw),
         presentation=PresentationConfig(**presentation_raw),
+        context=ContextConfig(**context_raw),
         history=HistoryConfig(**history_raw),
     )

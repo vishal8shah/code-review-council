@@ -94,6 +94,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 | Phase 3 portability | Shared LiteLLM transport falls back from native JSON mode, `council doctor` preflights setup, and reports surface transport notes |
 | Phase 3 PR + Windows hardening | GitHub PR summaries/inline comments are best-effort, Git diff decoding is lossless with `surrogateescape`, terminal output is Windows-safe, and generated CI is pinned to Gemini with configurable reviewer timeouts |
 | Phase 4A guidance/onboarding | `council init` and `council doctor` now surface next steps, and terminal/Markdown/HTML/GitHub reports share deterministic fix prompts, verification steps, and review next steps |
+| Phase 4C bounded repo test context | ReviewPack keeps diff-local `test_coverage_map` separate from bounded `repo_test_context` so reviewers can see tests outside the diff without treating the scan as full coverage proof |
 
 ---
 
@@ -108,7 +109,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 - **Changed AND deleted symbol detection** — reviewers see what was removed, not just what was added
 - **Policy context flows end-to-end** — config settings reach reviewers and Chair
 - **Path traversal protection** and CI safety warnings built in
-- **300 collected tests across all modules** covering legacy flow plus Phase 3 transport fallback, doctor checks, GitHub reporting behavior, Windows terminal safety, lossless diff ingestion, and Phase 4A guidance surfaces
+- **343 passing tests across all modules** covering legacy flow plus Phase 3 transport fallback, doctor checks, GitHub reporting behavior, Windows terminal safety, lossless diff ingestion, Phase 4A guidance surfaces, and Phase 4C bounded repo test context
 
 ---
 
@@ -119,15 +120,14 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 
 ### Accuracy
 
-- **Test coverage map searches diff files only** — labeled `IN DIFF` in prompts. Full repo search is deferred.
+- **Test coverage map remains diff-local** — repo-wide test matches live separately in `repo_test_context`.
 - **Test coverage matching is substring-based** — false positives possible on short filenames.
 - **Deleted symbol detection is a regex heuristic** — catches `def`/`class` patterns, not complex multiline signatures.
 - **`parse_diff` always runs `get_current_branch` subprocess** — unnecessary overhead in test/CI.
 
 ### Not Yet Implemented
 
-- **Full-repo test coverage discovery** — coverage mapping still works from the diff, not a repository-wide index.
-- **Local/CI parity and full-repo context planning** — remaining Phase 4A work after the guidance/onboarding slice.
+- **Full semantic repository indexing** — V4C scans bounded test context only; it is not a full code intelligence index.
 - **GitHub reporting remains best-effort** — sticky summaries, workflow annotations, and inline PR comments should not fail the review if the GitHub API is flaky.
 - **Editable prompts without code changes** — prompts are still in code rather than repo-editable assets. Future scope.
 - **Phase 4 intelligence layer** — starts with local history and privacy-preserving repeated-debt signals; opt-in autofix, confidence calibration, and external metrics remain future work.
@@ -139,6 +139,13 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 - `[DEBT]` is reserved for the same fingerprint appearing in three consecutive review runs for the repo.
 - SQLite schema changes use a forward-only `_schema_migrations` table.
 - Reviewer integrity diagnostics must never echo raw model output, prompts, diffs, or finding text.
+
+### Phase 4C Guardrails
+
+- Repo-wide test discovery is default-on but bounded by `[context]` file-count and file-size caps.
+- The scanner respects `.councilignore`, skips heavy directories, and treats read failures as non-blocking incomplete context.
+- Repo-wide test matches are evidence that tests exist, not proof of test quality or complete coverage.
+- `test_coverage_map` stays diff-local; repo-wide matches must remain in `repo_test_context`.
 
 ### Design Note
 

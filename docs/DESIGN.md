@@ -133,6 +133,7 @@ code-review-council/
 │   ├── doctor.py              # Preflight diagnostics for repo/model/GitHub setup
 │   ├── diff_parser.py         # Git diff → structured DiffContext
 │   ├── diff_preprocessor.py   # Filtering, truncation, token budgets
+│   ├── repo_context.py        # Bounded repo-wide test discovery
 │   ├── review_pack.py         # Assembles ReviewPack from diff + AST + policies
 │   ├── gate_zero.py           # Static pre-flight checks (docs, lint, types)
 │   ├── guidance.py            # Deterministic fix prompts, verification steps, next-step guidance
@@ -1145,7 +1146,7 @@ V4A delivered the setup and guidance work needed before adding more autonomy:
 1. **Docs-first consistency** — README, Getting Started, design docs, and site docs now align on provider defaults, GitHub workflow behavior, and local/CI parity.
 2. **Stronger fix guidance** — developer and owner reports are clearer about what to change, what to test, and when a human engineer should review the patch.
 3. **Safer self-serve defaults** — fail-closed CI integrity behavior remains the default, Gemini workflow requirements are documented, and `council doctor` is the standard first-run diagnostic.
-4. **Full-repo context expansion** — deferred to a later phase. Current ReviewPack context remains diff-local, and the docs should not imply repository-wide discovery until it ships.
+4. **Full-repo context expansion** — bounded repo-wide test discovery shipped in V4C; full semantic indexing remains deferred.
 
 ### V4B — Intelligence Layer
 
@@ -1188,6 +1189,20 @@ Retention pruning deletes expired run rows and relies on the `findings.run_id`
 foreign-key cascade to remove dependent finding rows. This keeps cleanup aligned
 with the schema contract instead of duplicating child-table deletion logic.
 
+### V4C — Bounded Full-Repo Test Context
+
+V4C adds a deliberately narrow repo-wide context pass before any autofix work.
+It scans existing test files for changed source files so reviewers do not treat
+"tests outside the diff" as "no tests found." The scan is bounded by `[context]`
+caps, respects `.councilignore`, skips heavy directories such as `.git`,
+`node_modules`, build/cache folders, virtual environments, and `*.egg-info`,
+and never changes review exit semantics when context is incomplete.
+
+The existing `test_coverage_map` remains diff-local. Repo-wide matches live in
+`ReviewPack.repo_test_context`, with `enabled`, scanned/skipped counts,
+`limited`, and a source-to-test coverage map. Prompts label this context as a
+bounded scan, not proof of test quality or complete coverage.
+
 ---
 
 ## 10. Key Design Decisions & Trade-offs
@@ -1217,3 +1232,4 @@ with the schema contract instead of duplicating child-table deletion logic.
 | v1.4 | 2026-04-11 | Phase 2 and Phase 3 update. ReviewPack now covers Python plus parser-free TypeScript/JavaScript exports, shared test-path classification is reused across Gate Zero and ReviewPack, LiteLLM transport now retries without native JSON mode when providers reject `response_format`, reports surface `output_mode` / transport notes, `council doctor` was added for preflight checks, and GitHub PR reporting now combines sticky summaries with best-effort inline comments. |
 | v1.5 | 2026-04-22 | Post-PR #12 docs baseline. GitHub workflows are documented as Gemini-pinned via `GOOGLE_API_KEY`, reviewer timeout and concurrency knobs are part of the config reference, Windows-safe terminal and lossless diff ingestion hardening are captured, and the Phase 4 roadmap is split into V4A onboarding/parity and V4B intelligence. 286 tests collected. |
 | v1.6 | 2026-04-22 | Phase 4B first-slice design. Local review history uses OS-cache SQLite by default, privacy-preserving finding fingerprints, forward-only schema migrations, `[DEBT]` only after three consecutive runs, and sanitized reviewer integrity diagnostics. Autofix remains deferred. |
+| v1.7 | 2026-05-03 | Phase 4C bounded full-repo test context. ReviewPack keeps diff-local `test_coverage_map` separate from `repo_test_context`, scans are capped by `[context]`, `.councilignore` is respected, and autofix remains deferred. |

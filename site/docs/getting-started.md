@@ -165,6 +165,24 @@ corrupt, or has a newer unsupported schema, `council history summary` exits
 non-zero with a concise error. Review runs remain best-effort for history
 writes and do not change verdicts when local history cannot be recorded.
 
+## Bounded Repo Test Context
+
+Phase 4C scans existing repo test files for changed source files so QA reviewers
+can distinguish tests outside the diff from no tests found. The scan is bounded,
+respects `.councilignore`, skips heavy directories such as `.git`,
+`node_modules`, build/cache folders, and virtual environments, and does not
+prove test quality or complete coverage.
+
+```toml
+[context]
+full_repo_tests = true
+max_test_files = 500
+max_test_file_bytes = 20000
+```
+
+If the scan hits a cap or cannot read a test file, Council keeps the review
+non-blocking and labels the repo-wide test context as incomplete.
+
 ---
 
 ## 🔧 CI Setup (GitHub Actions)

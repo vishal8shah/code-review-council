@@ -168,6 +168,24 @@ with the schema contract.
 
 ---
 
+## Phase 4C Bounded Test Context
+
+Phase 4C adds bounded full-repo test discovery before any autofix work. Council
+scans existing test files for changed source files so reviewers do not treat
+tests outside the diff as no tests found.
+
+The scan is controlled by `[context]`, defaults on, respects `.councilignore`,
+skips heavy directories such as `.git`, `node_modules`, build/cache folders,
+virtual environments, and `*.egg-info`, and caps both file count and file size.
+If context is capped or a file cannot be read, the review continues and the
+repo-wide context is labeled incomplete.
+
+The existing `test_coverage_map` remains diff-local. Repo-wide matches live in
+`ReviewPack.repo_test_context` and are presented as bounded evidence, not proof
+of test quality or complete coverage.
+
+---
+
 ## Cost & Latency
 
 No universal number is valid — cost and latency depend on configuration and workload. Primary factors:

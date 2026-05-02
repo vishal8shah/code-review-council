@@ -199,6 +199,7 @@ async def run_council(
         config=config,
         skipped_files=skipped_files,
         truncated_files=truncated_files,
+        repo_root=repo_root,
     )
 
     reviewer_instances = _instantiate_reviewers(

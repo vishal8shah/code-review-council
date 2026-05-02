@@ -87,9 +87,9 @@ V1 delivered the review gate. V2 expanded ReviewPack parity for Python,
 TypeScript, and JavaScript. V3 hardened provider portability, `council doctor`,
 and GitHub PR reporting. V4 is split deliberately: V4A delivered onboarding,
 deterministic fix guidance, local/CI parity docs, and safer self-serve defaults;
-full-repo context expansion remains deferred. V4B starts with local review
-history and privacy-preserving repeated-debt signals before any opt-in autofix
-work.
+V4B delivered local review history and privacy-preserving repeated-debt signals.
+V4C adds bounded full-repo test context for changed source files before any
+opt-in autofix work.
 
 ---
 

@@ -88,6 +88,11 @@ def print_review_pack_summary(review_pack: ReviewPack) -> None:
     if review_pack.files_skipped:
         names = ", ".join(_safe_text(name) for name in review_pack.files_skipped[:3])
         console.print(f"  Skipped {len(review_pack.files_skipped)} files: {names}", style="dim")
+    if review_pack.repo_test_context.limited:
+        console.print(
+            "  Repo-wide test context was capped or partially unavailable; coverage context may be incomplete.",
+            style="dim yellow",
+        )
 
 
 def print_reviewer_results(outputs: list[ReviewerOutput]) -> None:

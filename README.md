@@ -221,6 +221,13 @@ enabled = true
 [presentation]
 default_audience = "developer"
 
+# Optional bounded full-repo test discovery. This helps Council see existing
+# tests outside the diff without treating the scan as full coverage proof.
+[context]
+full_repo_tests = true
+max_test_files = 500
+max_test_file_bytes = 20000
+
 # Optional local review history. Defaults store metadata in the OS user cache,
 # not the repo, and do not persist raw diff/model text.
 [history]
@@ -352,6 +359,7 @@ prompt = "prompts/docs.md"
 - **JSON CI triage**: JSON reports include per-reviewer `error` and `integrity_error` so blocked runs are easier to debug in CI logs/artifacts.
 - **LiteLLM**: Single interface to call any LLM provider.
 - **Local history**: V4B records privacy-preserving run metadata and repeated-debt signals without storing raw diffs or model-generated finding text by default.
+- **Bounded repo test context**: V4C scans existing repo test files within configured caps so reviewers can distinguish "tests outside the diff" from "no tests found."
 
 ---
 
@@ -397,7 +405,7 @@ Add your infographic PNGs under `site/docs/assets/infographics/`. If you fork, u
 
 - **Model compatibility**: Council now retries without `response_format={"type": "json_object"}` when a provider/model rejects native JSON mode. That improves portability, but some providers still return malformed JSON or require prompt tuning. Council surfaces `output_mode` and transport notes when fallback transport is used or fails.
 - **Language support**: Gate Zero analyzers now cover Python, TypeScript, and JavaScript. ReviewPack symbol extraction also covers Python plus parser-free TypeScript/JavaScript exports, including default exports, interfaces, and type aliases. TypeScript/JavaScript analyzers remain disabled by default until explicitly enabled in `[gate_zero.analyzers]`. The diff preprocessor, reviewer panel, and Chair work with any language.
-- **Test coverage map**: Only detects test files present in the current diff, not the full repo. Python test matching uses import analysis, while TypeScript/JavaScript coverage uses relative-import and filename heuristics only. Files that stay in the filtered PR diff but fall outside the token budget still contribute to ReviewPack metadata and diff-local coverage hints.
+- **Test context**: `test_coverage_map` remains diff-local. V4C also adds bounded repo-wide test context that respects `.councilignore`, skips heavy directories, and is capped by `[context]`; it reduces false missing-test findings but is not a proof of test quality or complete coverage.
 - **Large file handling**: Reviewers still see a budgeted/truncated diff, not logical parser-aware chunks. Files or hunks excluded by token budget are surfaced in ReviewPack metadata so skipped tests/docs/config still remain visible to reviewers as changed support context.
 - **GitHub API variability**: `--github-pr` now supports sticky PR summaries, workflow annotations, and best-effort inline PR comments for accepted findings with file/line evidence. GitHub auth, rate limits, or API failures degrade reporting only; they do not invalidate the review itself. You can tune retries/timeouts with `COUNCIL_GITHUB_MAX_RETRIES`, `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS`, and `COUNCIL_GITHUB_HTTP_TIMEOUT` for noisy CI networks.
 
@@ -408,8 +416,9 @@ Add your infographic PNGs under `site/docs/assets/infographics/`. If you fork, u
 - [x] V1 — GitHub Actions CI gate, 4 reviewers, 2 output modes, BYOK for forks
 - [x] V2 — Python/TypeScript/JavaScript ReviewPack parity and shared test-path logic
 - [x] V3 — JSON transport fallback, `council doctor`, sticky + inline GitHub PR reporting
-- [x] V4A — Delivered friendlier onboarding, stronger fix guidance, Gemini CI docs, and safer self-serve defaults; full-repo context expansion remains deferred
+- [x] V4A — Delivered friendlier onboarding, stronger fix guidance, Gemini CI docs, and safer self-serve defaults
 - [x] V4B first slice — Delivered local review history, privacy-preserving repeated-debt signals, and trend summaries; autofix remains deferred
+- [x] V4C — Delivered bounded full-repo test context for changed source files; full semantic indexing and autofix remain deferred
 
 ---
 

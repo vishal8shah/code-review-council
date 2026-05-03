@@ -467,8 +467,8 @@ python = "ruff check --diff"
 
 [gate_zero.analyzers]
 python = true
-typescript = false  # implemented — enable explicitly when ready for TS enforcement
-javascript = false  # implemented — enable explicitly when ready for JS enforcement
+typescript = true  # parser-free TS heuristics; set false to opt out
+javascript = true  # parser-free JS heuristics; set false to opt out
 
 [[reviewers]]
 id = "secops"

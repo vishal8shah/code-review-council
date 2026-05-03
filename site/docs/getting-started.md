@@ -183,6 +183,20 @@ max_test_file_bytes = 20000
 If the scan hits a cap or cannot read a test file, Council keeps the review
 non-blocking and labels the repo-wide test context as incomplete.
 
+## Language Analyzers
+
+Gate Zero enables Python, TypeScript, and JavaScript analyzers by default.
+Python uses stdlib AST parsing; TypeScript and JavaScript use dependency-free
+export heuristics for documentation/type-presence checks. If a project needs a
+softer rollout, disable a language explicitly:
+
+```toml
+[gate_zero.analyzers]
+python = true
+typescript = false
+javascript = false
+```
+
 ---
 
 ## 🔧 CI Setup (GitHub Actions)

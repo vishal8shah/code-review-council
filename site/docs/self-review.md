@@ -66,7 +66,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 | 14 | `--ci` without `--branch` empty diff risk | Warning emitted |
 | 15 | Stray brace-expansion directory in repo | Removed |
 | 16 | Linter integration config-only, not implemented | Implemented with `shlex.split`, `{files}` placeholder, timeout/error handling |
-| 17 | TS/JS analyzer placeholders existed without implementation | Shipped dependency-free TS/JS Gate Zero analyzers and kept them disabled by default for an explicit rollout |
+| 17 | TS/JS analyzer placeholders existed without implementation | Shipped dependency-free TS/JS Gate Zero analyzers, then graduated them to default-on with per-language opt-out |
 | 18 | `council init` missing workflow scaffold | Now creates `.github/workflows/council-review.yml` |
 | 19 | "Chunking" naming implied splitting — actually truncation | Documented honestly as truncation |
 
@@ -91,6 +91,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 | BYOK workflow | Fork-safe workflow emitting `council-report.json` and `council-review.md` artifacts |
 | Config schema + defaults | `load_config()` accepts nested `[[council.reviewer]]` / `[[council.reviewers]]`; model mix updated to GPT-5.2/GPT-4o/GPT-4o-mini |
 | Phase 2 ReviewPack parity | ReviewPack and Gate Zero cover Python plus parser-free TypeScript/JavaScript exports and test-path heuristics |
+| Phase 4D language rollout | TypeScript and JavaScript Gate Zero analyzers are enabled by default using parser-free heuristics; projects can still opt out per language |
 | Phase 3 portability | Shared LiteLLM transport falls back from native JSON mode, `council doctor` preflights setup, and reports surface transport notes |
 | Phase 3 PR + Windows hardening | GitHub PR summaries/inline comments are best-effort, Git diff decoding is lossless with `surrogateescape`, terminal output is Windows-safe, and generated CI is pinned to Gemini with configurable reviewer timeouts |
 | Phase 4A guidance/onboarding | `council init` and `council doctor` now surface next steps, and terminal/Markdown/HTML/GitHub reports share deterministic fix prompts, verification steps, and review next steps |

@@ -69,7 +69,7 @@ class GateZeroConfig(BaseModel):
     check_secrets: bool = True
     max_file_lines: int = 1000
     linters: GateZeroLintersConfig = GateZeroLintersConfig()
-    analyzers: dict[str, bool] = {"python": True, "typescript": False, "javascript": False}
+    analyzers: dict[str, bool] = {"python": True, "typescript": True, "javascript": True}
 
 
 class ReviewerConfig(BaseModel):

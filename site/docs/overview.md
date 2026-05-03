@@ -89,7 +89,8 @@ and GitHub PR reporting. V4 is split deliberately: V4A delivered onboarding,
 deterministic fix guidance, local/CI parity docs, and safer self-serve defaults;
 V4B delivered local review history and privacy-preserving repeated-debt signals.
 V4C adds bounded full-repo test context for changed source files before any
-opt-in autofix work.
+opt-in autofix work. V4D graduates TypeScript and JavaScript Gate Zero analyzers
+to default-on while preserving per-language opt-out.
 
 ---
 

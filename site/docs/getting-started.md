@@ -201,16 +201,23 @@ javascript = false
 
 ## 🔧 CI Setup (GitHub Actions)
 
-After `council init`, two workflow files are scaffolded:
+After `council init`, three workflow files are scaffolded:
 
 | Workflow | Trigger | Use Case |
 |----------|---------|----------|
 | `council-review.yml` | `pull_request` | Automatic review on every PR from your own branches |
 | `council-byok.yml` | `workflow_dispatch` | Manual review for fork PRs, specific branches, or external contributors |
+| `council-openai-gate.yml` | `pull_request` | Required PR gate for other repos using `OPENAI_API_KEY` |
 
-Both generated workflows write a temporary Gemini config in CI using
+The Gemini workflows write a temporary Gemini config in CI using
 `gemini/gemini-3-pro-preview`, `reviewer_timeout_seconds = 360`, and
 `reviewer_concurrency = 1`.
+
+`council-openai-gate.yml` is the multi-repo deployment template. It installs
+Council from GitHub, fails closed if `OPENAI_API_KEY` is missing, and uses
+`openai/gpt-5.5` with `chair_reasoning_effort = "medium"` for Chair synthesis.
+Pin `COUNCIL_INSTALL_SPEC` to a release tag or commit SHA before making it a
+protected-branch requirement across many repos.
 
 ### Add your secrets, then push:
 

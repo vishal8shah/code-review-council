@@ -1,6 +1,6 @@
 # ⚙️ Workflows
 
-> Council ships with two GitHub Actions workflows. Which one you use depends on who opened the PR and whether secrets are available.
+> Council ships with three GitHub Actions workflows. Which one you use depends on who opened the PR, which provider key you want to use, and whether the target repo vendors Council source.
 
 ---
 
@@ -16,6 +16,8 @@ Who opened the PR?
    ▼              ▼
 council-review.yml    council-byok.yml
 (auto, on PR open)    (manual, workflow_dispatch)
+
+For required gates across your own TS/JS repos, use council-openai-gate.yml.
 ```
 
 ---
@@ -31,6 +33,15 @@ council-review.yml    council-byok.yml
 | **Input validation** | N/A | ✅ Branch ref + repo format validated |
 | **Artifacts** | `council-report.json` | `council-report.json` + `council-review.md` |
 | **Use case** | Every PR from your own branches | Fork PRs, external contributors, targeted re-runs |
+
+| | `council-openai-gate.yml` |
+|---|---|
+| **Trigger** | `pull_request` (automatic) |
+| **Secrets access** | Repository `OPENAI_API_KEY` secret |
+| **Fork PRs** | Fails closed when the key is unavailable |
+| **Install path** | Installs Council from `COUNCIL_INSTALL_SPEC` |
+| **Chair model** | `openai/gpt-5.5` with `chair_reasoning_effort = "medium"` |
+| **Use case** | Required branch-protection gate for other repos |
 
 ---
 
@@ -89,9 +100,35 @@ Before running, the BYOK workflow validates:
 Actions tab → council-byok → Run workflow → fill inputs → Run
 ```
 
-Both workflows use `gemini/gemini-3-pro-preview` in CI, set
+The Gemini workflows use `gemini/gemini-3-pro-preview` in CI, set
 `reviewer_timeout_seconds = 360`, and run reviewers sequentially with
 `reviewer_concurrency = 1` to reduce preview-model timeout/rate-limit noise.
+
+---
+
+## Required OpenAI PR Gate — `council-openai-gate.yml`
+
+Use this workflow when you want Council to be a required PR check across your
+TS/JS repositories without vendoring the Council source into each repo.
+
+### What it does
+
+1. Checks out the PR branch with full history
+2. Installs Council from `COUNCIL_INSTALL_SPEC`
+3. Fails closed if `OPENAI_API_KEY` is missing
+4. Writes a temporary OpenAI CI config with:
+   - Chair: `openai/gpt-5.5`
+   - Chair reasoning effort: `medium`
+   - Reviewers: OpenAI GPT-5.2 family
+   - TS/JS analyzers enabled
+5. Runs `council review --ci --github-pr --branch "$BASE_REF"` with
+   `BASE_REF` supplied from the PR base ref
+6. Uploads `council-report.json`
+
+!!! warning "Pin before broad rollout"
+    The scaffold defaults `COUNCIL_INSTALL_SPEC` to the main branch for early
+    adoption. Before making the check required across many repos, pin it to a
+    release tag or commit SHA.
 
 ---
 
@@ -99,7 +136,7 @@ Both workflows use `gemini/gemini-3-pro-preview` in CI, set
 
 | Artifact | File | Workflow | Contents |
 |----------|------|----------|----------|
-| `council-report` | `council-report.json` | Both | Full `ChairVerdict`: per-reviewer findings, confidence, degraded reasons, final verdict |
+| `council-report` | `council-report.json` | All workflows | Full `ChairVerdict`: per-reviewer findings, confidence, degraded reasons, final verdict |
 | `council-report` | `council-review.md` | BYOK only | Human-readable markdown review with next steps and accepted-finding fix guidance (developer or owner format) |
 
 ### Finding your artifacts

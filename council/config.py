@@ -131,6 +131,7 @@ class CouncilConfig(BaseModel):
     """Top-level council configuration — the full .council.toml schema."""
 
     chair_model: str = "openai/gpt-4o"
+    chair_reasoning_effort: str = ""
     fail_on: Literal["FAIL", "PASS_WITH_WARNINGS"] = "FAIL"
     timeout_seconds: int = 60
     reviewer_timeout_seconds: int = 60

@@ -303,10 +303,22 @@ async def invoke_json_completion(
     messages: list[dict[str, str]],
     timeout: float,
     temperature: float,
+    reasoning_effort: str | None = None,
     num_retries: int = 2,
     acompletion_func: Any | None = None,
 ) -> JSONCompletionResult:
-    """Call LiteLLM with native JSON mode first, then fallback when unsupported."""
+    """Call LiteLLM with native JSON mode first, then fallback when unsupported.
+
+    Args:
+        model: LiteLLM model identifier.
+        messages: Chat messages to send.
+        timeout: Request timeout in seconds.
+        temperature: Sampling temperature.
+        reasoning_effort: Optional provider-specific reasoning effort, such as
+            ``"medium"`` for GPT-5.5 Chair synthesis.
+        num_retries: LiteLLM retry count.
+        acompletion_func: Optional async completion function for tests.
+    """
     completion_func = acompletion_func or litellm.acompletion
     request_kwargs = {
         "model": model,
@@ -315,6 +327,8 @@ async def invoke_json_completion(
         "temperature": temperature,
         "num_retries": num_retries,
     }
+    if reasoning_effort:
+        request_kwargs["reasoning_effort"] = reasoning_effort
 
     try:
         response = await completion_func(

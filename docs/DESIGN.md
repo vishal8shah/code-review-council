@@ -972,10 +972,11 @@ jobs:
           prompt = "prompts/docs.md"
           enabled = true
           EOF
-      - run: council review --ci --github-pr --branch ${{ github.base_ref }} --output-json council-report.json
+      - run: council review --ci --github-pr --branch "$BASE_REF" --output-json council-report.json
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -1024,6 +1025,7 @@ For genuine emergencies (production down, hotfix needed now):
 ```toml
 [council]
 chair_model = "openai/gpt-4o"       # local scaffold default; CI workflow overrides to Gemini
+chair_reasoning_effort = ""         # optional; e.g. "medium" for GPT-5.5 Chair gates
 fail_on = "FAIL"                    # FAIL | PASS_WITH_WARNINGS
 timeout_seconds = 60                # Chair / owner-summary timeout
 reviewer_timeout_seconds = 60       # per-reviewer timeout
@@ -1210,6 +1212,15 @@ opt-in to default-on. The rollout keeps the same parser-free, dependency-free
 heuristics and preserves per-language opt-out in `[gate_zero.analyzers]` for
 projects that need a softer adoption path.
 
+### V4E — Multi-Repo GitHub Gate Packaging
+
+V4E adds a deployable OpenAI-backed PR gate for repositories that do not vendor
+Council source. `council-openai-gate.yml` installs Council from a configurable
+`COUNCIL_INSTALL_SPEC`, fails closed when `OPENAI_API_KEY` is missing, enables
+Python/TypeScript/JavaScript Gate Zero analyzers, and uses `openai/gpt-5.5`
+with `chair_reasoning_effort = "medium"` for Chair synthesis. The existing
+Gemini workflows remain available for this repo and BYOK fork review paths.
+
 ---
 
 ## 10. Key Design Decisions & Trade-offs
@@ -1241,3 +1252,4 @@ projects that need a softer adoption path.
 | v1.6 | 2026-04-22 | Phase 4B first-slice design. Local review history uses OS-cache SQLite by default, privacy-preserving finding fingerprints, forward-only schema migrations, `[DEBT]` only after three consecutive runs, and sanitized reviewer integrity diagnostics. Autofix remains deferred. |
 | v1.7 | 2026-05-03 | Phase 4C bounded full-repo test context. ReviewPack keeps diff-local `test_coverage_map` separate from `repo_test_context`, scans are capped by `[context]`, `.councilignore` is respected, and autofix remains deferred. |
 | v1.8 | 2026-05-03 | Phase 4D TypeScript/JavaScript analyzer rollout. Gate Zero now enables dependency-free TypeScript and JavaScript analyzers by default while preserving per-language opt-out controls. |
+| v1.9 | 2026-05-03 | Phase 4E multi-repo gate packaging. Added `council-openai-gate.yml`, OpenAI GPT-5.5 medium-reasoning Chair config, and an explicit `chair_reasoning_effort` runtime option. |

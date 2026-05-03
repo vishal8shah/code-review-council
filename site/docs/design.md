@@ -196,6 +196,16 @@ type-presence checks. Projects can disable individual languages in
 
 ---
 
+## Phase 4E Multi-Repo GitHub Gate
+
+Phase 4E adds `council-openai-gate.yml` for repositories that should enforce
+Council as a required PR check without vendoring Council source. The workflow
+installs Council from `COUNCIL_INSTALL_SPEC`, fails closed when
+`OPENAI_API_KEY` is missing, and uses `openai/gpt-5.5` with
+`chair_reasoning_effort = "medium"` for Chair synthesis.
+
+---
+
 ## Cost & Latency
 
 No universal number is valid — cost and latency depend on configuration and workload. Primary factors:

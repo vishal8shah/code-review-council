@@ -38,7 +38,7 @@ Phase 4A onboarding / fix-guidance slice.
 ### Round 2 Peer Review Fixes
 | # | Issue | Fix |
 |---|-------|-----|
-| 20 | Workflow template assumed PyPI publication | Changed to `pip install .` |
+| 20 | Workflow template assumed PyPI publication | Self-repo workflows use `pip install .`; multi-repo gate installs Council from GitHub |
 | 21 | Degraded mode only checked asyncio exceptions | Unified: exceptions + invalid JSON + malformed findings all set degraded |
 | 22 | `degraded_reasons` not visible | Added `degraded_reasons: list[str]` to ChairVerdict, propagated through all return paths, surfaced in terminal/markdown reporters |
 | 23 | Deleted symbols invisible to reviewers | `_extract_deleted_symbols()` scans removed hunk lines for function/class defs |
@@ -62,6 +62,7 @@ Phase 4A onboarding / fix-guidance slice.
 | Phase 4A guidance/onboarding | `council init` and `council doctor` now surface next steps, and terminal/Markdown/HTML/GitHub reports share deterministic fix prompts, verification steps, and review next steps |
 | Phase 4C bounded repo test context | ReviewPack now keeps diff-local `test_coverage_map` separate from bounded `repo_test_context` so reviewers can see existing tests outside the diff without treating the scan as full coverage proof |
 | Phase 4D language rollout | TypeScript and JavaScript Gate Zero analyzers are enabled by default using parser-free heuristics; projects can still opt out per language |
+| Phase 4E multi-repo gate packaging | Added an OpenAI-backed required PR gate template that installs Council from GitHub and uses GPT-5.5 medium-reasoning Chair synthesis |
 
 ---
 

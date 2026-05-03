@@ -269,6 +269,7 @@ async def run_council(
         review_pack=review_pack,
         reviews=reviewer_outputs,
         chair_model=config.chair_model,
+        chair_reasoning_effort=config.chair_reasoning_effort or None,
         degraded=degraded,
         degraded_reasons=integrity_issues if integrity_issues else None,
         timeout=float(config.timeout_seconds),

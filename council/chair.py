@@ -371,6 +371,7 @@ async def _invoke_and_parse_chair(
     review_pack: ReviewPack,
     reviews: list[ReviewerOutput],
     chair_model: str,
+    chair_reasoning_effort: str | None,
     degraded: bool,
     degraded_reasons: list[str] | None,
     timeout: float,
@@ -385,6 +386,7 @@ async def _invoke_and_parse_chair(
             ],
             timeout=timeout,
             temperature=0.1,
+            reasoning_effort=chair_reasoning_effort,
             num_retries=2,
             acompletion_func=litellm.acompletion,
         )
@@ -408,6 +410,7 @@ async def synthesize(
     review_pack: ReviewPack,
     reviews: list[ReviewerOutput],
     chair_model: str = "openai/gpt-4o",
+    chair_reasoning_effort: str | None = None,
     degraded: bool = False,
     degraded_reasons: list[str] | None = None,
     timeout: float = 120.0,
@@ -417,6 +420,16 @@ async def synthesize(
     Returns a ChairVerdict. If all reviewers passed, returns immediately
     via the fast path. Otherwise invokes the chair LLM and fails closed
     on transport or parsing errors.
+
+    Args:
+        review_pack: Structured context assembled for the review.
+        reviews: Reviewer outputs to adjudicate.
+        chair_model: LiteLLM model identifier for Chair synthesis.
+        chair_reasoning_effort: Optional provider-specific reasoning effort,
+            such as ``"medium"`` for GPT-5.5 Chair gates.
+        degraded: Whether reviewer integrity/transport issues occurred.
+        degraded_reasons: Sanitized reasons for degraded mode.
+        timeout: Chair request timeout in seconds.
     """
     fast_path = _chair_fast_path_verdict(reviews, degraded, degraded_reasons)
     if fast_path is not None:
@@ -426,6 +439,7 @@ async def synthesize(
         review_pack=review_pack,
         reviews=reviews,
         chair_model=chair_model,
+        chair_reasoning_effort=chair_reasoning_effort,
         degraded=degraded,
         degraded_reasons=degraded_reasons,
         timeout=timeout,

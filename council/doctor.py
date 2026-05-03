@@ -51,6 +51,7 @@ def build_review_profile(config: CouncilConfig) -> list[str]:
             f"reviewer {config.reviewer_timeout_seconds}s, "
             f"concurrency {config.reviewer_concurrency}"
         ),
+        f"Chair reasoning effort: {config.chair_reasoning_effort or 'provider default'}",
         f"Default audience: {config.presentation.default_audience}",
         f"Integrity policy: {config.enforcement.on_integrity_issue}",
         (

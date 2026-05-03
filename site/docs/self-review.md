@@ -74,7 +74,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 
 | # | Issue Found | Fix Applied |
 |---|-------------|-------------|
-| 20 | Workflow template assumed PyPI publication | Changed to `pip install .` |
+| 20 | Workflow template assumed PyPI publication | Self-repo workflows use `pip install .`; multi-repo gate installs Council from GitHub |
 | 21 | Degraded mode only caught asyncio exceptions | Unified: exceptions + invalid JSON + malformed findings all trigger degraded |
 | 22 | `degraded_reasons` not visible to users | Added `degraded_reasons: list[str]` to ChairVerdict, propagated through all return paths, surfaced in reporters |
 | 23 | Deleted symbols invisible to reviewers | `_extract_deleted_symbols()` scans removed hunk lines for function/class defs |
@@ -92,6 +92,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 | Config schema + defaults | `load_config()` accepts nested `[[council.reviewer]]` / `[[council.reviewers]]`; model mix updated to GPT-5.2/GPT-4o/GPT-4o-mini |
 | Phase 2 ReviewPack parity | ReviewPack and Gate Zero cover Python plus parser-free TypeScript/JavaScript exports and test-path heuristics |
 | Phase 4D language rollout | TypeScript and JavaScript Gate Zero analyzers are enabled by default using parser-free heuristics; projects can still opt out per language |
+| Phase 4E multi-repo gate packaging | Added an OpenAI-backed required PR gate template that installs Council from GitHub and uses GPT-5.5 medium-reasoning Chair synthesis |
 | Phase 3 portability | Shared LiteLLM transport falls back from native JSON mode, `council doctor` preflights setup, and reports surface transport notes |
 | Phase 3 PR + Windows hardening | GitHub PR summaries/inline comments are best-effort, Git diff decoding is lossless with `surrogateescape`, terminal output is Windows-safe, and generated CI is pinned to Gemini with configurable reviewer timeouts |
 | Phase 4A guidance/onboarding | `council init` and `council doctor` now surface next steps, and terminal/Markdown/HTML/GitHub reports share deterministic fix prompts, verification steps, and review next steps |

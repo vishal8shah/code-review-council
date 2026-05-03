@@ -408,6 +408,11 @@ class TestConfig:
         assert config.context.full_repo_tests is True
         assert config.context.max_test_files == 500
         assert config.context.max_test_file_bytes == 20_000
+        assert config.gate_zero.analyzers == {
+            "python": True,
+            "typescript": True,
+            "javascript": True,
+        }
         assert len(config.reviewers) > 0
 
     def test_load_toml_config(self, tmp_path):
@@ -423,6 +428,11 @@ reviewer_concurrency = 1
 [gate_zero]
 require_docs = false
 check_secrets = true
+
+[gate_zero.analyzers]
+python = true
+typescript = false
+javascript = false
 
 [history]
 enabled = true
@@ -447,6 +457,8 @@ enabled = true
         assert config.reviewer_timeout_seconds == 45
         assert config.reviewer_concurrency == 1
         assert config.gate_zero.require_docs is False
+        assert config.gate_zero.analyzers["typescript"] is False
+        assert config.gate_zero.analyzers["javascript"] is False
         assert config.history.path == ".local-history.sqlite"
         assert config.history.retention_days == 90
         assert config.history.store_finding_text is False
@@ -653,10 +665,9 @@ class TestGateZero:
         result = check(ctx, config)
         assert result.hard_fail is True
 
-    def test_check_language_specific_emits_typescript_findings_when_enabled(self):
-        """TypeScript Gate Zero findings appear only when its analyzer is enabled."""
+    def test_check_language_specific_emits_typescript_findings_by_default(self):
+        """TypeScript Gate Zero findings are enabled by default."""
         config = CouncilConfig()
-        config.gate_zero.analyzers["typescript"] = True
         ctx = DiffContext(
             files=[_make_source_file("src/example.ts", "typescript", SAMPLE_TYPESCRIPT_SOURCE)],
             changed_files=["src/example.ts"],
@@ -669,10 +680,21 @@ class TestGateZero:
         assert "undocumentedThing" in messages
         assert "missingArrow" in messages
 
-    def test_check_language_specific_emits_javascript_findings_when_enabled(self):
-        """JavaScript Gate Zero doc findings appear when its analyzer is enabled."""
+    def test_check_language_specific_respects_typescript_opt_out(self):
+        """Projects can still opt out of TypeScript Gate Zero enforcement."""
         config = CouncilConfig()
-        config.gate_zero.analyzers["javascript"] = True
+        config.gate_zero.analyzers["typescript"] = False
+        ctx = DiffContext(
+            files=[_make_source_file("src/example.ts", "typescript", SAMPLE_TYPESCRIPT_SOURCE)],
+            changed_files=["src/example.ts"],
+            added_files=["src/example.ts"],
+        )
+
+        assert check_language_specific(ctx, config.gate_zero) == []
+
+    def test_check_language_specific_emits_javascript_findings_by_default(self):
+        """JavaScript Gate Zero doc findings are enabled by default."""
+        config = CouncilConfig()
         ctx = DiffContext(
             files=[_make_source_file("src/example.js", "javascript", SAMPLE_JAVASCRIPT_SOURCE)],
             changed_files=["src/example.js"],
@@ -684,6 +706,18 @@ class TestGateZero:
 
         assert "undocumentedThing" in messages
         assert "MissingDocsWidget" in messages
+
+    def test_check_language_specific_respects_javascript_opt_out(self):
+        """Projects can still opt out of JavaScript Gate Zero enforcement."""
+        config = CouncilConfig()
+        config.gate_zero.analyzers["javascript"] = False
+        ctx = DiffContext(
+            files=[_make_source_file("src/example.js", "javascript", SAMPLE_JAVASCRIPT_SOURCE)],
+            changed_files=["src/example.js"],
+            added_files=["src/example.js"],
+        )
+
+        assert check_language_specific(ctx, config.gate_zero) == []
 
     def test_check_language_specific_python_behavior_remains_unchanged(self):
         """Python Gate Zero findings still work after adding TS/JS analyzers."""
@@ -821,6 +855,39 @@ class TestTypeScriptAnalyzer:
         assert analyzer.check_docs(SAMPLE_TYPESCRIPT_SOURCE, "src/__tests__/example.spec.ts") == []
         assert analyzer.check_types(SAMPLE_TYPESCRIPT_SOURCE, "src/component.test.tsx") == []
 
+    def test_tsx_component_with_typed_props_does_not_emit_type_findings(self):
+        """Typed React-style TSX exports pass the parser-free type heuristic."""
+        source = '''\
+/** Render a widget card. */
+export function WidgetCard<T>({ item }: WidgetProps<T>): JSX.Element {
+    return <section>{item.label}</section>;
+}
+
+/** Render a compact widget. */
+export const CompactWidget = (props: WidgetProps<string>): JSX.Element => {
+    return <section>{props.item.label}</section>;
+};
+'''
+        analyzer = TypeScriptAnalyzer()
+
+        assert analyzer.check_docs(source, "src/components/widget-card.tsx") == []
+        assert analyzer.check_types(source, "src/components/widget-card.tsx") == []
+
+    def test_typescript_optional_and_default_params_require_annotations(self):
+        """Optional/default syntax is accepted only when an explicit type is present."""
+        source = '''\
+/** Configure a widget. */
+export function configureWidget(name: string, retries?: number, enabled = true): void {
+    return;
+}
+'''
+        analyzer = TypeScriptAnalyzer()
+        messages = " ".join(f.message for f in analyzer.check_types(source, "src/widget.ts"))
+
+        assert "Parameter `enabled`" in messages
+        assert "Parameter `name`" not in messages
+        assert "Parameter `retries" not in messages
+
 
 class TestJavaScriptAnalyzer:
     """JavaScript-specific Gate Zero analysis."""
@@ -848,6 +915,17 @@ class TestJavaScriptAnalyzer:
         analyzer = JavaScriptAnalyzer()
         assert analyzer.check_docs(SAMPLE_JAVASCRIPT_SOURCE, "src/__tests__/example.spec.js") == []
         assert analyzer.check_types(SAMPLE_JAVASCRIPT_SOURCE, "src/component.test.jsx") == []
+
+    def test_documented_default_export_function_passes(self):
+        """Documented default JS exports are accepted by the parser-free heuristic."""
+        source = '''\
+/** Build a route handler. */
+export default function buildRoute(value) {
+    return value;
+}
+'''
+        analyzer = JavaScriptAnalyzer()
+        assert analyzer.check_docs(source, "src/route.js") == []
 
 
 class TestECMAScriptHelpers:

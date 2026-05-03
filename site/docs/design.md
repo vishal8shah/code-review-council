@@ -186,6 +186,16 @@ of test quality or complete coverage.
 
 ---
 
+## Phase 4D Language Analyzer Rollout
+
+Phase 4D graduates the existing TypeScript and JavaScript Gate Zero analyzers
+from opt-in to default-on. Python still uses stdlib AST parsing; TypeScript and
+JavaScript continue to use parser-free export heuristics for documentation and
+type-presence checks. Projects can disable individual languages in
+`[gate_zero.analyzers]` when they need a softer rollout.
+
+---
+
 ## Cost & Latency
 
 No universal number is valid — cost and latency depend on configuration and workload. Primary factors:

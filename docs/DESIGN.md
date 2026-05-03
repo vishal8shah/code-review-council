@@ -1064,8 +1064,8 @@ javascript = "eslint --format json"
 [gate_zero.analyzers]
 # Enable/disable per-language analyzers
 python = true
-typescript = false    # implemented — enable explicitly when ready
-javascript = false    # implemented — enable explicitly when ready
+typescript = true     # parser-free TS heuristics; set false to opt out
+javascript = true     # parser-free JS heuristics; set false to opt out
 
 [[reviewers]]
 id = "secops"
@@ -1203,6 +1203,13 @@ The existing `test_coverage_map` remains diff-local. Repo-wide matches live in
 `limited`, and a source-to-test coverage map. Prompts label this context as a
 bounded scan, not proof of test quality or complete coverage.
 
+### V4D — TypeScript/JavaScript Analyzer Rollout
+
+V4D graduates the existing TypeScript and JavaScript Gate Zero analyzers from
+opt-in to default-on. The rollout keeps the same parser-free, dependency-free
+heuristics and preserves per-language opt-out in `[gate_zero.analyzers]` for
+projects that need a softer adoption path.
+
 ---
 
 ## 10. Key Design Decisions & Trade-offs
@@ -1233,3 +1240,4 @@ bounded scan, not proof of test quality or complete coverage.
 | v1.5 | 2026-04-22 | Post-PR #12 docs baseline. GitHub workflows are documented as Gemini-pinned via `GOOGLE_API_KEY`, reviewer timeout and concurrency knobs are part of the config reference, Windows-safe terminal and lossless diff ingestion hardening are captured, and the Phase 4 roadmap is split into V4A onboarding/parity and V4B intelligence. 286 tests collected. |
 | v1.6 | 2026-04-22 | Phase 4B first-slice design. Local review history uses OS-cache SQLite by default, privacy-preserving finding fingerprints, forward-only schema migrations, `[DEBT]` only after three consecutive runs, and sanitized reviewer integrity diagnostics. Autofix remains deferred. |
 | v1.7 | 2026-05-03 | Phase 4C bounded full-repo test context. ReviewPack keeps diff-local `test_coverage_map` separate from `repo_test_context`, scans are capped by `[context]`, `.councilignore` is respected, and autofix remains deferred. |
+| v1.8 | 2026-05-03 | Phase 4D TypeScript/JavaScript analyzer rollout. Gate Zero now enables dependency-free TypeScript and JavaScript analyzers by default while preserving per-language opt-out controls. |

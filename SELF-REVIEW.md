@@ -31,7 +31,7 @@ Phase 4A onboarding / fix-guidance slice.
 | 14 | `--ci` without `--branch` empty diff risk | Warning emitted |
 | 15 | Stray brace-expansion directory | Removed |
 | 16 | Linter integration config-only | Implemented with `shlex.split`, `{files}` placeholder, timeout/error handling |
-| 17 | TS/JS analyzer placeholders existed without implementation | Shipped dependency-free TS/JS Gate Zero analyzers; kept default-off for an explicit rollout |
+| 17 | TS/JS analyzer placeholders existed without implementation | Shipped dependency-free TS/JS Gate Zero analyzers, then graduated them to default-on with per-language opt-out |
 | 18 | `council init` missing workflow scaffold | Now creates `.github/workflows/council-review.yml` |
 | 19 | "Chunking" naming dishonesty | Documented as truncation |
 
@@ -61,6 +61,7 @@ Phase 4A onboarding / fix-guidance slice.
 | Phase 3 Windows/Gemini hardening | Git diff ingestion preserves undecodable bytes with `surrogateescape`, terminal output sanitizes legacy-console text, generated GitHub workflows pin Gemini with `GOOGLE_API_KEY`, and reviewer timeouts are configurable |
 | Phase 4A guidance/onboarding | `council init` and `council doctor` now surface next steps, and terminal/Markdown/HTML/GitHub reports share deterministic fix prompts, verification steps, and review next steps |
 | Phase 4C bounded repo test context | ReviewPack now keeps diff-local `test_coverage_map` separate from bounded `repo_test_context` so reviewers can see existing tests outside the diff without treating the scan as full coverage proof |
+| Phase 4D language rollout | TypeScript and JavaScript Gate Zero analyzers are enabled by default using parser-free heuristics; projects can still opt out per language |
 
 ---
 

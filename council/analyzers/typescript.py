@@ -17,6 +17,16 @@ def _function_label(name: str) -> str:
     return f"`{name}()`"
 
 
+def _parameter_label(param: str) -> str:
+    """Format a parameter name for missing-type diagnostics."""
+    text = param.strip()
+    if "=" in text:
+        text = text.split("=", 1)[0].rstrip()
+    if text.startswith("..."):
+        text = text[3:].lstrip()
+    return text
+
+
 class TypeScriptAnalyzer(BaseAnalyzer):
     """Static analysis for TypeScript files via line-based export detection."""
 
@@ -81,6 +91,7 @@ class TypeScriptAnalyzer(BaseAnalyzer):
                 param_name = param.strip()
                 if not param_name or parameter_has_annotation(param_name):
                     continue
+                label = _parameter_label(param_name)
 
                 findings.append(
                     GateZeroFinding(
@@ -90,10 +101,10 @@ class TypeScriptAnalyzer(BaseAnalyzer):
                         file=file_path,
                         line_start=symbol.line_no,
                         message=(
-                            f"Parameter `{param_name}` in {_function_label(symbol.name)} "
+                            f"Parameter `{label}` in {_function_label(symbol.name)} "
                             "is missing type annotation"
                         ),
-                        suggestion=f"Add a type annotation for `{param_name}`",
+                        suggestion=f"Add a type annotation for `{label}`",
                     )
                 )
 

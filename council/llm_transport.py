@@ -324,11 +324,12 @@ async def invoke_json_completion(
         "model": model,
         "messages": messages,
         "timeout": timeout,
-        "temperature": temperature,
         "num_retries": num_retries,
     }
     if reasoning_effort:
         request_kwargs["reasoning_effort"] = reasoning_effort
+    else:
+        request_kwargs["temperature"] = temperature
 
     try:
         response = await completion_func(

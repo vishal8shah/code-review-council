@@ -97,6 +97,7 @@ async def test_invoke_json_completion_passes_reasoning_effort_when_configured():
     )
 
     assert calls[0]["reasoning_effort"] == "medium"
+    assert "temperature" not in calls[0]
 
 
 @pytest.mark.asyncio

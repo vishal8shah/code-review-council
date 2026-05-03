@@ -22,6 +22,7 @@ from .schemas import (
     ChangedSymbol,
     DiffContext,
     GateZeroFinding,
+    RepoTestContext,
     ReviewPack,
     SupportFileSummary,
 )
@@ -293,99 +294,115 @@ def _filter_to_changed_symbols(
     return changed
 
 
+def _build_source_lookup_maps(source_paths: list[str]) -> tuple[dict[str, str], dict[str, str]]:
+    """Build lookup maps used by diff-local and repo-wide test matching."""
+    source_modules: dict[str, str] = {}
+    ecmascript_sources: dict[str, str] = {}
+    for source_path in source_paths:
+        normalized = _normalize_repo_path(source_path)
+        suffix = Path(normalized).suffix.lower()
+        if suffix == ".py":
+            source_modules[source_path] = normalized[:-3].replace("/", ".")
+        elif suffix in _ECMASCRIPT_EXTENSIONS:
+            ecmascript_sources[normalized] = source_path
+    return source_modules, ecmascript_sources
+
+
+def _match_python_imports(
+    test_source: str | None,
+    source_modules: dict[str, str],
+) -> list[str]:
+    """Return source files imported by a Python test file."""
+    if not test_source:
+        return []
+
+    imports: set[str] = set()
+    tree = None
+    try:
+        tree = ast.parse(test_source)
+    except Exception:
+        tree = None
+
+    if tree is None:
+        return []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+            for alias in node.names:
+                if alias.name != "*":
+                    imports.add(f"{node.module}.{alias.name}")
+
+    matches: list[str] = []
+    for src_path, module in source_modules.items():
+        if any(imp == module or imp.startswith(f"{module}.") for imp in imports):
+            matches.append(src_path)
+    return matches
+
+
+def _match_ecmascript_imports(
+    test_path: str,
+    test_source: str | None,
+    ecmascript_sources: dict[str, str],
+) -> list[str]:
+    """Return source files imported by a TypeScript/JavaScript test file."""
+    if not test_source:
+        return []
+
+    imports: list[str] = []
+    for pattern in _ECMASCRIPT_IMPORT_PATTERNS:
+        for match in pattern.finditer(test_source):
+            import_path = match.group("path")
+            if import_path not in imports:
+                imports.append(import_path)
+
+    if not imports:
+        return []
+
+    test_parent = PurePosixPath(_normalize_repo_path(test_path)).parent
+    matched_paths: list[str] = []
+
+    for import_path in imports:
+        resolved = _join_repo_path(test_parent, import_path)
+        suffix = Path(resolved).suffix.lower()
+        candidates: list[str]
+        if suffix in _ECMASCRIPT_EXTENSIONS:
+            candidates = [resolved]
+        else:
+            candidates = []
+            for ext in _ECMASCRIPT_EXTENSIONS:
+                candidates.append(f"{resolved}{ext}")
+                candidates.append(f"{resolved}/index{ext}")
+
+        for candidate in candidates:
+            source_path = ecmascript_sources.get(candidate)
+            if source_path and source_path not in matched_paths:
+                matched_paths.append(source_path)
+
+    return matched_paths
+
+
+def _match_by_stem(test_path: str, source_paths: list[str]) -> list[str]:
+    """Return source files matching a test filename by naming convention."""
+    test_stems = _candidate_test_stems(test_path)
+    return [source_path for source_path in source_paths if _normalized_stem(source_path) in test_stems]
+
+
 def _build_test_coverage_map(diff_context: DiffContext) -> dict[str, list[str]]:
     """Map source files to test files using imports and naming conventions."""
     test_entries = [f for f in diff_context.files if is_test_file(f.path)]
     source_entries = [f for f in diff_context.files if not is_test_file(f.path)]
+    source_paths = [f.path for f in source_entries]
+    source_modules, ecmascript_sources = _build_source_lookup_maps(source_paths)
 
     coverage_map: dict[str, list[str]] = {f.path: [] for f in source_entries}
-
-    # Module path map for changed Python source files (e.g. council/cli.py -> council.cli)
-    source_modules: dict[str, str] = {}
-    ecmascript_sources: dict[str, str] = {}
-    for src in source_entries:
-        normalized = _normalize_repo_path(src.path)
-        suffix = Path(normalized).suffix.lower()
-        if suffix == ".py":
-            source_modules[src.path] = normalized[:-3].replace("/", ".")
-        elif suffix in _ECMASCRIPT_EXTENSIONS:
-            ecmascript_sources[normalized] = src.path
 
     def _append_match(source_path: str, test_path: str) -> None:
         if test_path not in coverage_map[source_path]:
             coverage_map[source_path].append(test_path)
-
-    def _python_import_matches(test_source: str | None) -> list[str]:
-        if not test_source:
-            return []
-
-        imports: set[str] = set()
-        tree = None
-        try:
-            tree = ast.parse(test_source)
-        except Exception:
-            tree = None
-
-        if tree is None:
-            return []
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    imports.add(alias.name)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                imports.add(node.module)
-                for alias in node.names:
-                    if alias.name != '*':
-                        imports.add(f"{node.module}.{alias.name}")
-
-        matches: list[str] = []
-        for src_path, module in source_modules.items():
-            if any(imp == module or imp.startswith(f"{module}.") for imp in imports):
-                matches.append(src_path)
-        return matches
-
-    def _ecmascript_import_matches(test_path: str, test_source: str | None) -> list[str]:
-        if not test_source:
-            return []
-
-        imports: set[str] = set()
-        for pattern in _ECMASCRIPT_IMPORT_PATTERNS:
-            for match in pattern.finditer(test_source):
-                imports.add(match.group("path"))
-
-        if not imports:
-            return []
-
-        test_parent = PurePosixPath(_normalize_repo_path(test_path)).parent
-        matched_paths: list[str] = []
-
-        for import_path in imports:
-            resolved = _join_repo_path(test_parent, import_path)
-            suffix = Path(resolved).suffix.lower()
-            candidates: list[str]
-            if suffix in _ECMASCRIPT_EXTENSIONS:
-                candidates = [resolved]
-            else:
-                candidates = []
-                for ext in _ECMASCRIPT_EXTENSIONS:
-                    candidates.append(f"{resolved}{ext}")
-                    candidates.append(f"{resolved}/index{ext}")
-
-            for candidate in candidates:
-                source_path = ecmascript_sources.get(candidate)
-                if source_path and source_path not in matched_paths:
-                    matched_paths.append(source_path)
-
-        return matched_paths
-
-    def _fallback_matches(test_path: str) -> list[str]:
-        test_stems = _candidate_test_stems(test_path)
-        matches: list[str] = []
-        for src in source_entries:
-            if _normalized_stem(src.path) in test_stems:
-                matches.append(src.path)
-        return matches
 
     for test in test_entries:
         normalized_test_path = _normalize_repo_path(test.path)
@@ -393,13 +410,17 @@ def _build_test_coverage_map(diff_context: DiffContext) -> dict[str, list[str]]:
 
         matched_paths: list[str] = []
         if suffix == ".py":
-            matched_paths = _python_import_matches(test.source_content)
+            matched_paths = _match_python_imports(test.source_content, source_modules)
         elif suffix in _ECMASCRIPT_EXTENSIONS:
-            matched_paths = _ecmascript_import_matches(test.path, test.source_content)
+            matched_paths = _match_ecmascript_imports(
+                test.path,
+                test.source_content,
+                ecmascript_sources,
+            )
 
         # Fallback to filename-stem convention when imports are absent or do not match.
         if not matched_paths:
-            matched_paths = _fallback_matches(test.path)
+            matched_paths = _match_by_stem(test.path, source_paths)
 
         for source_path in matched_paths:
             _append_match(source_path, test.path)
@@ -549,6 +570,7 @@ def assemble(
     skipped_files: list[str] | None = None,
     truncated_files: list[str] | None = None,
     metadata_context: DiffContext | None = None,
+    repo_root: Path | None = None,
 ) -> ReviewPack:
     """Assemble a ReviewPack from the preprocessed diff context."""
     metadata_source = metadata_context or diff_context
@@ -582,6 +604,17 @@ def assemble(
 
     # Build test coverage map
     test_map = _build_test_coverage_map(metadata_source)
+    repo_test_context = RepoTestContext(enabled=False)
+    if config.context.full_repo_tests and repo_root is not None:
+        from .repo_context import build_repo_test_context
+
+        source_entries = [f for f in metadata_source.files if not is_test_file(f.path)]
+        repo_test_context = build_repo_test_context(
+            repo_root=repo_root,
+            source_entries=source_entries,
+            context_config=config.context,
+            preprocessor_config=config.preprocessor,
+        )
     support_summaries = _build_support_file_summaries(
         metadata_source=metadata_source,
         skipped_files=skipped_files or [],
@@ -593,9 +626,13 @@ def assemble(
     # Mark symbols that have tests
     for symbol in all_symbols:
         tests = test_map.get(symbol.file, [])
+        repo_tests = repo_test_context.coverage_map.get(symbol.file, [])
         if tests:
             symbol.has_tests = True
             symbol.test_file = tests[0]
+        elif repo_tests:
+            symbol.has_tests = True
+            symbol.test_file = repo_tests[0]
         elif is_test_file(symbol.file):
             symbol.has_tests = True
             symbol.test_file = symbol.file
@@ -631,6 +668,7 @@ def assemble(
         deleted_files=metadata_source.deleted_files,
         changed_symbols=all_symbols,
         test_coverage_map=test_map,
+        repo_test_context=repo_test_context,
         languages_detected=sorted(languages - {"markdown", "toml", "yaml", "json"}),
         support_files_outside_budget=support_summaries,
         gate_zero_results=gate_zero_findings,

@@ -247,6 +247,24 @@ corrupt, `council history summary` exits with a concise error instead of a
 Python traceback. This only affects the explicit inspection command; review
 runs still treat history writes as best-effort and do not change verdicts.
 
+## Bounded repo test context
+
+Phase 4C lets Council scan existing repo test files for changed source files so
+QA reviewers do not mistake "tests outside the diff" for "no tests found." The
+scan is bounded, respects `.councilignore`, skips heavy directories such as
+`.git`, `node_modules`, build/cache folders, and virtual environments, and does
+not prove test quality or complete coverage.
+
+```toml
+[context]
+full_repo_tests = true
+max_test_files = 500
+max_test_file_bytes = 20000
+```
+
+If the scan hits a cap or cannot read a test file, Council keeps the review
+non-blocking and marks the repo-wide test context as incomplete.
+
 ---
 
 ## Recommended first workflow

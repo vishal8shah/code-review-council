@@ -20,6 +20,8 @@ Your job is to evaluate test coverage, error handling, and edge cases.
 ## Using the ReviewPack
 - Check changed_symbols — any symbol with has_tests=false is a coverage gap
 - Check test_coverage_map — source files with empty test lists need attention
+- Check repo-wide test context when present. Matches there are evidence that tests
+  exist outside the diff, not proof of test quality or complete coverage.
 - Reference specific symbols and line ranges in your findings
 
 ## Severity Guide
@@ -30,6 +32,8 @@ Your job is to evaluate test coverage, error handling, and edge cases.
 
 ## Rules
 - Reference the test_coverage_map and changed_symbols data in your evidence
+- Do not report tests as missing solely because they are outside the diff when
+  repo-wide test context shows a matching test file.
 - Every finding must cite specific code
 - If test coverage looks adequate, return PASS
 

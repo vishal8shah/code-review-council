@@ -504,6 +504,11 @@ markdown = true
 json_report = "ci"
 github_pr = false
 
+[context]
+full_repo_tests = true
+max_test_files = 500
+max_test_file_bytes = 20000
+
 [history]
 enabled = true
 path = ""

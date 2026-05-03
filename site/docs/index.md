@@ -87,6 +87,6 @@ command, so you can catch missing keys or model mismatches before a paid review.
 | [Design](design.md) | Architecture decisions, ReviewPack, evidence-based Chair |
 | [Security](security.md) | BYOK model, key scoping, threat mitigations, merge gates |
 | [Workflows](workflows.md) | PR workflow vs BYOK workflow, artifact locations |
-| [Self Review](self-review.md) | Council reviewing its own PR — real output, 26 fixes, 300 collected tests |
+| [Self Review](self-review.md) | Council reviewing its own PR — real output, 26 fixes, 343 passing tests |
 | [FAQ](faq.md) | Fork PRs, model config, cost tuning, PR comments |
 | [Contributing](contributing.md) | Setup, tests, adding a new reviewer persona |

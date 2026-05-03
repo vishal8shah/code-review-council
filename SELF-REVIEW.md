@@ -60,21 +60,21 @@ Phase 4A onboarding / fix-guidance slice.
 | Phase 3 transport + PR reporting | Shared LiteLLM JSON transport falls back from native JSON mode to prompt-only JSON, `council doctor` preflights setup, and GitHub PR reporting posts sticky summaries plus best-effort inline comments |
 | Phase 3 Windows/Gemini hardening | Git diff ingestion preserves undecodable bytes with `surrogateescape`, terminal output sanitizes legacy-console text, generated GitHub workflows pin Gemini with `GOOGLE_API_KEY`, and reviewer timeouts are configurable |
 | Phase 4A guidance/onboarding | `council init` and `council doctor` now surface next steps, and terminal/Markdown/HTML/GitHub reports share deterministic fix prompts, verification steps, and review next steps |
+| Phase 4C bounded repo test context | ReviewPack now keeps diff-local `test_coverage_map` separate from bounded `repo_test_context` so reviewers can see existing tests outside the diff without treating the scan as full coverage proof |
 
 ---
 
 ## Remaining Known Limitations
 
 ### Accuracy
-- **Test coverage map only searches diff files** — labeled "IN DIFF" in prompts. Full repo search deferred.
+- **Test coverage map remains diff-local** — repo-wide test matches live separately in `repo_test_context`.
 - **Test coverage matching is substring-based** — false positives on short filenames.
 - **Deleted symbol detection is regex heuristic** — catches `def`/`class` patterns, not multiline signatures.
 - **`parse_diff` still performs git subprocess work** — useful in real runs, but some test/CI paths could avoid redundant probes.
 
 ### Not Yet Implemented
 - **Logical chunking** — Large files truncated, not split at function boundaries. Documented honestly.
-- **Full-repo test coverage discovery** — Coverage mapping still works from the diff, not a repository-wide index.
-- **Local/CI parity and full-repo context planning** — Remaining Phase 4A work after the guidance/onboarding slice.
+- **Full semantic repository indexing** — V4C scans bounded test context only; it is not a full code intelligence index.
 - **Learning loop / repeated-debt detection** — Phase 4B starts with local history and privacy-preserving debt signals.
 - **Autofix generation** — Still deferred until verdict quality, evidence quality, and repeated-debt signals stay stable enough to avoid auto-fixing hallucinated issues.
 - **Prompts in code** — Works but not editable without code changes.
@@ -86,6 +86,12 @@ Phase 4A onboarding / fix-guidance slice.
 - `[DEBT]` is reserved for the same fingerprint appearing in three consecutive review runs for the repo.
 - SQLite schema changes use a forward-only `_schema_migrations` table.
 - Reviewer integrity diagnostics must never echo raw model output, prompts, diffs, or finding text.
+
+### Phase 4C Guardrails
+- Repo-wide test discovery is default-on but bounded by `[context]` file-count and file-size caps.
+- The scanner respects `.councilignore`, skips heavy directories, and treats read failures as non-blocking incomplete context.
+- Repo-wide test matches are evidence that tests exist, not proof of test quality or complete coverage.
+- `test_coverage_map` stays diff-local; repo-wide matches must remain in `repo_test_context`.
 
 ### Design Disagreement with Peer Reviewer
 - **Reviewer payload format** — Peer reviewer recommends compact JSON transport. We use markdown with all fields present. Rationale: LLMs consume readable text more effectively than nested JSON blobs. The information is complete; the format is optimized for the consumer. We acknowledge this is a design choice worth revisiting with real-world false-positive data.
@@ -103,4 +109,4 @@ Phase 4A onboarding / fix-guidance slice.
 - Policy context from config flows to reviewers and Chair
 - Path traversal protection, CI safety warnings
 - Honest about what's implemented vs. claimed
-- 300 collected tests across all modules
+- 343 passing tests across all modules

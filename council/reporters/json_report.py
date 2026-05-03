@@ -37,6 +37,13 @@ def write_json_report(
             "languages": review_pack.languages_detected,
             "files_skipped": review_pack.files_skipped,
             "token_estimate": review_pack.token_estimate,
+            "repo_test_context": {
+                "enabled": review_pack.repo_test_context.enabled,
+                "scanned_test_files": len(review_pack.repo_test_context.scanned_test_files),
+                "skipped_test_files": len(review_pack.repo_test_context.skipped_test_files),
+                "limited": review_pack.repo_test_context.limited,
+                "matched_source_files": len(review_pack.repo_test_context.coverage_map),
+            },
         }
 
     if reviewer_outputs:

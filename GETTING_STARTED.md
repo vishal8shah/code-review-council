@@ -152,6 +152,29 @@ Optional env tuning for flaky/rate-limited runners:
 
 ---
 
+## Required gates for your TS/JS repos
+
+Use `.github/workflows/council-openai-gate.yml` when you want Council to be a
+required PR check in another repo. Unlike `council-review.yml`, it installs
+Council from GitHub instead of assuming the target repo contains Council source.
+It requires `OPENAI_API_KEY`, fails closed if the key is missing, and writes a
+temporary CI config with:
+
+```toml
+[council]
+chair_model = "openai/gpt-5.5"
+chair_reasoning_effort = "medium"
+timeout_seconds = 360
+reviewer_timeout_seconds = 240
+reviewer_concurrency = 2
+```
+
+Before making it a protected-branch requirement, pin `COUNCIL_INSTALL_SPEC` in
+the workflow to a release tag or commit SHA and run it on a few representative
+PRs to tune `.councilignore` and any repo-specific analyzer opt-outs.
+
+---
+
 ## Fork PRs: Run full Council with your own API key (BYOK)
 
 When contributing from a fork, upstream repository secrets are often unavailable. Use the fork-safe BYOK workflow in your fork instead:

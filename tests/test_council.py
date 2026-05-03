@@ -398,6 +398,7 @@ class TestConfig:
         """Loading from a directory without .council.toml produces defaults."""
         config = load_config(tmp_path)
         assert config.chair_model == "openai/gpt-4o"
+        assert config.chair_reasoning_effort == ""
         assert config.gate_zero.require_docs is True
         assert config.gate_zero.check_secrets is True
         assert config.reviewer_timeout_seconds == 60
@@ -421,6 +422,7 @@ class TestConfig:
         toml.write_text("""
 [council]
 chair_model = "anthropic/claude-opus-4-6"
+chair_reasoning_effort = "medium"
 timeout_seconds = 30
 reviewer_timeout_seconds = 45
 reviewer_concurrency = 1
@@ -453,6 +455,7 @@ enabled = true
 """)
         config = load_config(tmp_path)
         assert config.chair_model == "anthropic/claude-opus-4-6"
+        assert config.chair_reasoning_effort == "medium"
         assert config.timeout_seconds == 30
         assert config.reviewer_timeout_seconds == 45
         assert config.reviewer_concurrency == 1
@@ -2090,7 +2093,8 @@ class TestWorkflowScaffold:
         """Generated workflow must pass --branch to avoid empty-diff reviews."""
         from council.cli import _DEFAULT_WORKFLOW
         assert "--branch" in _DEFAULT_WORKFLOW
-        assert "github.base_ref" in _DEFAULT_WORKFLOW
+        assert '--branch "$BASE_REF"' in _DEFAULT_WORKFLOW
+        assert "BASE_REF: ${{ github.base_ref }}" in _DEFAULT_WORKFLOW
 
     def test_byok_workflow_scaffold_contains_required_bits(self):
         """BYOK workflow template should be dispatch-only and artifact-focused."""
@@ -2132,6 +2136,25 @@ class TestWorkflowScaffold:
         assert "--github-pr" not in _DEFAULT_WORKFLOW_BYOK
         assert "permissions:" in _DEFAULT_WORKFLOW_BYOK
         assert "contents: read" in _DEFAULT_WORKFLOW_BYOK
+
+    def test_openai_gate_workflow_scaffold_contains_required_bits(self):
+        """OpenAI gate workflow should install Council from git and fail closed on missing key."""
+        from council.cli import _DEFAULT_WORKFLOW_OPENAI_GATE
+
+        assert "git+https://github.com/vishal8shah/code-review-council.git@main" in (
+            _DEFAULT_WORKFLOW_OPENAI_GATE
+        )
+        assert 'OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}' in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert '"skipped":"no_openai_api_key"' in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert 'chair_model = "openai/gpt-5.5"' in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert 'chair_reasoning_effort = "medium"' in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert "reviewer_concurrency = 2" in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert "typescript = true" in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert "javascript = true" in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert "prompt = " not in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert "--github-pr" in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert '--branch "$BASE_REF"' in _DEFAULT_WORKFLOW_OPENAI_GATE
+        assert "BASE_REF: ${{ github.base_ref }}" in _DEFAULT_WORKFLOW_OPENAI_GATE
 
 
 class TestDiffTextFileBoundaries:
@@ -3723,17 +3746,24 @@ def test_github_pr_comment_and_annotations(capsys):
 
 
 def test_init_defaults_include_prompt_and_integrity_and_github_pr():
-    from council.cli import _DEFAULT_CONFIG, _DEFAULT_WORKFLOW, _DEFAULT_WORKFLOW_BYOK
+    from council.cli import (
+        _DEFAULT_CONFIG,
+        _DEFAULT_WORKFLOW,
+        _DEFAULT_WORKFLOW_BYOK,
+        _DEFAULT_WORKFLOW_OPENAI_GATE,
+    )
     assert 'on_integrity_issue = "fail"' in _DEFAULT_CONFIG
+    assert 'chair_reasoning_effort = ""' in _DEFAULT_CONFIG
     assert 'prompt = "prompts/secops.md"' in _DEFAULT_CONFIG
     assert "[history]" in _DEFAULT_CONFIG
     assert "store_finding_text = false" in _DEFAULT_CONFIG
     assert '--github-pr' in _DEFAULT_WORKFLOW
     assert 'actions/checkout@' in _DEFAULT_WORKFLOW and len(_DEFAULT_WORKFLOW.split('actions/checkout@')[1].splitlines()[0].strip()) >= 40
     assert 'workflow_dispatch' in _DEFAULT_WORKFLOW_BYOK
+    assert 'chair_model = "openai/gpt-5.5"' in _DEFAULT_WORKFLOW_OPENAI_GATE
 
 
-def test_init_scaffolds_both_workflow_files(tmp_path):
+def test_init_scaffolds_all_workflow_files(tmp_path):
     from typer.testing import CliRunner
     from council.cli import app
 
@@ -3743,6 +3773,7 @@ def test_init_scaffolds_both_workflow_files(tmp_path):
 
     assert (tmp_path / ".github" / "workflows" / "council-review.yml").exists()
     assert (tmp_path / ".github" / "workflows" / "council-byok.yml").exists()
+    assert (tmp_path / ".github" / "workflows" / "council-openai-gate.yml").exists()
 
 
 def test_cli_ci_degraded_fail_policy_blocks_merge():

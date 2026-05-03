@@ -75,6 +75,56 @@ async def test_invoke_json_completion_uses_response_format_first():
 
 
 @pytest.mark.asyncio
+async def test_invoke_json_completion_passes_reasoning_effort_when_configured():
+    from council.llm_transport import invoke_json_completion
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"verdict":"PASS"}'))],
+            usage=SimpleNamespace(total_tokens=17),
+        )
+
+    await invoke_json_completion(
+        model="openai/gpt-5.5",
+        messages=[{"role": "user", "content": "hello"}],
+        timeout=10,
+        temperature=0.1,
+        reasoning_effort="medium",
+        acompletion_func=fake_acompletion,
+    )
+
+    assert calls[0]["reasoning_effort"] == "medium"
+    assert "temperature" not in calls[0]
+
+
+@pytest.mark.asyncio
+async def test_invoke_json_completion_omits_reasoning_effort_when_unset():
+    from council.llm_transport import invoke_json_completion
+
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"verdict":"PASS"}'))],
+            usage=SimpleNamespace(total_tokens=17),
+        )
+
+    await invoke_json_completion(
+        model="openai/gpt-4o",
+        messages=[{"role": "user", "content": "hello"}],
+        timeout=10,
+        temperature=0.1,
+        acompletion_func=fake_acompletion,
+    )
+
+    assert "reasoning_effort" not in calls[0]
+
+
+@pytest.mark.asyncio
 async def test_invoke_json_completion_falls_back_when_response_format_rejected():
     from council.llm_transport import invoke_json_completion
 

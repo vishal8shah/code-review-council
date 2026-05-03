@@ -407,7 +407,8 @@ def init(
     workflow_dir = root / ".github" / "workflows"
     workflow_path = workflow_dir / "council-review.yml"
     byok_workflow_path = workflow_dir / "council-byok.yml"
-    if not workflow_path.exists() or not byok_workflow_path.exists():
+    openai_gate_path = workflow_dir / "council-openai-gate.yml"
+    if not workflow_path.exists() or not byok_workflow_path.exists() or not openai_gate_path.exists():
         workflow_dir.mkdir(parents=True, exist_ok=True)
 
     if not workflow_path.exists():
@@ -421,10 +422,21 @@ def init(
         byok_workflow_path.write_text(_DEFAULT_WORKFLOW_BYOK, encoding="utf-8")
         console.print(f"  [green]Created[/] {byok_workflow_path}")
 
+    if not openai_gate_path.exists():
+        openai_gate_path.write_text(_DEFAULT_WORKFLOW_OPENAI_GATE, encoding="utf-8")
+        console.print(f"  [green]Created[/] {openai_gate_path}")
+        console.print(
+            "  [dim]→ Add OPENAI_API_KEY to required-gate repos that use council-openai-gate.yml[/]"
+        )
+
     console.print("\n  Council initialized.", style="bold green")
     console.print("  [bold]Recommended next steps[/]")
     console.print(
         "    - Add GOOGLE_API_KEY to GitHub Actions secrets for the generated Gemini workflows.",
+        style="dim",
+    )
+    console.print(
+        "    - For TS/JS required gates across other repos, use council-openai-gate.yml with OPENAI_API_KEY.",
         style="dim",
     )
     console.print(
@@ -438,6 +450,7 @@ def init(
 _DEFAULT_CONFIG = """\
 [council]
 chair_model = "openai/gpt-4o"
+chair_reasoning_effort = ""
 fail_on = "FAIL"
 timeout_seconds = 60
 reviewer_timeout_seconds = 60
@@ -616,10 +629,11 @@ jobs:
 
       - name: Run Council Review
         if: steps.llm_keys.outputs.has_key == 'true'
-        run: council review --ci --github-pr --branch ${{ github.base_ref }} --output-json council-report.json
+        run: council review --ci --github-pr --branch "$BASE_REF" --output-json council-report.json
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
 
       - name: Upload Review Report
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
@@ -832,6 +846,104 @@ Invalid input.
           path: |
             council-report.json
             council-review.md
+"""
+
+
+_DEFAULT_WORKFLOW_OPENAI_GATE = """\
+name: Code Review Council OpenAI Gate
+on: [pull_request]
+
+env:
+  COUNCIL_INSTALL_SPEC: git+https://github.com/vishal8shah/code-review-council.git@main
+
+jobs:
+  council-review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: '3.12'
+
+      - name: Install Code Review Council
+        run: pip install "$COUNCIL_INSTALL_SPEC"
+
+      - name: Fail fast if OpenAI key is unavailable
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            printf '{"skipped":"no_openai_api_key","how_to_fix":"Add OPENAI_API_KEY as a repository Actions secret, then rerun this workflow."}\n' > council-report.json
+            echo "::error::No OPENAI_API_KEY available. This required gate is pinned to OpenAI and fails closed when the key is missing."
+            exit 1
+          fi
+
+      - name: Write CI OpenAI config
+        run: |
+          cat > .council.toml <<'EOF'
+          [council]
+          chair_model = "openai/gpt-5.5"
+          chair_reasoning_effort = "medium"
+          timeout_seconds = 360
+          reviewer_timeout_seconds = 240
+          reviewer_concurrency = 2
+
+          [council.enforcement]
+          mode = "ci"
+          ci_block_on = "FAIL"
+          local_mode = "advisory"
+          on_integrity_issue = "fail"
+
+          [gate_zero.analyzers]
+          python = true
+          typescript = true
+          javascript = true
+
+          [[reviewers]]
+          id = "secops"
+          name = "Security Operations Reviewer"
+          model = "openai/gpt-5.2"
+          enabled = true
+
+          [[reviewers]]
+          id = "qa"
+          name = "QA Engineer"
+          model = "openai/gpt-5.2"
+          enabled = true
+
+          [[reviewers]]
+          id = "architect"
+          name = "Solutions Architect"
+          model = "openai/gpt-5.2"
+          enabled = true
+
+          [[reviewers]]
+          id = "docs"
+          name = "Documentation Reviewer"
+          model = "openai/gpt-5.2"
+          enabled = true
+          EOF
+
+      - name: Run Council Review
+        run: council review --ci --github-pr --branch "$BASE_REF" --output-json council-report.json
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+
+      - name: Upload Review Report
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+        if: always()
+        with:
+          name: council-report
+          path: council-report.json
 """
 
 

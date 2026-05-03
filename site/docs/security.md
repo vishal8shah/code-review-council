@@ -23,6 +23,11 @@ When you run Council:
     `GOOGLE_API_KEY`. Local `.council.toml` files can still use OpenAI,
     Anthropic, Google, or another LiteLLM-supported provider.
 
+!!! info "Required OpenAI gate"
+    `council-openai-gate.yml` is intended for repos that should enforce Council
+    as a required PR check with `OPENAI_API_KEY`. It fails closed when the key is
+    missing and uses `openai/gpt-5.5` with medium Chair reasoning.
+
 ---
 
 ## 🔐 API Key Hardening

@@ -256,7 +256,10 @@ For TS/JS repos that should use Council as a required GitHub PR gate without
 vendoring this repo, use the generated `council-openai-gate.yml` workflow. It
 installs Council from GitHub, fails closed if `OPENAI_API_KEY` is missing, and
 uses `openai/gpt-5.5` with `chair_reasoning_effort = "medium"` for Chair
-synthesis.
+synthesis. Generate only that workflow with
+`council init --workflow-profile openai-gate`. The scaffold pins
+`COUNCIL_INSTALL_SPEC` to `v0.2.0`; keep it pinned to a release tag or commit
+SHA before enabling required branch protection broadly.
 
 **OpenAI required-gate preset:**
 ```toml
@@ -425,7 +428,7 @@ Add your infographic PNGs under `site/docs/assets/infographics/`. If you fork, u
 ## ⚠️ Known Limitations (V1 Alpha)
 
 - **Model compatibility**: Council now retries without `response_format={"type": "json_object"}` when a provider/model rejects native JSON mode. That improves portability, but some providers still return malformed JSON or require prompt tuning. Council surfaces `output_mode` and transport notes when fallback transport is used or fails.
-- **Language support**: Gate Zero analyzers now cover Python, TypeScript, and JavaScript by default. ReviewPack symbol extraction also covers Python plus parser-free TypeScript/JavaScript exports, including default exports, interfaces, and type aliases. TypeScript/JavaScript enforcement uses dependency-free heuristics and can be disabled per project in `[gate_zero.analyzers]`. The diff preprocessor, reviewer panel, and Chair work with any language.
+- **Language support**: Gate Zero analyzers cover Python, TypeScript, and JavaScript by default. Python uses AST-based checks; TypeScript and JavaScript use parser-free deterministic heuristics for exports, docs, and type-presence signals. Go, Rust, Java, Ruby, and other languages still receive LLM diff review, but do not yet have dedicated deterministic analyzers. Council does not replace ESLint, `tsc`, compilers, type-aware static analyzers, or language-native tests.
 - **Test context**: `test_coverage_map` remains diff-local. V4C also adds bounded repo-wide test context that respects `.councilignore`, skips heavy directories, and is capped by `[context]`; it reduces false missing-test findings but is not a proof of test quality or complete coverage.
 - **Large file handling**: Reviewers still see a budgeted/truncated diff, not logical parser-aware chunks. Files or hunks excluded by token budget are surfaced in ReviewPack metadata so skipped tests/docs/config still remain visible to reviewers as changed support context.
 - **GitHub API variability**: `--github-pr` now supports sticky PR summaries, workflow annotations, and best-effort inline PR comments for accepted findings with file/line evidence. GitHub auth, rate limits, or API failures degrade reporting only; they do not invalidate the review itself. You can tune retries/timeouts with `COUNCIL_GITHUB_MAX_RETRIES`, `COUNCIL_GITHUB_RETRY_BACKOFF_SECONDS`, and `COUNCIL_GITHUB_HTTP_TIMEOUT` for noisy CI networks.

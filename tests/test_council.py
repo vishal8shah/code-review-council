@@ -2141,7 +2141,7 @@ class TestWorkflowScaffold:
         """OpenAI gate workflow should install Council from git and fail closed on missing key."""
         from council.cli import _DEFAULT_WORKFLOW_OPENAI_GATE
 
-        assert "git+https://github.com/vishal8shah/code-review-council.git@main" in (
+        assert "git+https://github.com/vishal8shah/code-review-council.git@v0.2.0" in (
             _DEFAULT_WORKFLOW_OPENAI_GATE
         )
         assert 'OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}' in _DEFAULT_WORKFLOW_OPENAI_GATE

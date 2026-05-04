@@ -1221,6 +1221,16 @@ Python/TypeScript/JavaScript Gate Zero analyzers, and uses `openai/gpt-5.5`
 with `chair_reasoning_effort = "medium"` for Chair synthesis. The existing
 Gemini workflows remain available for this repo and BYOK fork review paths.
 
+### V4F — Versioned Multi-Repo Adoption
+
+V4F pins the reusable OpenAI gate scaffold to `v0.2.0`, adds
+`council init --workflow-profile openai-gate` for external repositories that
+only need the required PR gate, and documents the adoption checklist. The
+language capability matrix is explicit: Python uses AST-based deterministic
+checks; TypeScript and JavaScript use parser-free deterministic heuristics; Go,
+Rust, Java, Ruby, and other languages receive LLM diff review without dedicated
+deterministic analyzers yet.
+
 ---
 
 ## 10. Key Design Decisions & Trade-offs
@@ -1253,3 +1263,4 @@ Gemini workflows remain available for this repo and BYOK fork review paths.
 | v1.7 | 2026-05-03 | Phase 4C bounded full-repo test context. ReviewPack keeps diff-local `test_coverage_map` separate from `repo_test_context`, scans are capped by `[context]`, `.councilignore` is respected, and autofix remains deferred. |
 | v1.8 | 2026-05-03 | Phase 4D TypeScript/JavaScript analyzer rollout. Gate Zero now enables dependency-free TypeScript and JavaScript analyzers by default while preserving per-language opt-out controls. |
 | v1.9 | 2026-05-03 | Phase 4E multi-repo gate packaging. Added `council-openai-gate.yml`, OpenAI GPT-5.5 medium-reasoning Chair config, and an explicit `chair_reasoning_effort` runtime option. |
+| v2.0 | 2026-05-04 | Phase 4F versioned external adoption. Pinned the reusable OpenAI gate to `v0.2.0`, added an `openai-gate` init workflow profile, and documented the multi-repo rollout checklist and language capability matrix. |

@@ -18,6 +18,7 @@ council-review.yml    council-byok.yml
 (auto, on PR open)    (manual, workflow_dispatch)
 
 For required gates across your own TS/JS repos, use council-openai-gate.yml.
+Generate only that workflow with `council init --workflow-profile openai-gate`.
 ```
 
 ---
@@ -39,7 +40,7 @@ For required gates across your own TS/JS repos, use council-openai-gate.yml.
 | **Trigger** | `pull_request` (automatic) |
 | **Secrets access** | Repository `OPENAI_API_KEY` secret |
 | **Fork PRs** | Fails closed when the key is unavailable |
-| **Install path** | Installs Council from `COUNCIL_INSTALL_SPEC` |
+| **Install path** | Installs Council from `COUNCIL_INSTALL_SPEC` pinned to `v0.2.0` by default |
 | **Chair model** | `openai/gpt-5.5` with `chair_reasoning_effort = "medium"` |
 | **Use case** | Required branch-protection gate for other repos |
 
@@ -125,10 +126,13 @@ TS/JS repositories without vendoring the Council source into each repo.
    `BASE_REF` supplied from the PR base ref
 6. Uploads `council-report.json`
 
-!!! warning "Pin before broad rollout"
-    The scaffold defaults `COUNCIL_INSTALL_SPEC` to the main branch for early
-    adoption. Before making the check required across many repos, pin it to a
-    release tag or commit SHA.
+The scaffold defaults `COUNCIL_INSTALL_SPEC` to `v0.2.0`. Keep that value
+pinned to a release tag or commit SHA before making the check required across
+many repos; do not use a moving branch such as `main` for protected-branch
+rollout.
+
+For a full rollout checklist and language-support matrix, see the
+[Adoption Guide](adoption-guide.md).
 
 ---
 

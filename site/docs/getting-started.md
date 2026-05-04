@@ -216,8 +216,17 @@ The Gemini workflows write a temporary Gemini config in CI using
 `council-openai-gate.yml` is the multi-repo deployment template. It installs
 Council from GitHub, fails closed if `OPENAI_API_KEY` is missing, and uses
 `openai/gpt-5.5` with `chair_reasoning_effort = "medium"` for Chair synthesis.
-Pin `COUNCIL_INSTALL_SPEC` to a release tag or commit SHA before making it a
-protected-branch requirement across many repos.
+The scaffold pins `COUNCIL_INSTALL_SPEC` to `v0.2.0` by default. Keep it pinned
+to a release tag or commit SHA before making it a protected-branch requirement
+across many repos.
+
+For external repos that only need the OpenAI gate workflow, run:
+
+```bash
+council init --workflow-profile openai-gate
+```
+
+See the [Adoption Guide](adoption-guide.md) before enabling branch protection.
 
 ### Add your secrets, then push:
 

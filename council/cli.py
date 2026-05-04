@@ -374,55 +374,75 @@ def history_summary(
 @app.command()
 def init(
     repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),
+    workflow_profile: str = typer.Option(
+        "default",
+        "--workflow-profile",
+        help="Workflow scaffold profile: default/all or openai-gate.",
+    ),
 ) -> None:
     """Initialize .council.toml and default prompts in your repository."""
+    workflow_profile = workflow_profile.strip().lower()
+    if workflow_profile not in {"default", "all", "openai-gate"}:
+        console.print(
+            "[red]Invalid --workflow-profile. Use 'default', 'all', or 'openai-gate'.[/]"
+        )
+        raise typer.Exit(code=1)
+    include_project_scaffold = workflow_profile in {"default", "all"}
+
     root = Path(repo_root) if repo_root else Path.cwd()
 
     config_path = root / ".council.toml"
-    if config_path.exists():
+    if include_project_scaffold and config_path.exists():
         console.print(f"[yellow].council.toml already exists at {config_path}[/]")
         overwrite = typer.confirm("Overwrite?", default=False)
         if not overwrite:
             raise typer.Exit()
 
-    config_path.write_text(_DEFAULT_CONFIG, encoding="utf-8")
-    console.print(f"  [green]Created[/] {config_path}")
+    if include_project_scaffold:
+        config_path.write_text(_DEFAULT_CONFIG, encoding="utf-8")
+        console.print(f"  [green]Created[/] {config_path}")
 
     # Create .councilignore
     ignore_path = root / ".councilignore"
-    if not ignore_path.exists():
+    if include_project_scaffold and not ignore_path.exists():
         ignore_path.write_text(_DEFAULT_COUNCILIGNORE, encoding="utf-8")
         console.print(f"  [green]Created[/] {ignore_path}")
 
     # Create default prompt files
-    prompts_dir = root / "prompts"
-    prompts_dir.mkdir(parents=True, exist_ok=True)
-    for rel_path, content in _DEFAULT_PROMPTS.items():
-        prompt_path = root / rel_path
-        if not prompt_path.exists():
-            prompt_path.write_text(content, encoding="utf-8")
-            console.print(f"  [green]Created[/] {prompt_path}")
+    if include_project_scaffold:
+        prompts_dir = root / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        for rel_path, content in _DEFAULT_PROMPTS.items():
+            prompt_path = root / rel_path
+            if not prompt_path.exists():
+                prompt_path.write_text(content, encoding="utf-8")
+                console.print(f"  [green]Created[/] {prompt_path}")
 
     # Create GitHub Actions workflow
     workflow_dir = root / ".github" / "workflows"
     workflow_path = workflow_dir / "council-review.yml"
     byok_workflow_path = workflow_dir / "council-byok.yml"
     openai_gate_path = workflow_dir / "council-openai-gate.yml"
-    if not workflow_path.exists() or not byok_workflow_path.exists() or not openai_gate_path.exists():
+    include_default_workflows = workflow_profile in {"default", "all"}
+    include_openai_gate = workflow_profile in {"default", "all", "openai-gate"}
+    if (
+        include_default_workflows
+        and (not workflow_path.exists() or not byok_workflow_path.exists())
+    ) or (include_openai_gate and not openai_gate_path.exists()):
         workflow_dir.mkdir(parents=True, exist_ok=True)
 
-    if not workflow_path.exists():
+    if include_default_workflows and not workflow_path.exists():
         workflow_path.write_text(_DEFAULT_WORKFLOW, encoding="utf-8")
         console.print(f"  [green]Created[/] {workflow_path}")
         console.print(
             "  [dim]→ Add GOOGLE_API_KEY to your repo secrets for the Gemini-pinned workflow[/]"
         )
 
-    if not byok_workflow_path.exists():
+    if include_default_workflows and not byok_workflow_path.exists():
         byok_workflow_path.write_text(_DEFAULT_WORKFLOW_BYOK, encoding="utf-8")
         console.print(f"  [green]Created[/] {byok_workflow_path}")
 
-    if not openai_gate_path.exists():
+    if include_openai_gate and not openai_gate_path.exists():
         openai_gate_path.write_text(_DEFAULT_WORKFLOW_OPENAI_GATE, encoding="utf-8")
         console.print(f"  [green]Created[/] {openai_gate_path}")
         console.print(
@@ -431,14 +451,16 @@ def init(
 
     console.print("\n  Council initialized.", style="bold green")
     console.print("  [bold]Recommended next steps[/]")
-    console.print(
-        "    - Add GOOGLE_API_KEY to GitHub Actions secrets for the generated Gemini workflows.",
-        style="dim",
-    )
-    console.print(
-        "    - For TS/JS required gates across other repos, use council-openai-gate.yml with OPENAI_API_KEY.",
-        style="dim",
-    )
+    if include_default_workflows:
+        console.print(
+            "    - Add GOOGLE_API_KEY to GitHub Actions secrets for the generated Gemini workflows.",
+            style="dim",
+        )
+    if include_openai_gate:
+        console.print(
+            "    - For TS/JS required gates across other repos, use council-openai-gate.yml with OPENAI_API_KEY.",
+            style="dim",
+        )
     console.print(
         "    - Run `council doctor --branch main` to validate keys, models, and the diff target.",
         style="dim",
@@ -854,7 +876,7 @@ name: Code Review Council OpenAI Gate
 on: [pull_request]
 
 env:
-  COUNCIL_INSTALL_SPEC: git+https://github.com/vishal8shah/code-review-council.git@main
+  COUNCIL_INSTALL_SPEC: git+https://github.com/vishal8shah/code-review-council.git@v0.2.0
 
 jobs:
   council-review:

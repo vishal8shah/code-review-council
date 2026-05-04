@@ -39,6 +39,7 @@ nav:
   - Home: index.md
   - Overview: overview.md
   - Getting Started: getting-started.md
+  - Adoption Guide: adoption-guide.md
   - Design: design.md
   - Security: security.md
   - Workflows: workflows.md

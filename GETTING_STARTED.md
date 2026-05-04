@@ -169,9 +169,16 @@ reviewer_timeout_seconds = 240
 reviewer_concurrency = 2
 ```
 
-Before making it a protected-branch requirement, pin `COUNCIL_INSTALL_SPEC` in
-the workflow to a release tag or commit SHA and run it on a few representative
-PRs to tune `.councilignore` and any repo-specific analyzer opt-outs.
+For external repos that only need the reusable OpenAI gate, run:
+
+```bash
+council init --workflow-profile openai-gate
+```
+
+The scaffold pins `COUNCIL_INSTALL_SPEC` to `v0.2.0` by default. Keep it pinned
+to a release tag or commit SHA and run it on a few representative PRs to tune
+`.councilignore` and any repo-specific analyzer opt-outs before making it a
+protected-branch requirement.
 
 ---
 
@@ -292,8 +299,12 @@ non-blocking and marks the repo-wide test context as incomplete.
 
 Gate Zero enables Python, TypeScript, and JavaScript analyzers by default.
 Python uses stdlib AST parsing; TypeScript and JavaScript use dependency-free
-export heuristics for documentation/type-presence checks. If a project needs a
-softer rollout, disable a language explicitly:
+parser-free heuristics for documentation/type-presence checks. Go, Rust, Java,
+Ruby, and other languages still receive LLM diff review, but they do not yet
+have dedicated deterministic analyzers. Council does not replace ESLint, `tsc`,
+compilers, type-aware static analyzers, or language-native tests.
+
+If a project needs a softer rollout, disable a language explicitly:
 
 ```toml
 [gate_zero.analyzers]

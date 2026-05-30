@@ -2084,7 +2084,7 @@ class TestWorkflowScaffold:
         assert "No GOOGLE_API_KEY available. This workflow is pinned to Gemini" in _DEFAULT_WORKFLOW
         assert '"skipped":"no_google_api_key"' in _DEFAULT_WORKFLOW
         assert "Write CI Gemini config" in _DEFAULT_WORKFLOW
-        assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW
+        assert 'chair_model = "gemini/gemini-2.5-flash"' in _DEFAULT_WORKFLOW
         assert "timeout_seconds = 360" in _DEFAULT_WORKFLOW
         assert "reviewer_timeout_seconds = 360" in _DEFAULT_WORKFLOW
         assert "reviewer_concurrency = 1" in _DEFAULT_WORKFLOW
@@ -2123,7 +2123,7 @@ class TestWorkflowScaffold:
         assert 'if ! git fetch --no-tags upstream -- "$BASE_REF"; then' in _DEFAULT_WORKFLOW_BYOK
         assert "Warn if workflow is running on the base branch" in _DEFAULT_WORKFLOW_BYOK
         assert "Write CI Gemini config" in _DEFAULT_WORKFLOW_BYOK
-        assert 'chair_model = "gemini/gemini-3-pro-preview"' in _DEFAULT_WORKFLOW_BYOK
+        assert 'chair_model = "gemini/gemini-2.5-flash"' in _DEFAULT_WORKFLOW_BYOK
         assert "timeout_seconds = 360" in _DEFAULT_WORKFLOW_BYOK
         assert "reviewer_timeout_seconds = 360" in _DEFAULT_WORKFLOW_BYOK
         assert "reviewer_concurrency = 1" in _DEFAULT_WORKFLOW_BYOK

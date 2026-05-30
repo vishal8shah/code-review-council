@@ -276,7 +276,7 @@ def _chair_fast_path_verdict(
         if review.verdict == "FAIL" and not review.findings and review.error is None
     ]
 
-    if empty_fail_reviewers and not all_findings:
+    if empty_fail_reviewers:
         reasons = [
             f"{reviewer_id}: integrity issue: FAIL verdict with no findings/evidence"
             for reviewer_id in empty_fail_reviewers

@@ -101,9 +101,9 @@ Before running, the BYOK workflow validates:
 Actions tab → council-byok → Run workflow → fill inputs → Run
 ```
 
-The Gemini workflows use `gemini/gemini-3-pro-preview` in CI, set
+The Gemini workflows use `gemini/gemini-2.5-flash` in CI, set
 `reviewer_timeout_seconds = 360`, and run reviewers sequentially with
-`reviewer_concurrency = 1` to reduce preview-model timeout/rate-limit noise.
+`reviewer_concurrency = 1` to reduce model timeout/rate-limit noise.
 
 ---
 

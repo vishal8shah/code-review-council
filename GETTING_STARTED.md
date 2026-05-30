@@ -357,9 +357,9 @@ These owner outputs use the same underlying analysis as developer mode. Only the
 ## Model presets (quick guidance)
 
 If you want local parity with the generated GitHub workflows, use
-`gemini/gemini-3-pro-preview` for the Chair and all reviewers, set
+`gemini/gemini-2.5-flash` for the Chair and all reviewers, set
 `reviewer_concurrency = 1`, and give both `timeout_seconds` and
-`reviewer_timeout_seconds` enough room for slower preview-model calls.
+`reviewer_timeout_seconds` enough room for slower or rate-limited model calls.
 
 If you want the local scaffold defaults, use chair `openai/gpt-4o` with reviewer mix:
 - secops/qa: `openai/gpt-5.2`

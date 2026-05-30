@@ -91,14 +91,14 @@ and take longer. Gate Zero and diff preprocessing are always free.
 It depends on model choice, diff size, retries, and reviewer concurrency. With
 parallel reviewers enabled, wall-clock time is roughly the slowest single
 reviewer plus Chair synthesis. Generated Gemini CI runs sequential reviewers
-with larger timeouts to avoid preview-model timeout noise, so it may take a few
+with larger timeouts to avoid model timeout noise, so it may take a few
 minutes on larger diffs.
 
 ### How do I reduce cost without losing quality?
 
 | Lever | How to adjust | Trade-off |
 |-------|--------------|----------|
-| Reviewer models | Use cheaper models for Docs/Architect or a single-provider Gemini preset | Slightly lower reasoning depth or longer preview-model latency |
+| Reviewer models | Use cheaper models for Docs/Architect or a single-provider Gemini preset | Slightly lower reasoning depth or model-specific latency |
 | Diff size | Review smaller, focused PRs | Requires PR discipline |
 | Concurrency | Lower `reviewer_concurrency` for slow/rate-limited providers | More reliable but slower reviews |
 | Caching | Enable in `.council.toml` | Same-diff re-runs are free |
@@ -114,12 +114,12 @@ Edit `.council.toml`. Each reviewer has a `model` key:
 
 ```toml
 [council]
-chair_model = "gemini/gemini-3-pro-preview"
+chair_model = "gemini/gemini-2.5-flash"
 
 [[reviewers]]
 id = "secops"
 name = "Security Operations Reviewer"
-model = "gemini/gemini-3-pro-preview"
+model = "gemini/gemini-2.5-flash"
 prompt = "prompts/secops.md"
 ```
 
@@ -134,7 +134,7 @@ Yes. Set `enabled = false` in `.council.toml` for any reviewer:
 [[reviewers]]
 id = "docs"
 name = "Documentation Reviewer"
-model = "gemini/gemini-3-pro-preview"
+model = "gemini/gemini-2.5-flash"
 prompt = "prompts/docs.md"
 enabled = false
 ```

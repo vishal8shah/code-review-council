@@ -270,6 +270,35 @@ def _chair_fast_path_verdict(
     all_errored = bool(reviews) and all(review.error is not None for review in reviews)
     all_pass = bool(reviews) and all(review.verdict == "PASS" for review in reviews)
     all_clean = bool(reviews) and all(review.error is None for review in reviews)
+    empty_fail_reviewers = [
+        review.reviewer_id
+        for review in reviews
+        if review.verdict == "FAIL" and not review.findings and review.error is None
+    ]
+
+    if empty_fail_reviewers and not all_findings:
+        reasons = [
+            f"{reviewer_id}: integrity issue: FAIL verdict with no findings/evidence"
+            for reviewer_id in empty_fail_reviewers
+        ]
+        return ChairVerdict(
+            verdict="FAIL",
+            confidence=0.0,
+            chair_output_mode=None,
+            degraded=True,
+            degraded_reasons=(degraded_reasons or []) + reasons,
+            summary="Chair could not trust reviewer output; review failed closed for safety.",
+            accepted_blockers=[],
+            warnings=[],
+            dismissed_findings=[],
+            all_findings=[],
+            reviewer_agreement_score=0.0,
+            rationale=(
+                "A reviewer emitted a FAIL verdict without findings or evidence. "
+                "Chair synthesis failed closed to avoid silently passing an "
+                "untrustworthy review state."
+            ),
+        )
 
     if not all_findings and degraded:
         return ChairVerdict(

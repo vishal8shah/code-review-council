@@ -3620,6 +3620,11 @@ async def test_chair_fast_path_requires_clean_and_all_pass():
         [ReviewerOutput(reviewer_id="x", model="m", verdict="FAIL", confidence=0.9, findings=[])],
     )
     assert verdict.verdict == "FAIL"
+    assert verdict.confidence == 0.0
+    assert verdict.degraded is True
+    assert "x: integrity issue: FAIL verdict with no findings/evidence" in verdict.degraded_reasons
+    assert verdict.accepted_blockers == []
+    assert "failed closed" in verdict.rationale
 
 
 def test_reviewer_config_accepts_class_path(tmp_path):
@@ -4424,7 +4429,24 @@ async def test_chair_synthesize_records_prompt_json_fallback_output_mode():
     from council.llm_transport import JSONCompletionResult
 
     review_pack = ReviewPack(diff_text="+x", changed_files=["a.py"])
-    reviews = [ReviewerOutput(reviewer_id="qa", model="m", verdict="FAIL", confidence=0.8, findings=[])]
+    reviews = [
+        ReviewerOutput(
+            reviewer_id="qa",
+            model="m",
+            verdict="FAIL",
+            confidence=0.8,
+            findings=[
+                Finding(
+                    severity="MEDIUM",
+                    category="testing",
+                    file="a.py",
+                    description="Needs a regression test.",
+                    suggestion="Add a focused regression test.",
+                    evidence_ref="a.py changed without a matching test assertion.",
+                )
+            ],
+        )
+    ]
 
     raw = json.dumps(
         {

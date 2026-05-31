@@ -25,6 +25,7 @@ parity, and no silent success when model output or transport fails.
 ## Working Rules
 
 - Prefer small, reversible changes over broad rewrites.
+- Prefer concise code, but never trade away readability, evidence, or safety.
 - Inspect the relevant runtime path and tests before editing.
 - Preserve Python 3.12+ compatibility and avoid adding dependencies unless the
   feature genuinely requires them.
@@ -35,6 +36,18 @@ parity, and no silent success when model output or transport fails.
 - Do not accept evidence-free findings, speculative security claims, or
   omission-only test/docs blockers.
 - Keep README and public docs aligned with actual CLI behavior.
+
+## Code Quality Bar
+
+- Use the smallest clear implementation that preserves Council's integrity
+  contract.
+- Extract a helper when it names a real invariant or removes meaningful
+  branching; avoid one-off helpers that only move code around.
+- Prefer guard clauses over nested branching in high-risk files.
+- Comments should explain why a decision is needed, not narrate what the code
+  already says.
+- Tests should prove behavior and failure modes that users, CI, or agents rely
+  on.
 
 ## High-Risk Areas
 
@@ -94,6 +107,7 @@ behavior.
 
 - `docs/ARCHITECTURE.md` for the runtime pipeline and module boundaries.
 - `docs/CODE_REVIEW.md` for reviewer and Chair finding rules.
+- `docs/CODE_QUALITY.md` for succinct-code, comment, and maintainability rules.
 - `docs/TESTING.md` for validation guidance.
 - `docs/INTEGRITY_POLICY.md` for fail-closed and degraded-mode policy.
 - `SECURITY.md` for secrets, CI, prompt injection, and untrusted config rules.

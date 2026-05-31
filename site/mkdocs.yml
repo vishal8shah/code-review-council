@@ -41,6 +41,7 @@ nav:
   - Getting Started: getting-started.md
   - Adoption Guide: adoption-guide.md
   - Design: design.md
+  - Code Quality: code-quality.md
   - Security: security.md
   - Workflows: workflows.md
   - Self Review: self-review.md

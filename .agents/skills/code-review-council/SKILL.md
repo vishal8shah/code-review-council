@@ -30,6 +30,7 @@ Always inspect:
 
 - `AGENTS.md`
 - `docs/ARCHITECTURE.md`
+- `docs/CODE_QUALITY.md`
 - `docs/INTEGRITY_POLICY.md`
 - The files directly touched by the request.
 - The nearest existing tests in `tests/`.
@@ -68,10 +69,12 @@ For analyzer work, also inspect:
 2. Read the relevant code, docs, config, prompts, and tests before editing.
 3. Use `.agent/PLANS.md` for risky or multi-file work.
 4. Keep the patch narrow.
-5. Add or update tests for behavior changes.
-6. Check reporter parity for output changes.
-7. Check docs for CLI or public behavior changes.
-8. Run focused validation, then the broader validation needed for the change.
+5. Prefer the smallest clear implementation; avoid clever compression that hides
+   integrity, security, or reporting behavior.
+6. Add or update tests for behavior changes.
+7. Check reporter parity for output changes.
+8. Check docs for CLI or public behavior changes.
+9. Run focused validation, then the broader validation needed for the change.
 
 ## Block Conditions
 
@@ -87,6 +90,8 @@ Do not ship changes that introduce or hide:
   output.
 - Docs that disagree with current CLI behavior.
 - New dependencies for documentation-only changes.
+- Unnecessary branching or helper churn in high-risk files when a smaller clear
+  change would preserve the same behavior.
 
 ## Output Format
 
@@ -111,3 +116,4 @@ file/line references.
 - Reporter parity checked when reporters or verdict fields change
 - Integrity cases checked when reviewer, Chair, transport, or schema behavior
   changes
+- Code quality checked against `docs/CODE_QUALITY.md`

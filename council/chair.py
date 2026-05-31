@@ -267,72 +267,96 @@ def _chair_fast_path_verdict(
 ) -> ChairVerdict | None:
     """Return a deterministic Chair verdict when no synthesis call is needed."""
     all_findings = [finding for review in reviews for finding in review.findings]
-    all_errored = bool(reviews) and all(review.error is not None for review in reviews)
-    all_pass = bool(reviews) and all(review.verdict == "PASS" for review in reviews)
-    all_clean = bool(reviews) and all(review.error is None for review in reviews)
-    empty_fail_reviewers = [
+    no_evidence_fail_reviewers = _no_evidence_fail_reviewer_ids(reviews)
+
+    if no_evidence_fail_reviewers:
+        # No-evidence FAIL is an integrity state, not a finding for model adjudication.
+        return _no_evidence_fail_fast_path(no_evidence_fail_reviewers, degraded_reasons)
+
+    if not all_findings and degraded:
+        return _degraded_empty_fast_path(degraded_reasons)
+
+    if not all_findings and _all_reviewers_clean_passed(reviews, degraded):
+        return _clean_pass_fast_path()
+
+    return None
+
+
+def _no_evidence_fail_reviewer_ids(reviews: list[ReviewerOutput]) -> list[str]:
+    return [
         review.reviewer_id
         for review in reviews
         if review.verdict == "FAIL" and not review.findings and review.error is None
     ]
 
-    if empty_fail_reviewers:
-        reasons = [
-            f"{reviewer_id}: integrity issue: FAIL verdict with no findings/evidence"
-            for reviewer_id in empty_fail_reviewers
-        ]
-        return ChairVerdict(
-            verdict="FAIL",
-            confidence=0.0,
-            chair_output_mode=None,
-            degraded=True,
-            degraded_reasons=(degraded_reasons or []) + reasons,
-            summary="Chair could not trust reviewer output; review failed closed for safety.",
-            accepted_blockers=[],
-            warnings=[],
-            dismissed_findings=[],
-            all_findings=[],
-            reviewer_agreement_score=0.0,
-            rationale=(
-                "A reviewer emitted a FAIL verdict without findings or evidence. "
-                "Chair synthesis failed closed to avoid silently passing an "
-                "untrustworthy review state."
-            ),
-        )
 
-    if not all_findings and degraded:
-        return ChairVerdict(
-            verdict="PASS_WITH_WARNINGS",
-            confidence=0.7,
-            chair_output_mode=None,
-            degraded=True,
-            degraded_reasons=degraded_reasons or [],
-            summary="No accepted findings, but reviewer integrity issues were detected.",
-            accepted_blockers=[],
-            warnings=[],
-            dismissed_findings=[],
-            all_findings=[],
-            reviewer_agreement_score=1.0,
-            rationale="Review completed with degraded integrity signals. Manual spot-check recommended.",
-        )
+def _no_evidence_fail_fast_path(
+    reviewer_ids: list[str],
+    degraded_reasons: list[str] | None,
+) -> ChairVerdict:
+    reasons = [
+        f"{reviewer_id}: integrity issue: FAIL verdict with no findings/evidence"
+        for reviewer_id in reviewer_ids
+    ]
+    return ChairVerdict(
+        verdict="FAIL",
+        confidence=0.0,
+        chair_output_mode=None,
+        degraded=True,
+        degraded_reasons=(degraded_reasons or []) + reasons,
+        summary="Chair could not trust reviewer output; review failed closed for safety.",
+        accepted_blockers=[],
+        warnings=[],
+        dismissed_findings=[],
+        all_findings=[],
+        reviewer_agreement_score=0.0,
+        rationale=(
+            "A reviewer emitted a FAIL verdict without findings or evidence. "
+            "Chair synthesis failed closed to avoid silently passing an "
+            "untrustworthy review state."
+        ),
+    )
 
-    if not all_findings and not all_errored and all_pass and all_clean and not degraded:
-        return ChairVerdict(
-            verdict="PASS",
-            confidence=0.95,
-            chair_output_mode=None,
-            degraded=False,
-            degraded_reasons=[],
-            summary="All reviewers passed with no findings.",
-            accepted_blockers=[],
-            warnings=[],
-            dismissed_findings=[],
-            all_findings=[],
-            reviewer_agreement_score=1.0,
-            rationale="No findings from any reviewer. Code passes review.",
-        )
 
-    return None
+def _degraded_empty_fast_path(degraded_reasons: list[str] | None) -> ChairVerdict:
+    return ChairVerdict(
+        verdict="PASS_WITH_WARNINGS",
+        confidence=0.7,
+        chair_output_mode=None,
+        degraded=True,
+        degraded_reasons=degraded_reasons or [],
+        summary="No accepted findings, but reviewer integrity issues were detected.",
+        accepted_blockers=[],
+        warnings=[],
+        dismissed_findings=[],
+        all_findings=[],
+        reviewer_agreement_score=1.0,
+        rationale="Review completed with degraded integrity signals. Manual spot-check recommended.",
+    )
+
+
+def _clean_pass_fast_path() -> ChairVerdict:
+    return ChairVerdict(
+        verdict="PASS",
+        confidence=0.95,
+        chair_output_mode=None,
+        degraded=False,
+        degraded_reasons=[],
+        summary="All reviewers passed with no findings.",
+        accepted_blockers=[],
+        warnings=[],
+        dismissed_findings=[],
+        all_findings=[],
+        reviewer_agreement_score=1.0,
+        rationale="No findings from any reviewer. Code passes review.",
+    )
+
+
+def _all_reviewers_clean_passed(reviews: list[ReviewerOutput], degraded: bool) -> bool:
+    all_errored = bool(reviews) and all(review.error is not None for review in reviews)
+    all_pass = bool(reviews) and all(review.verdict == "PASS" for review in reviews)
+    all_clean = bool(reviews) and all(review.error is None for review in reviews)
+    return not all_errored and all_pass and all_clean and not degraded
 
 
 def _parse_chair_findings(raw_findings) -> list[ChairFinding]:

@@ -64,28 +64,33 @@ Council does not replace ESLint, `tsc`, compilers, type-aware static analyzers,
 or language-native test suites. Keep those tools in your CI. Council adds an
 evidence-based review layer over the PR diff and structured context.
 
-## Release Checklist
+## Release Readiness Checklist
 
-After the release PR merges:
+Before recommending the generated gate broadly:
 
-1. Create and push the release tag:
+1. Confirm `COUNCIL_INSTALL_SPEC` matches the current package version:
 
    ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
+   python -c "import tomllib; print('v' + tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
    ```
 
-2. Verify installation from the tag:
+2. Verify the matching GitHub tag exists:
+
+   ```bash
+   git ls-remote --tags origin v0.2.0
+   ```
+
+3. Verify installation from the tag:
 
    ```bash
    pip install git+https://github.com/vishal8shah/code-review-council.git@v0.2.0
    ```
 
-3. Run a manual OpenAI smoke validation before broad rollout:
+4. Run a manual OpenAI smoke validation before broad rollout:
 
    - GPT-5.5 Chair with `chair_reasoning_effort = "medium"`.
    - GPT-5.2 reviewer routing.
    - No unsupported non-default `temperature` on GPT-5-family reasoning calls.
 
-4. Pilot in one real TypeScript or JavaScript repo before enabling required
+5. Pilot in one real TypeScript or JavaScript repo before enabling required
    branch protection broadly.

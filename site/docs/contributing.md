@@ -106,7 +106,7 @@ Your prompt must:
 id = "yourpersona"
 name = "Your Persona"
 enabled = true
-model = "gemini/gemini-3-pro-preview"
+model = "gemini/gemini-2.5-flash"
 prompt = "prompts/yourpersona.md"
 ```
 

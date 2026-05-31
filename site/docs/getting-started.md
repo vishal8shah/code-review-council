@@ -113,7 +113,7 @@ council review --ci --branch main \
 ```
 
 !!! info "First run tip"
-    The first run fetches model responses — expect anything from under a minute to several minutes depending on diff size, model choice, and reviewer concurrency. Preview models can be slower, which is why generated CI sets explicit reviewer timeouts.
+    The first run fetches model responses — expect anything from under a minute to several minutes depending on diff size, model choice, and reviewer concurrency. Slow or rate-limited models are why generated CI sets explicit reviewer timeouts.
 
 ---
 
@@ -210,7 +210,7 @@ After `council init`, three workflow files are scaffolded:
 | `council-openai-gate.yml` | `pull_request` | Required PR gate for other repos using `OPENAI_API_KEY` |
 
 The Gemini workflows write a temporary Gemini config in CI using
-`gemini/gemini-3-pro-preview`, `reviewer_timeout_seconds = 360`, and
+`gemini/gemini-2.5-flash`, `reviewer_timeout_seconds = 360`, and
 `reviewer_concurrency = 1`.
 
 `council-openai-gate.yml` is the multi-repo deployment template. It installs

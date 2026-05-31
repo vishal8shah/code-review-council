@@ -14,10 +14,82 @@ async def test_synthesize_fast_path_passes_without_llm_call():
     review_pack = ReviewPack(diff_text="+x")
     reviews = [ReviewerOutput(reviewer_id="qa", model="m", verdict="PASS", confidence=0.9, findings=[])]
 
-    verdict = await synthesize(review_pack, reviews)
+    with patch("council.chair.invoke_json_completion", new=AsyncMock()) as mock_invoke:
+        verdict = await synthesize(review_pack, reviews)
 
     assert verdict.verdict == "PASS"
     assert verdict.summary == "All reviewers passed with no findings."
+    mock_invoke.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_synthesize_fail_without_findings_fails_closed_without_llm_call():
+    review_pack = ReviewPack(diff_text="+x")
+    reviews = [
+        ReviewerOutput(
+            reviewer_id="qa",
+            model="m",
+            verdict="FAIL",
+            confidence=0.9,
+            findings=[],
+        )
+    ]
+
+    with patch("council.chair.invoke_json_completion", new=AsyncMock()) as mock_invoke:
+        verdict = await synthesize(review_pack, reviews)
+
+    assert verdict.verdict == "FAIL"
+    assert verdict.confidence == 0.0
+    assert verdict.degraded is True
+    assert verdict.degraded_reasons == [
+        "qa: integrity issue: FAIL verdict with no findings/evidence"
+    ]
+    assert verdict.accepted_blockers == []
+    assert "failed closed" in verdict.rationale
+    mock_invoke.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_synthesize_mixed_fail_without_findings_fails_closed_without_llm_call():
+    review_pack = ReviewPack(diff_text="+x")
+    reviews = [
+        ReviewerOutput(
+            reviewer_id="qa",
+            model="m",
+            verdict="FAIL",
+            confidence=0.9,
+            findings=[],
+        ),
+        ReviewerOutput(
+            reviewer_id="secops",
+            model="m",
+            verdict="FAIL",
+            confidence=0.9,
+            findings=[
+                Finding(
+                    severity="HIGH",
+                    category="security",
+                    file="auth.py",
+                    description="Authorization check is missing.",
+                    suggestion="Add an authorization check before returning the data.",
+                    evidence_ref="auth.py:42 returns user data without checking ownership.",
+                )
+            ],
+        ),
+    ]
+
+    with patch("council.chair.invoke_json_completion", new=AsyncMock()) as mock_invoke:
+        verdict = await synthesize(review_pack, reviews)
+
+    assert verdict.verdict == "FAIL"
+    assert verdict.confidence == 0.0
+    assert verdict.degraded is True
+    assert verdict.degraded_reasons == [
+        "qa: integrity issue: FAIL verdict with no findings/evidence"
+    ]
+    assert verdict.accepted_blockers == []
+    assert "failed closed" in verdict.rationale
+    mock_invoke.assert_not_called()
 
 
 @pytest.mark.asyncio

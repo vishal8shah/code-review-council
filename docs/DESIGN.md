@@ -346,7 +346,7 @@ Reports are generated in multiple formats simultaneously. The developer sees a R
 
 ### 3.1 Why a Dedicated Chair?
 
-The Chair role requires a specific capability profile: synthesizing multiple structured inputs, handling contradictions gracefully, reasoning about severity trade-offs, and producing a clear, authoritative verdict. The architecture is **model-agnostic at the Chair position** — you configure the Chair model in `.council.toml`. The local scaffold currently defaults to `openai/gpt-4o`, while generated GitHub workflows override CI to `gemini/gemini-3-pro-preview`.
+The Chair role requires a specific capability profile: synthesizing multiple structured inputs, handling contradictions gracefully, reasoning about severity trade-offs, and producing a clear, authoritative verdict. The architecture is **model-agnostic at the Chair position** — you configure the Chair model in `.council.toml`. The local scaffold currently defaults to `openai/gpt-4o`, while generated GitHub workflows override CI to `gemini/gemini-2.5-flash`.
 
 ### 3.2 Chair System Prompt Structure
 
@@ -757,10 +757,10 @@ Each reviewer has a tuned system prompt, a designated model, and a focused revie
 
 | Persona | Local Scaffold Default | Generated CI Default | Focus | Rationale |
 |---------|------------------------|----------------------|-------|-----------|
-| **SecOps** | `openai/gpt-5.2` | `gemini/gemini-3-pro-preview` | Injection, auth flaws, secrets, dependency risks, input validation | Strong at pattern recognition and security reasoning |
-| **QA Engineer** | `openai/gpt-5.2` | `gemini/gemini-3-pro-preview` | Test coverage gaps, error handling, edge cases, assertion quality | Benefits from broad code/test context |
-| **Architect** | `openai/gpt-4o` | `gemini/gemini-3-pro-preview` | SOLID violations, coupling, complexity, API design, tech debt indicators | Deep reasoning about structural implications |
-| **Docs Reviewer** | `openai/gpt-4o-mini` | `gemini/gemini-3-pro-preview` | Docstring quality, README accuracy, comment usefulness | Lower-risk role that can use cheaper local models when desired |
+| **SecOps** | `openai/gpt-5.2` | `gemini/gemini-2.5-flash` | Injection, auth flaws, secrets, dependency risks, input validation | Strong at pattern recognition and security reasoning |
+| **QA Engineer** | `openai/gpt-5.2` | `gemini/gemini-2.5-flash` | Test coverage gaps, error handling, edge cases, assertion quality | Benefits from broad code/test context |
+| **Architect** | `openai/gpt-4o` | `gemini/gemini-2.5-flash` | SOLID violations, coupling, complexity, API design, tech debt indicators | Deep reasoning about structural implications |
+| **Docs Reviewer** | `openai/gpt-4o-mini` | `gemini/gemini-2.5-flash` | Docstring quality, README accuracy, comment usefulness | Lower-risk role that can use cheaper local models when desired |
 
 > **Phase 3 Note:** Multi-provider configurations are supported via LiteLLM, and the Chair/reviewer models are configurable per repository. The generated GitHub Actions workflows intentionally write a temporary Gemini config in CI so the default hosted path needs only `GOOGLE_API_KEY`.
 
@@ -772,7 +772,7 @@ Users can define additional personas in `.council.toml`:
 [[reviewers]]
 id = "performance"
 name = "Performance Engineer"
-model = "gemini/gemini-3-pro-preview"
+model = "gemini/gemini-2.5-flash"
 prompt = "prompts/performance.md"        # relative to repo root
 focus = ["algorithmic complexity", "memory allocation", "N+1 queries", "caching"]
 enabled = true
@@ -826,7 +826,7 @@ enforcement caps reviewer-visible diff size, while ReviewPack metadata still
 surfaces skipped tests/docs/config context.
 
 Generated CI currently favors reliability over speed/cost: it pins all roles to
-`gemini/gemini-3-pro-preview`, sets `reviewer_concurrency = 1`, and uses larger
+`gemini/gemini-2.5-flash`, sets `reviewer_concurrency = 1`, and uses larger
 timeouts. Local configs can choose cheaper models for lower-risk roles.
 
 ### 6.4 Latency Profile
@@ -888,11 +888,11 @@ $ council review
   Stage 0: Gate Zero ........... ✅ PASSED (1.2s)
   ReviewPack assembled: 5 changed symbols, 2 with tests
   Stage 1: Reviewer Panel
-    ├─ SecOps (gemini/gemini-3-pro-preview) ... ✅ PASS (0 findings)
-    ├─ QA (gemini/gemini-3-pro-preview) ....... ⚠️  FAIL (2 findings)
-    ├─ Architect (gemini/gemini-3-pro-preview)  ✅ PASS (1 finding)
-    └─ Docs (gemini/gemini-3-pro-preview) ..... ✅ PASS (0 findings)
-  Stage 2: Chair Synthesis (gemini/gemini-3-pro-preview) ... done
+    ├─ SecOps (gemini/gemini-2.5-flash) ... ✅ PASS (0 findings)
+    ├─ QA (gemini/gemini-2.5-flash) ....... ⚠️  FAIL (2 findings)
+    ├─ Architect (gemini/gemini-2.5-flash)  ✅ PASS (1 finding)
+    └─ Docs (gemini/gemini-2.5-flash) ..... ✅ PASS (0 findings)
+  Stage 2: Chair Synthesis (gemini/gemini-2.5-flash) ... done
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   VERDICT: ⚠️  PASS WITH WARNINGS (advisory — push not blocked)
@@ -939,7 +939,7 @@ jobs:
         run: |
           cat > .council.toml <<'EOF'
           [council]
-          chair_model = "gemini/gemini-3-pro-preview"
+          chair_model = "gemini/gemini-2.5-flash"
           timeout_seconds = 360
           reviewer_timeout_seconds = 360
           reviewer_concurrency = 1
@@ -947,28 +947,28 @@ jobs:
           [[reviewers]]
           id = "secops"
           name = "Security Operations Reviewer"
-          model = "gemini/gemini-3-pro-preview"
+          model = "gemini/gemini-2.5-flash"
           prompt = "prompts/secops.md"
           enabled = true
 
           [[reviewers]]
           id = "qa"
           name = "QA Engineer"
-          model = "gemini/gemini-3-pro-preview"
+          model = "gemini/gemini-2.5-flash"
           prompt = "prompts/qa.md"
           enabled = true
 
           [[reviewers]]
           id = "architect"
           name = "Solutions Architect"
-          model = "gemini/gemini-3-pro-preview"
+          model = "gemini/gemini-2.5-flash"
           prompt = "prompts/architecture.md"
           enabled = true
 
           [[reviewers]]
           id = "docs"
           name = "Documentation Reviewer"
-          model = "gemini/gemini-3-pro-preview"
+          model = "gemini/gemini-2.5-flash"
           prompt = "prompts/docs.md"
           enabled = true
           EOF

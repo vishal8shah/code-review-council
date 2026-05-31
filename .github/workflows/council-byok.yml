@@ -143,7 +143,7 @@ Invalid input.
         run: |
           cat > .council.toml <<'EOF'
           [council]
-          chair_model = "gemini/gemini-3-pro-preview"
+          chair_model = "gemini/gemini-2.5-flash"
           timeout_seconds = 360
           reviewer_timeout_seconds = 360
           reviewer_concurrency = 1
@@ -151,28 +151,28 @@ Invalid input.
           [[reviewers]]
           id = "secops"
           name = "Security Operations Reviewer"
-          model = "gemini/gemini-3-pro-preview"
+          model = "gemini/gemini-2.5-flash"
           prompt = "prompts/secops.md"
           enabled = true
 
           [[reviewers]]
           id = "qa"
           name = "QA Engineer"
-          model = "gemini/gemini-3-pro-preview"
+          model = "gemini/gemini-2.5-flash"
           prompt = "prompts/qa.md"
           enabled = true
 
           [[reviewers]]
           id = "architect"
           name = "Solutions Architect"
-          model = "gemini/gemini-3-pro-preview"
+          model = "gemini/gemini-2.5-flash"
           prompt = "prompts/architecture.md"
           enabled = true
 
           [[reviewers]]
           id = "docs"
           name = "Documentation Reviewer"
-          model = "gemini/gemini-3-pro-preview"
+          model = "gemini/gemini-2.5-flash"
           prompt = "prompts/docs.md"
           enabled = true
           EOF

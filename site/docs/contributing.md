@@ -25,9 +25,16 @@ pytest -q
 
 All tests should pass on a clean checkout. If they don’t, open an issue before doing anything else.
 
-### 3. API keys for integration tests
+### 3. Read the code quality bar
 
-Unit tests are fully mocked and run without any API keys. Integration tests require at least one provider key:
+Before changing runtime behavior, read [Code Quality](code-quality.md). Council
+prefers the smallest clear implementation, comments that explain why, and tests
+that prove behavior rather than private implementation details.
+
+### 4. API keys for manual model checks
+
+The automated test suite is mocked and runs without API keys. Manual model
+checks require at least one provider key:
 
 ```bash
 export GOOGLE_API_KEY=...
@@ -35,8 +42,8 @@ export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-!!! tip "Use cheap models for local integration testing"
-    Set reviewer models to a cheaper provider/model in `.council.toml` for local integration runs. The generated GitHub workflows are Gemini-pinned, but local runs can use any LiteLLM-supported provider you have budget for.
+!!! tip "Use cheap models for manual testing"
+    Set reviewer models to a cheaper provider/model in `.council.toml` for manual runs. The generated GitHub workflows are Gemini-pinned, but local runs can use any LiteLLM-supported provider you have budget for.
 
 ---
 
@@ -45,33 +52,32 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ### Running tests
 
 ```bash
-# All tests (unit only, no API calls)
+# All tests
 pytest -q
 
-# With integration tests (requires API keys)
-pytest -q --integration
-
 # Specific test file
-pytest tests/test_chair.py -v
+pytest tests/test_chair_synthesize.py -q
 
-# With coverage
-pytest --cov=council --cov-report=term-missing
+# Reporter-focused tests
+pytest tests/test_github_reporter.py tests/test_terminal_reporter.py -q
 ```
 
 ### Test categories
 
 | Category | Location | Requires Keys? | What’s Covered |
 |----------|----------|----------------|----------------|
-| Unit | `tests/unit/` | No | Pipeline stages, parsing, validation logic |
-| Integration | `tests/integration/` | Yes | End-to-end review runs against real models |
-| Fixtures | `tests/fixtures/` | No | Sample diffs, ReviewPacks, mock verdicts |
+| Runtime and pipeline | `tests/test_council.py` | No | CLI flow, config, integrity, reporters, owner output |
+| Chair synthesis | `tests/test_chair_synthesize.py` | No | Chair fast paths, parsing, and fail-closed behavior |
+| Reporters | `tests/test_github_reporter.py`, `tests/test_terminal_reporter.py` | No | GitHub, terminal, and sanitization behavior |
+| Focused modules | `tests/test_*.py` | No | Diff parsing, history, transport, repo context, ReviewPack |
 
 ### Test expectations for PRs
 
 - New features must include unit tests
 - Bug fixes must include a regression test that fails before the fix and passes after
 - New reviewer personas must include at least one unit test covering output schema compliance
-- Coverage should not decrease on the changed module
+- Integrity or reporter changes must prove degraded reasons, reviewer errors,
+  accepted findings, and output modes stay visible where applicable
 
 ---
 
@@ -97,7 +103,7 @@ Your prompt must:
 - Define the reviewer's domain clearly
 - Require file + line evidence for every finding
 - Reject speculative findings (no pattern-match-only blockers)
-- Produce output compatible with the `ReviewerFinding` schema
+- Produce output compatible with the `Finding` schema in `council/schemas.py`
 
 ### Step 2 — Register in `.council.toml`
 
@@ -112,15 +118,16 @@ prompt = "prompts/yourpersona.md"
 
 ### Step 3 — Verify schema compatibility
 
-The reviewer output must deserialise cleanly into `ReviewerFinding`. Run:
+The reviewer output must deserialize cleanly into `Finding`. Add focused
+coverage near the existing reviewer or parsing tests, then run:
 
 ```bash
-pytest tests/unit/test_reviewer_schema.py -v
+pytest tests/test_council.py tests/test_support_context_prompts.py -q
 ```
 
 ### Step 4 — Add tests
 
-- One unit test with a mock diff → mock LLM response → assert parsed finding structure
+- One test with a mock diff and mock LLM response asserting parsed finding structure
 - One test asserting the reviewer rejects a finding that has no evidence chain
 - One test for the degraded mode path (reviewer returns malformed output)
 
@@ -138,7 +145,7 @@ See the PR standards below.
 ### PR checklist
 
 - [ ] Editable install works cleanly (`pip install -e .`)
-- [ ] All unit tests pass (`pytest -q`)
+- [ ] All tests pass (`pytest -q`)
 - [ ] New behaviour has test coverage
 - [ ] `.council.toml` changes are documented in the PR description
 - [ ] Prompt changes include a before/after example in the PR description

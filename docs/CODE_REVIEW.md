@@ -163,3 +163,7 @@ Dismiss:
 - Reporter drift between JSON, markdown, HTML, GitHub PR, terminal, and owner
   output.
 - Docs updates that describe behavior the CLI does not implement.
+- Code-quality findings that demand more abstraction without showing reduced
+  complexity, clearer invariants, or safer failure behavior.
+- Comments that merely restate code instead of explaining trust boundaries,
+  integrity decisions, or compatibility constraints.

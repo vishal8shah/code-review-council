@@ -192,6 +192,9 @@ Council reviews
 
 Built to support **OpenClaw** and similar multi-bot frameworks — where the writer and the reviewer work in the same automated loop.
 
+For a practical operating model with Codex, Claude Code, OpenClaw, Cursor, and
+GitHub Actions, see the docs [Agent Loop guide](site/docs/agent-loop.md).
+
 ---
 
 ## ⚙️ Configuration

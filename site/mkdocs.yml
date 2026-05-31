@@ -39,6 +39,7 @@ nav:
   - Home: index.md
   - Overview: overview.md
   - Getting Started: getting-started.md
+  - Agent Loop: agent-loop.md
   - Adoption Guide: adoption-guide.md
   - Design: design.md
   - Code Quality: code-quality.md

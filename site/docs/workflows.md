@@ -133,6 +133,8 @@ rollout.
 
 For a full rollout checklist and language-support matrix, see the
 [Adoption Guide](adoption-guide.md).
+For coding-agent repair loops that consume Council outputs, see the
+[Agent Loop](agent-loop.md) guide.
 
 ---
 
@@ -181,5 +183,6 @@ CI mode (`--ci`) exits non-zero on `FAIL`. `PASS WITH WARNINGS` always exits zer
 ## ⏩ Related Pages
 
 - [Getting Started](getting-started.md) — install, init, first review, adding secrets
+- [Agent Loop](agent-loop.md) — use Council as feedback for Codex, Claude Code, OpenClaw, and similar agents
 - [Security](security.md) — BYOK threat model, input validation details, fork PR policy
 - [Design](design.md) — the 5-stage pipeline these workflows invoke

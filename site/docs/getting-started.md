@@ -227,6 +227,9 @@ council init --workflow-profile openai-gate
 ```
 
 See the [Adoption Guide](adoption-guide.md) before enabling branch protection.
+If Council will feed Codex, Claude Code, OpenClaw, or another coding-agent
+repair loop, use the [Agent Loop](agent-loop.md) guide to wire JSON and Markdown
+outputs into that process safely.
 
 ### Add your secrets, then push:
 
@@ -259,6 +262,7 @@ Council will automatically review the next PR opened against your default branch
 ## ⏩ Next Steps
 
 - [Overview](overview.md) — understand the full pipeline and multi-LLM design
+- [Agent Loop](agent-loop.md) — use Council with Codex, Claude Code, OpenClaw, and PR gates
 - [Security](security.md) — key scoping, threat model, merge gates
 - [Design](design.md) — how the Chair adjudicates findings and avoids speculative blocks
 - [Self Review](self-review.md) — see real output from Council reviewing its own PR

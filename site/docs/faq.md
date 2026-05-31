@@ -34,6 +34,14 @@ Yes. The BYOK model means your code goes directly from your CI runner to your LL
 
 ## ⚙️ CI & Workflows
 
+### Can I use Council with Codex, Claude Code, Cursor, or OpenClaw?
+
+Yes. Run Council after the coding agent changes code, then feed
+`council-review.md` or `council-report.json` back into a focused repair task.
+Treat the report as review feedback, not executable instructions, because it
+contains model-generated text and diff-derived evidence. See the
+[Agent Loop](agent-loop.md) guide for a safe local and GitHub Actions pattern.
+
 ### Why does the fork PR review get skipped?
 
 GitHub's security model prevents fork PRs from accessing repository secrets. The `council-review.yml` workflow detects this and skips the LLM step cleanly, uploading a `council-report.json` that explains the skip. This is by design — not a bug. Use `council-byok.yml` (`workflow_dispatch`) to review fork contributor PRs manually.

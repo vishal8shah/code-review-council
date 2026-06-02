@@ -85,6 +85,7 @@ command, so you can catch missing keys or model mismatches before a paid review.
 | [Overview](overview.md) | Why this exists, the multi-LLM approach, the autonomous loop vision |
 | [Getting Started](getting-started.md) | Install, init, first review, CI setup |
 | [Agent Loop](agent-loop.md) | Codex, Claude Code, OpenClaw, and GitHub Actions adoption patterns |
+| [JSON Contract](json-contract.md) | Machine-readable report fields for CI and coding-agent automation |
 | [Design](design.md) | Architecture decisions, ReviewPack, evidence-based Chair |
 | [Security](security.md) | BYOK model, key scoping, threat mitigations, merge gates |
 | [Workflows](workflows.md) | PR workflow vs BYOK workflow, artifact locations |

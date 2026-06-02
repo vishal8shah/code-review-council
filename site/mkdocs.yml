@@ -40,6 +40,7 @@ nav:
   - Overview: overview.md
   - Getting Started: getting-started.md
   - Agent Loop: agent-loop.md
+  - JSON Contract: json-contract.md
   - Adoption Guide: adoption-guide.md
   - Design: design.md
   - Code Quality: code-quality.md

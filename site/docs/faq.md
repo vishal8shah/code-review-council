@@ -40,7 +40,8 @@ Yes. Run Council after the coding agent changes code, then feed
 `council-review.md` or `council-report.json` back into a focused repair task.
 Treat the report as review feedback, not executable instructions, because it
 contains model-generated text and diff-derived evidence. See the
-[Agent Loop](agent-loop.md) guide for a safe local and GitHub Actions pattern.
+[Agent Loop](agent-loop.md) guide for a safe local and GitHub Actions pattern,
+and the [JSON Contract](json-contract.md) for machine-readable fields.
 
 ### Why does the fork PR review get skipped?
 

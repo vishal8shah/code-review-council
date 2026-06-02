@@ -142,8 +142,10 @@ For coding-agent repair loops that consume Council outputs, see the
 
 | Artifact | File | Workflow | Contents |
 |----------|------|----------|----------|
-| `council-report` | `council-report.json` | All workflows | Full `ChairVerdict`: per-reviewer findings, confidence, degraded reasons, final verdict |
+| `council-report` | `council-report.json` | All workflows | Machine-readable Chair verdict, findings, reviewer health, degraded reasons, and transport notes |
 | `council-report` | `council-review.md` | BYOK only | Human-readable markdown review with next steps and accepted-finding fix guidance (developer or owner format) |
+
+See the [JSON Contract](json-contract.md) for automation-safe parsing rules.
 
 ### Finding your artifacts
 

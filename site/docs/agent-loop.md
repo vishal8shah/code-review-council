@@ -86,6 +86,7 @@ For autonomous or multi-agent systems, keep the loop explicit:
 Prefer `council-report.json` for automation because it preserves verdict,
 confidence, degraded state, accepted blockers, warnings, dismissed findings,
 reviewer errors, and transport notes in a stable machine-readable form.
+See the [JSON Contract](json-contract.md) for field-level parsing guidance.
 
 Use `council-review.md` when the next step is another coding agent repair pass.
 Use owner Markdown or HTML when a founder, product owner, or stakeholder needs

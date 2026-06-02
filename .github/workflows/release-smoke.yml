@@ -1,0 +1,78 @@
+name: Release Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Release tag or full commit SHA to install
+        required: true
+        default: v0.2.0
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Setup Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: '3.12'
+
+      - name: Validate release ref
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9._-]+)?$ ]]; then
+            exit 0
+          fi
+          if [[ "$RELEASE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            exit 0
+          fi
+          echo "::error::release_ref must be a semver tag like v0.2.0 or a full 40-character commit SHA."
+          exit 1
+
+      - name: Install Council from release ref
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "git+https://github.com/vishal8shah/code-review-council.git@$RELEASE_REF"
+
+      - name: Smoke CLI and OpenAI gate scaffold
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+        run: |
+          set -euo pipefail
+          python -c "import importlib.metadata; print(importlib.metadata.version('code-review-council'))"
+          council --help
+          council init --help
+
+          mkdir smoke-repo
+          cd smoke-repo
+          git init
+          git config user.email "release-smoke@example.invalid"
+          git config user.name "Release Smoke"
+          printf '# Smoke repo\n' > README.md
+          git add README.md
+          git commit -m "init smoke repo"
+
+          council init --workflow-profile openai-gate
+          test -f .github/workflows/council-openai-gate.yml
+          grep -F "COUNCIL_INSTALL_SPEC: git+https://github.com/vishal8shah/code-review-council.git@$RELEASE_REF" .github/workflows/council-openai-gate.yml
+          grep -F 'OPENAI_API_KEY:' .github/workflows/council-openai-gate.yml
+          grep -F 'secrets.OPENAI_API_KEY' .github/workflows/council-openai-gate.yml
+          grep -F 'chair_reasoning_effort = "medium"' .github/workflows/council-openai-gate.yml
+
+      - name: Upload generated workflow
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+        if: always()
+        with:
+          name: release-smoke-openai-gate
+          path: smoke-repo/.github/workflows/council-openai-gate.yml

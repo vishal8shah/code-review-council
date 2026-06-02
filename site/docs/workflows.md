@@ -136,6 +136,10 @@ For a full rollout checklist and language-support matrix, see the
 For coding-agent repair loops that consume Council outputs, see the
 [Agent Loop](agent-loop.md) guide.
 
+Before broad external rollout, run the manual `Release Smoke` workflow in this
+repo. It verifies that a release tag or commit SHA can install Council and
+generate an OpenAI gate scaffold pinned to that same ref.
+
 ---
 
 ## 📦 Artifacts Reference

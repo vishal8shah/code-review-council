@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
+import tomllib
+
 import pytest
 from typer.testing import CliRunner
 
 from council.cli import _DEFAULT_WORKFLOW_OPENAI_GATE, app
+
+
+def _project_version() -> str:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    return pyproject["project"]["version"]
 
 
 def _workflow_dir(root):
@@ -58,7 +66,12 @@ def test_init_invalid_workflow_profile_fails_before_writing_files(tmp_path):
 
 
 def test_openai_gate_workflow_scaffold_is_pinned_and_safe():
-    assert "git+https://github.com/vishal8shah/code-review-council.git@v0.2.0" in (
+    expected_pin = (
+        "git+https://github.com/vishal8shah/code-review-council.git"
+        f"@v{_project_version()}"
+    )
+
+    assert expected_pin in (
         _DEFAULT_WORKFLOW_OPENAI_GATE
     )
     assert "git+https://github.com/vishal8shah/code-review-council.git@main" not in (

@@ -86,11 +86,16 @@ Before recommending the generated gate broadly:
    pip install git+https://github.com/vishal8shah/code-review-council.git@v0.2.0
    ```
 
-4. Run a manual OpenAI smoke validation before broad rollout:
+4. Run the manual `Release Smoke` workflow from the Actions tab with
+   `release_ref = v0.2.0`. It installs Council from the tag, checks package and
+   CLI availability, scaffolds `council-openai-gate.yml`, and verifies the
+   generated workflow pins back to the same release ref.
+
+5. Run a manual OpenAI smoke validation before broad rollout:
 
    - GPT-5.5 Chair with `chair_reasoning_effort = "medium"`.
    - GPT-5.2 reviewer routing.
    - No unsupported non-default `temperature` on GPT-5-family reasoning calls.
 
-5. Pilot in one real TypeScript or JavaScript repo before enabling required
+6. Pilot in one real TypeScript or JavaScript repo before enabling required
    branch protection broadly.

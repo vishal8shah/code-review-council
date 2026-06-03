@@ -42,6 +42,7 @@ jobs:
           RELEASE_REF: ${{ inputs.release_ref }}
         run: |
           set -euo pipefail
+          # release_ref is validated above before it is interpolated into pip install.
           python -m pip install --upgrade pip
           pip install "git+https://github.com/vishal8shah/code-review-council.git@$RELEASE_REF"
 

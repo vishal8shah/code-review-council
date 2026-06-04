@@ -882,7 +882,7 @@ name: Code Review Council OpenAI Gate
 on: [pull_request]
 
 env:
-  COUNCIL_INSTALL_SPEC: git+https://github.com/vishal8shah/code-review-council.git@v0.2.0
+  COUNCIL_INSTALL_SPEC: git+https://github.com/vishal8shah/code-review-council.git@v0.3.0
 
 jobs:
   council-review:

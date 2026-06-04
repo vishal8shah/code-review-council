@@ -17,7 +17,7 @@ PR gate in a repository that does not vendor the Council source.
 
    ```yaml
    env:
-     COUNCIL_INSTALL_SPEC: git+https://github.com/vishal8shah/code-review-council.git@v0.2.0
+     COUNCIL_INSTALL_SPEC: git+https://github.com/vishal8shah/code-review-council.git@v0.3.0
    ```
 
 4. Tune `.councilignore` so lockfiles, generated files, vendored dependencies,
@@ -77,17 +77,17 @@ Before recommending the generated gate broadly:
 2. Verify the matching GitHub tag exists:
 
    ```bash
-   git ls-remote --tags origin v0.2.0
+   git ls-remote --tags origin v0.3.0
    ```
 
 3. Verify installation from the tag:
 
    ```bash
-   pip install git+https://github.com/vishal8shah/code-review-council.git@v0.2.0
+   pip install git+https://github.com/vishal8shah/code-review-council.git@v0.3.0
    ```
 
 4. Run the manual `Release Smoke` workflow from the Actions tab with
-   `release_ref = v0.2.0`. It installs Council from the tag, checks package and
+   `release_ref = v0.3.0`. It installs Council from the tag, checks package and
    CLI availability, scaffolds `council-openai-gate.yml`, and verifies the
    generated workflow pins back to the same release ref.
 
@@ -100,9 +100,10 @@ Before recommending the generated gate broadly:
 6. Pilot in one real TypeScript or JavaScript repo before enabling required
    branch protection broadly.
 
-## Current Release Evidence
+## Previous Release Evidence
 
-For `v0.2.0`, the manual `Release Smoke` workflow passed on June 3, 2026:
+Until `v0.3.0` is tagged and smoke-tested, the latest recorded evidence is the
+`v0.2.0` manual `Release Smoke` workflow from June 3, 2026:
 
 - Installed Council from `git+https://github.com/vishal8shah/code-review-council.git@v0.2.0`.
 - Resolved the tag to commit `45a31b8eda9460b14fd1e954eb15709e186d4c59`.

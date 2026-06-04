@@ -204,7 +204,7 @@ installs Council from `COUNCIL_INSTALL_SPEC`, fails closed when
 `OPENAI_API_KEY` is missing, and uses `openai/gpt-5.5` with
 `chair_reasoning_effort = "medium"` for Chair synthesis.
 
-Phase 4F pins that external gate scaffold to `v0.2.0`, adds
+Phase 4F pins that external gate scaffold to a versioned release tag, adds
 `council init --workflow-profile openai-gate`, and documents a pilot-first
 multi-repo adoption path. Python has AST-based deterministic checks;
 TypeScript and JavaScript have parser-free deterministic heuristics; other

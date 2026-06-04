@@ -55,7 +55,7 @@ Do not replace the immutable pins with moving major tags.
 | **Trigger** | `pull_request` (automatic) |
 | **Secrets access** | Repository `OPENAI_API_KEY` secret |
 | **Fork PRs** | Fails closed when the key is unavailable |
-| **Install path** | Installs Council from `COUNCIL_INSTALL_SPEC` pinned to `v0.2.0` by default |
+| **Install path** | Installs Council from `COUNCIL_INSTALL_SPEC` pinned to `v0.3.0` by default |
 | **Chair model** | `openai/gpt-5.5` with `chair_reasoning_effort = "medium"` |
 | **Use case** | Required branch-protection gate for other repos |
 
@@ -141,7 +141,7 @@ TS/JS repositories without vendoring the Council source into each repo.
    `BASE_REF` supplied from the PR base ref
 6. Uploads `council-report.json`
 
-The scaffold defaults `COUNCIL_INSTALL_SPEC` to `v0.2.0`. Keep that value
+The scaffold defaults `COUNCIL_INSTALL_SPEC` to `v0.3.0`. Keep that value
 pinned to a release tag or commit SHA before making the check required across
 many repos; do not use a moving branch such as `main` for protected-branch
 rollout.

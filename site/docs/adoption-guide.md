@@ -100,16 +100,15 @@ Before recommending the generated gate broadly:
 6. Pilot in one real TypeScript or JavaScript repo before enabling required
    branch protection broadly.
 
-## Previous Release Evidence
+## Current Release Evidence
 
-Until `v0.3.0` is tagged and smoke-tested, the latest recorded evidence is the
-`v0.2.0` manual `Release Smoke` workflow from June 3, 2026:
+For `v0.3.0`, the manual `Release Smoke` workflow passed on June 4, 2026:
 
-- Installed Council from `git+https://github.com/vishal8shah/code-review-council.git@v0.2.0`.
-- Resolved the tag to commit `45a31b8eda9460b14fd1e954eb15709e186d4c59`.
-- Built and installed `code-review-council-0.2.0`.
+- Installed Council from `git+https://github.com/vishal8shah/code-review-council.git@v0.3.0`.
+- Resolved the annotated tag to merge commit `d5ee777967ff442df0428e8235543e71244ae5ad`.
+- Built and installed `code-review-council-0.3.0`.
 - Generated `council-openai-gate.yml`.
-- Verified the generated workflow pins `COUNCIL_INSTALL_SPEC` back to `v0.2.0`.
+- Verified the generated workflow pins `COUNCIL_INSTALL_SPEC` back to `v0.3.0`.
 
 Run evidence:
-[Release Smoke #26855416292](https://github.com/vishal8shah/code-review-council/actions/runs/26855416292).
+[Release Smoke #26930713301](https://github.com/vishal8shah/code-review-council/actions/runs/26930713301).

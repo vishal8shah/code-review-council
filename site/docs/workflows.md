@@ -38,6 +38,30 @@ Do not replace the immutable pins with moving major tags.
 
 ---
 
+## Deterministic Quality Workflow
+
+This repository also runs `.github/workflows/quality.yml` on pull requests and
+pushes to `main`. It does not require model-provider keys and provides the
+ordinary deterministic evidence that must sit beside Council review:
+
+- Full pytest suite on Python 3.12 and 3.13.
+- Ruff across the repository.
+- Strict MkDocs build.
+- Package wheel build.
+
+For this repository, branch protection should require these stable checks after
+their first successful run:
+
+- `Tests (Python 3.12)`
+- `Tests (Python 3.13)`
+- `Lint, docs, and package`
+- `council-review`
+
+Council is the evidence-based review gate. Deterministic CI proves the code,
+docs, and package still build and test as expected. Neither replaces the other.
+
+---
+
 ## 📊 Side-by-Side Comparison
 
 | | `council-review.yml` | `council-byok.yml` |

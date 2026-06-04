@@ -54,3 +54,25 @@ def test_release_smoke_default_matches_package_and_generated_gate():
         f"git+https://github.com/vishal8shah/code-review-council.git@{release_tag}"
         in _DEFAULT_WORKFLOW_OPENAI_GATE
     )
+
+
+def test_quality_workflow_runs_required_deterministic_gates():
+    """Keep deterministic CI independent from model-backed Council review."""
+    workflow = yaml.load(
+        Path(".github/workflows/quality.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+
+    assert set(workflow["on"]) == {"pull_request", "push", "workflow_dispatch"}
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["jobs"]["test"]["strategy"]["matrix"]["python-version"] == ["3.12", "3.13"]
+    assert workflow["jobs"]["test"]["timeout-minutes"] == "15"
+    assert workflow["jobs"]["quality"]["timeout-minutes"] == "15"
+
+    test_runs = {step["run"] for step in workflow["jobs"]["test"]["steps"] if "run" in step}
+    quality_runs = {step["run"] for step in workflow["jobs"]["quality"]["steps"] if "run" in step}
+
+    assert "python -m pytest -q" in test_runs
+    assert "python -m ruff check ." in quality_runs
+    assert "python -m mkdocs build -f site/mkdocs.yml --strict" in quality_runs
+    assert "python -m pip wheel . --no-deps --wheel-dir dist" in quality_runs

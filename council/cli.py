@@ -457,7 +457,7 @@ def init(
         workflow_path.write_text(_DEFAULT_WORKFLOW, encoding="utf-8")
         console.print(f"  [green]Created[/] {workflow_path}")
         console.print(
-            "  [dim]→ Add GOOGLE_API_KEY to your repo secrets for the Gemini-pinned workflow[/]"
+            "  [dim]-> Add GOOGLE_API_KEY to your repo secrets for the Gemini-pinned workflow[/]"
         )
 
     if include_default_workflows and not byok_workflow_path.exists():
@@ -468,7 +468,7 @@ def init(
         openai_gate_path.write_text(_DEFAULT_WORKFLOW_OPENAI_GATE, encoding="utf-8")
         console.print(f"  [green]Created[/] {openai_gate_path}")
         console.print(
-            "  [dim]→ Add OPENAI_API_KEY to required-gate repos that use council-openai-gate.yml[/]"
+            "  [dim]-> Add OPENAI_API_KEY to required-gate repos that use council-openai-gate.yml[/]"
         )
 
     console.print("\n  Council initialized.", style="bold green")

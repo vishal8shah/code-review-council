@@ -42,6 +42,7 @@ def test_workflow_yaml_is_parseable(workflow_name, workflow):
 
 
 def test_release_smoke_default_matches_package_and_generated_gate():
+    """Keep the package version, release smoke, and generated gate pin aligned."""
     release_smoke = yaml.load(
         Path(".github/workflows/release-smoke.yml").read_text(encoding="utf-8"),
         Loader=yaml.BaseLoader,

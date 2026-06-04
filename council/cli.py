@@ -6,6 +6,7 @@ Usage:
     council review --staged     # Review staged changes only
     council review --branch main  # Diff against a branch
     council init                # Initialize .council.toml in repo
+    council --version           # Show the installed version
 """
 
 from __future__ import annotations
@@ -18,6 +19,8 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from . import __version__
+
 app = typer.Typer(
     name="council",
     help="Code Review Council — Multi-agent LLM code review gate",
@@ -26,6 +29,25 @@ app = typer.Typer(
 console = Console()
 history_app = typer.Typer(help="Inspect local Council review history.", no_args_is_help=True)
 app.add_typer(history_app, name="history")
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"Code Review Council {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _app_callback(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed Council version and exit.",
+    ),
+) -> None:
+    """Code Review Council command-line interface."""
 
 
 def _status_style(status: str) -> str:

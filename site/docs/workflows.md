@@ -23,6 +23,21 @@ Generate only that workflow with `council init --workflow-profile openai-gate`.
 
 ---
 
+## Action Pinning And Runner Compatibility
+
+Council's checked-in and generated workflows pin official GitHub Actions to
+immutable commit SHAs with readable release comments. The current pins use
+Node.js 24 action releases.
+
+GitHub-hosted runners are updated automatically. For self-hosted runners, use
+Actions Runner [`v2.327.1`](https://github.com/actions/runner/releases/tag/v2.327.1)
+or later. Authenticated Git commands launched from a container action with
+`actions/checkout` v6 require
+[`v2.329.0`](https://github.com/actions/runner/releases/tag/v2.329.0) or later.
+Do not replace the immutable pins with moving major tags.
+
+---
+
 ## 📊 Side-by-Side Comparison
 
 | | `council-review.yml` | `council-byok.yml` |

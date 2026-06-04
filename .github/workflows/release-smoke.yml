@@ -6,7 +6,7 @@ on:
       release_ref:
         description: Release tag or full commit SHA to install
         required: true
-        default: v0.2.0
+        default: v0.3.0
 
 permissions:
   contents: read
@@ -34,7 +34,7 @@ jobs:
           if [[ "$RELEASE_REF" =~ ^[0-9a-f]{40}$ ]]; then
             exit 0
           fi
-          echo "::error::release_ref must be a semver tag like v0.2.0 or a full 40-character commit SHA."
+          echo "::error::release_ref must be a semver tag like v1.2.3 or a full 40-character commit SHA."
           exit 1
 
       - name: Install Council from release ref

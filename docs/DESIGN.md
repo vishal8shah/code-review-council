@@ -1223,7 +1223,7 @@ Gemini workflows remain available for this repo and BYOK fork review paths.
 
 ### V4F — Versioned Multi-Repo Adoption
 
-V4F pins the reusable OpenAI gate scaffold to `v0.2.0`, adds
+V4F pins the reusable OpenAI gate scaffold to a versioned release tag, adds
 `council init --workflow-profile openai-gate` for external repositories that
 only need the required PR gate, and documents the adoption checklist. The
 language capability matrix is explicit: Python uses AST-based deterministic

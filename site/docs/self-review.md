@@ -111,7 +111,7 @@ This project went through **two self-review rounds and two GPT-5.2 peer review r
 - **Changed AND deleted symbol detection** — reviewers see what was removed, not just what was added
 - **Policy context flows end-to-end** — config settings reach reviewers and Chair
 - **Path traversal protection** and CI safety warnings built in
-- **343 passing tests across all modules** covering legacy flow plus Phase 3 transport fallback, doctor checks, GitHub reporting behavior, Windows terminal safety, lossless diff ingestion, Phase 4A guidance surfaces, and Phase 4C bounded repo test context
+- **A passing full test suite across all modules** covering legacy flow plus Phase 3 transport fallback, doctor checks, GitHub reporting behavior, Windows terminal safety, lossless diff ingestion, Phase 4A guidance surfaces, and Phase 4C bounded repo test context
 
 ---
 

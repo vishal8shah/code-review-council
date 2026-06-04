@@ -175,7 +175,7 @@ For external repos that only need the reusable OpenAI gate, run:
 council init --workflow-profile openai-gate
 ```
 
-The scaffold pins `COUNCIL_INSTALL_SPEC` to `v0.2.0` by default. Keep it pinned
+The scaffold pins `COUNCIL_INSTALL_SPEC` to `v0.3.0` by default. Keep it pinned
 to a release tag or commit SHA and run it on a few representative PRs to tune
 `.councilignore` and any repo-specific analyzer opt-outs before making it a
 protected-branch requirement.

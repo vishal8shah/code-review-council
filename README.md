@@ -261,7 +261,7 @@ installs Council from GitHub, fails closed if `OPENAI_API_KEY` is missing, and
 uses `openai/gpt-5.5` with `chair_reasoning_effort = "medium"` for Chair
 synthesis. Generate only that workflow with
 `council init --workflow-profile openai-gate`. The scaffold pins
-`COUNCIL_INSTALL_SPEC` to `v0.2.0`; keep it pinned to a release tag or commit
+`COUNCIL_INSTALL_SPEC` to `v0.3.0`; keep it pinned to a release tag or commit
 SHA before enabling required branch protection broadly.
 
 **OpenAI required-gate preset:**

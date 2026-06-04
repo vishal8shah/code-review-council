@@ -629,7 +629,7 @@ jobs:
           else
             echo "has_key=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Code Review Council skipped::No GOOGLE_API_KEY available. This workflow is pinned to Gemini and will skip instead of falling back to other providers."
-            printf '{"skipped":"no_google_api_key","how_to_fix":"Add GOOGLE_API_KEY as a repository Actions secret, then rerun this workflow."}\n' > council-report.json
+            printf '{"skipped":"no_google_api_key","how_to_fix":"Add GOOGLE_API_KEY as a repository Actions secret, then rerun this workflow."}\\n' > council-report.json
           fi
 
       - name: Write CI Gemini config
@@ -727,8 +727,8 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
           if [ -z "$GOOGLE_API_KEY" ]; then
-            printf '{"skipped":"no_google_api_key","how_to_fix":"Add GOOGLE_API_KEY as an Actions secret in your fork, then rerun."}\n' > council-report.json
-            printf '# Council BYOK skipped\n\nNo GOOGLE_API_KEY secret found. This workflow is pinned to Gemini. Add GOOGLE_API_KEY in your fork and rerun.\n' > council-review.md
+            printf '{"skipped":"no_google_api_key","how_to_fix":"Add GOOGLE_API_KEY as an Actions secret in your fork, then rerun."}\\n' > council-report.json
+            printf '# Council BYOK skipped\\n\\nNo GOOGLE_API_KEY secret found. This workflow is pinned to Gemini. Add GOOGLE_API_KEY in your fork and rerun.\\n' > council-review.md
             echo "::error::No GOOGLE_API_KEY found. This workflow is pinned to Gemini. Add GOOGLE_API_KEY as an Actions secret in your fork repository, then rerun this workflow."
             exit 1
           fi
@@ -744,36 +744,20 @@ jobs:
           fail() {
             case "$1" in
               invalid_base_ref)
-                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}
-' > council-report.json
-                printf '# Council BYOK skipped
-
-Invalid base_ref input. Use a valid git branch/ref format and rerun.
-' > council-review.md
+                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}\\n' > council-report.json
+                printf '# Council BYOK skipped\\n\\nInvalid base_ref input. Use a valid git branch/ref format and rerun.\\n' > council-review.md
                 ;;
               invalid_upstream_repo)
-                printf '{"skipped":"invalid_upstream_repo","how_to_fix":"Set upstream_repo to owner/repo format (for example: org/project) and rerun."}
-' > council-report.json
-                printf '# Council BYOK skipped
-
-Invalid upstream_repo input. Use owner/repo format and rerun.
-' > council-review.md
+                printf '{"skipped":"invalid_upstream_repo","how_to_fix":"Set upstream_repo to owner/repo format (for example: org/project) and rerun."}\\n' > council-report.json
+                printf '# Council BYOK skipped\\n\\nInvalid upstream_repo input. Use owner/repo format and rerun.\\n' > council-review.md
                 ;;
               upstream_fetch_failed)
-                printf '{"skipped":"upstream_fetch_failed","how_to_fix":"Verify upstream_repo is correct and base_ref exists (and repo is public or accessible), then rerun."}
-' > council-report.json
-                printf '# Council BYOK skipped
-
-Failed to fetch upstream base ref. Check upstream_repo/base_ref and rerun.
-' > council-review.md
+                printf '{"skipped":"upstream_fetch_failed","how_to_fix":"Verify upstream_repo is correct and base_ref exists (and repo is public or accessible), then rerun."}\\n' > council-report.json
+                printf '# Council BYOK skipped\\n\\nFailed to fetch upstream base ref. Check upstream_repo/base_ref and rerun.\\n' > council-review.md
                 ;;
               *)
-                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}
-' > council-report.json
-                printf '# Council BYOK skipped
-
-Invalid input.
-' > council-review.md
+                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}\\n' > council-report.json
+                printf '# Council BYOK skipped\\n\\nInvalid input.\\n' > council-review.md
                 ;;
             esac
             echo "::error::$2"
@@ -874,8 +858,8 @@ Invalid input.
           AUDIENCE: ${{ inputs.audience }}
         run: |
           if [ "$AUDIENCE" != "developer" ] && [ "$AUDIENCE" != "owner" ]; then
-            printf '{"skipped":"invalid_audience","how_to_fix":"Set audience to developer or owner and rerun"}\n' > council-report.json
-            printf '# Council BYOK skipped\n\nInvalid audience input. Use developer or owner and rerun.\n' > council-review.md
+            printf '{"skipped":"invalid_audience","how_to_fix":"Set audience to developer or owner and rerun"}\\n' > council-report.json
+            printf '# Council BYOK skipped\\n\\nInvalid audience input. Use developer or owner and rerun.\\n' > council-review.md
             echo "::error::Invalid audience. Expected developer or owner."
             exit 1
           fi
@@ -924,7 +908,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           if [ -z "$OPENAI_API_KEY" ]; then
-            printf '{"skipped":"no_openai_api_key","how_to_fix":"Add OPENAI_API_KEY as a repository Actions secret, then rerun this workflow."}\n' > council-report.json
+            printf '{"skipped":"no_openai_api_key","how_to_fix":"Add OPENAI_API_KEY as a repository Actions secret, then rerun this workflow."}\\n' > council-report.json
             echo "::error::No OPENAI_API_KEY available. This required gate is pinned to OpenAI and fails closed when the key is missing."
             exit 1
           fi

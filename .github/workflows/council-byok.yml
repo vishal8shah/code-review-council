@@ -54,36 +54,20 @@ jobs:
           fail() {
             case "$1" in
               invalid_base_ref)
-                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}
-' > council-report.json
-                printf '# Council BYOK skipped
-
-Invalid base_ref input. Use a valid git branch/ref format and rerun.
-' > council-review.md
+                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}\n' > council-report.json
+                printf '# Council BYOK skipped\n\nInvalid base_ref input. Use a valid git branch/ref format and rerun.\n' > council-review.md
                 ;;
               invalid_upstream_repo)
-                printf '{"skipped":"invalid_upstream_repo","how_to_fix":"Set upstream_repo to owner/repo format (for example: org/project) and rerun."}
-' > council-report.json
-                printf '# Council BYOK skipped
-
-Invalid upstream_repo input. Use owner/repo format and rerun.
-' > council-review.md
+                printf '{"skipped":"invalid_upstream_repo","how_to_fix":"Set upstream_repo to owner/repo format (for example: org/project) and rerun."}\n' > council-report.json
+                printf '# Council BYOK skipped\n\nInvalid upstream_repo input. Use owner/repo format and rerun.\n' > council-review.md
                 ;;
               upstream_fetch_failed)
-                printf '{"skipped":"upstream_fetch_failed","how_to_fix":"Verify upstream_repo is correct and base_ref exists (and repo is public or accessible), then rerun."}
-' > council-report.json
-                printf '# Council BYOK skipped
-
-Failed to fetch upstream base ref. Check upstream_repo/base_ref and rerun.
-' > council-review.md
+                printf '{"skipped":"upstream_fetch_failed","how_to_fix":"Verify upstream_repo is correct and base_ref exists (and repo is public or accessible), then rerun."}\n' > council-report.json
+                printf '# Council BYOK skipped\n\nFailed to fetch upstream base ref. Check upstream_repo/base_ref and rerun.\n' > council-review.md
                 ;;
               *)
-                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}
-' > council-report.json
-                printf '# Council BYOK skipped
-
-Invalid input.
-' > council-review.md
+                printf '{"skipped":"invalid_base_ref","how_to_fix":"Use a valid base_ref (for example: main or release/1.2)."}\n' > council-report.json
+                printf '# Council BYOK skipped\n\nInvalid input.\n' > council-review.md
                 ;;
             esac
             echo "::error::$2"

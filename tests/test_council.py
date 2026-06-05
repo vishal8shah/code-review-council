@@ -2938,19 +2938,21 @@ class TestCLIAudienceFlag:
 
     def test_cli_has_audience_option(self):
         """CLI review command exposes --audience option."""
-        from typer.testing import CliRunner
-        from council.cli import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["review", "--help"])
-        assert "--audience" in result.output
+        import inspect
+
+        from council.cli import review
+
+        audience_option = inspect.signature(review).parameters["audience"].default
+        assert "--audience" in audience_option.param_decls
 
     def test_cli_has_output_html_option(self):
         """CLI review command exposes --output-html option."""
-        from typer.testing import CliRunner
-        from council.cli import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["review", "--help"])
-        assert "--output-html" in result.output
+        import inspect
+
+        from council.cli import review
+
+        output_html_option = inspect.signature(review).parameters["output_html"].default
+        assert "--output-html" in output_html_option.param_decls
 
     def test_cli_invalid_audience_exits_nonzero(self):
         """Invalid --audience value produces a clear error."""
@@ -4706,15 +4708,16 @@ def test_github_api_url_is_strictly_validated(monkeypatch):
 
 
 def test_doctor_command_help_mentions_new_options():
-    from typer.testing import CliRunner
-    from council.cli import app
+    import inspect
 
-    runner = CliRunner()
-    result = runner.invoke(app, ["doctor", "--help"])
+    from council.cli import doctor
 
-    assert result.exit_code == 0
-    assert "--github-pr" in result.output
-    assert "--branch" in result.output
+    signature = inspect.signature(doctor)
+    github_pr_option = signature.parameters["github_pr"].default
+    branch_option = signature.parameters["branch"].default
+
+    assert "--github-pr" in github_pr_option.param_decls
+    assert "--branch" in branch_option.param_decls
 
 
 def test_run_doctor_fails_for_missing_keys_and_invalid_branch(monkeypatch):

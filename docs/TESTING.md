@@ -17,8 +17,9 @@ Windows local command form:
 py -3.13 -m pip install -e .
 ```
 
-The project requires Python 3.12 or newer. The GitHub workflows use Python 3.12;
-this Windows checkout has been validated with `py -3.13`.
+The project requires Python 3.12 or newer. Deterministic GitHub CI runs the full
+suite on Python 3.12 and 3.13; this Windows checkout has been validated with
+`py -3.13`.
 
 ## Full Test Suite
 
@@ -73,6 +74,20 @@ Optional stricter check:
 ```powershell
 py -3.13 -m mkdocs build -f site/mkdocs.yml --strict
 ```
+
+## Deterministic GitHub CI
+
+`.github/workflows/quality.yml` runs without model-provider keys on pull
+requests and pushes to `main`:
+
+- Full pytest suite on Python 3.12 and 3.13.
+- Ruff on the complete repository.
+- Strict MkDocs build.
+- Package wheel build.
+
+Require these deterministic checks alongside `council-review` in branch
+protection after the first successful run. Council adds evidence-based review;
+it does not replace tests, lint, docs validation, or package build checks.
 
 ## Narrow Test Selection
 

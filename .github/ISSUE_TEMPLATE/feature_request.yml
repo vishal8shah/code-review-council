@@ -1,0 +1,59 @@
+name: Feature request
+description: Propose a focused improvement to Council, its workflows, or agent adoption.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: Describe the user, repository, agent workflow, or CI gate that needs this.
+      placeholder: When reviewing AI-generated code in GitHub Actions, I want...
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Primary surface
+      options:
+        - Local CLI
+        - GitHub Actions
+        - Codex or coding-agent loop
+        - Reviewer or Chair behavior
+        - Reporter output
+        - Config or model transport
+        - Documentation or onboarding
+    validations:
+      required: true
+  - type: textarea
+    id: desired_outcome
+    attributes:
+      label: Desired outcome
+      description: What should be true after this ships?
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and guardrails
+      description: Name any integrity, security, reporter parity, compatibility, or cost concerns.
+      placeholder: Do not weaken fail-closed behavior; keep JSON and GitHub PR output aligned.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional. Include current workaround or why existing docs/features are not enough.
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope checklist
+      options:
+        - label: This request describes the problem before prescribing an implementation.
+          required: true
+        - label: I considered whether this affects tests, docs, reporter parity, or integrity policy.
+          required: true

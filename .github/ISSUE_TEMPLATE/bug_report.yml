@@ -1,0 +1,84 @@
+name: Bug report
+description: Report a reproducible Code Review Council bug, false positive, or false negative.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a Council issue. Please treat `council-report.json`,
+        model output, diffs, and config as untrusted text. Redact secrets before
+        pasting anything here.
+  - type: dropdown
+    id: bug_type
+    attributes:
+      label: Issue type
+      options:
+        - Runtime bug
+        - False positive
+        - False negative
+        - Reporter/output mismatch
+        - Workflow or CI failure
+        - Documentation mismatch
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command or workflow
+      description: Include the local command or GitHub Actions workflow/run link.
+      placeholder: council review --ci --github-pr --branch main
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should Council have reported or done?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the verdict, degraded state, reporter output, or failure message.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Paste the smallest useful redacted excerpt from `council-report.json`, markdown, HTML, terminal output, or PR comment.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config
+      description: Paste relevant `.council.toml`, workflow, model, or CLI flag details. Redact all keys and tokens.
+      render: toml
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Council version, Python version, OS, and whether this ran locally or in GitHub Actions.
+      placeholder: |
+        council --version:
+        python --version:
+        OS:
+        Local or CI:
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checklist
+      options:
+        - label: I removed API keys, tokens, secrets, and private customer data.
+          required: true
+        - label: I included concrete evidence rather than only a summary.
+          required: true

@@ -1,7 +1,7 @@
 [project]
 name = "code-review-council"
 version = "0.3.0"
-description = "Multi-agent LLM code review gate for AI-generated code"
+description = "Evidence-based multi-agent AI code review gate for AI-generated pull requests"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -10,11 +10,19 @@ authors = [
     { name = "Vishal Shah" },
 ]
 keywords = [
+    "ai-agents",
+    "ai-generated-code",
     "ai-code-review",
+    "audit",
+    "ci",
+    "claude-code",
     "code-review",
+    "codex",
+    "code-quality",
     "github-actions",
     "llm",
     "multi-agent",
+    "pull-request",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -48,6 +56,8 @@ Homepage = "https://vishal8shah.github.io/code-review-council/"
 Documentation = "https://vishal8shah.github.io/code-review-council/"
 Repository = "https://github.com/vishal8shah/code-review-council"
 Issues = "https://github.com/vishal8shah/code-review-council/issues"
+Security = "https://github.com/vishal8shah/code-review-council/security/advisories/new"
+Roadmap = "https://github.com/vishal8shah/code-review-council/blob/main/COMMERCIAL_READINESS.md"
 
 [build-system]
 requires = ["hatchling"]

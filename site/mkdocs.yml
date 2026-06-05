@@ -38,6 +38,7 @@ theme:
 nav:
   - Home: index.md
   - Overview: overview.md
+  - 10 Minute Quickstart: quickstart-10-min.md
   - Getting Started: getting-started.md
   - Agent Loop: agent-loop.md
   - JSON Contract: json-contract.md

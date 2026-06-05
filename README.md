@@ -56,6 +56,10 @@ pip install -e .
 
 ## 🏃 Quick Start
 
+Want the shortest team onboarding path? Use the docs
+[10 Minute Quickstart](site/docs/quickstart-10-min.md) to install Council, run a
+local review, generate an owner HTML report, and pilot the GitHub PR gate.
+
 ```bash
 # Initialise in your repo
 cd your-project/

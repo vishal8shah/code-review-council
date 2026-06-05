@@ -457,7 +457,7 @@ def init(
         workflow_path.write_text(_DEFAULT_WORKFLOW, encoding="utf-8")
         console.print(f"  [green]Created[/] {workflow_path}")
         console.print(
-            "  [dim]-> Add GOOGLE_API_KEY to your repo secrets for the Gemini-pinned workflow[/]"
+            "  [dim]-> Add OPENAI_API_KEY or GOOGLE_API_KEY to your repo secrets for the default PR workflow[/]"
         )
 
     if include_default_workflows and not byok_workflow_path.exists():
@@ -475,7 +475,7 @@ def init(
     console.print("  [bold]Recommended next steps[/]")
     if include_default_workflows:
         console.print(
-            "    - Add GOOGLE_API_KEY to GitHub Actions secrets for the generated Gemini workflows.",
+            "    - Add OPENAI_API_KEY or GOOGLE_API_KEY to GitHub Actions secrets for the generated PR workflow.",
             style="dim",
         )
     if include_openai_gate:
@@ -619,21 +619,74 @@ jobs:
       - name: Install Code Review Council
         run: pip install .
 
-      - name: Check Gemini credentials availability
+      - name: Select Council provider
         id: llm_keys
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
-          if [ -n "$GOOGLE_API_KEY" ]; then
+          if [ -n "$OPENAI_API_KEY" ]; then
             echo "has_key=true" >> "$GITHUB_OUTPUT"
+            echo "provider=openai" >> "$GITHUB_OUTPUT"
+          elif [ -n "$GOOGLE_API_KEY" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+            echo "provider=gemini" >> "$GITHUB_OUTPUT"
           else
             echo "has_key=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Code Review Council skipped::No GOOGLE_API_KEY available. This workflow is pinned to Gemini and will skip instead of falling back to other providers."
-            printf '{"skipped":"no_google_api_key","how_to_fix":"Add GOOGLE_API_KEY as a repository Actions secret, then rerun this workflow."}\\n' > council-report.json
+            echo "provider=none" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Code Review Council skipped::No OPENAI_API_KEY or GOOGLE_API_KEY available. Add one repository secret, then rerun this workflow."
+            printf '{"skipped":"no_llm_api_key","how_to_fix":"Add OPENAI_API_KEY or GOOGLE_API_KEY as a repository Actions secret, then rerun this workflow."}\\n' > council-report.json
           fi
 
+      - name: Write CI OpenAI config
+        if: steps.llm_keys.outputs.provider == 'openai'
+        run: |
+          cat > .council.toml <<'EOF'
+          [council]
+          chair_model = "openai/gpt-5.5"
+          chair_reasoning_effort = "medium"
+          timeout_seconds = 360
+          reviewer_timeout_seconds = 240
+          reviewer_concurrency = 2
+
+          [council.enforcement]
+          mode = "ci"
+          ci_block_on = "FAIL"
+          local_mode = "advisory"
+          on_integrity_issue = "fail"
+
+          [gate_zero.analyzers]
+          python = true
+          typescript = true
+          javascript = true
+
+          [[reviewers]]
+          id = "secops"
+          name = "Security Operations Reviewer"
+          model = "openai/gpt-5.2"
+          enabled = true
+
+          [[reviewers]]
+          id = "qa"
+          name = "QA Engineer"
+          model = "openai/gpt-5.2"
+          enabled = true
+
+          [[reviewers]]
+          id = "architect"
+          name = "Solutions Architect"
+          model = "openai/gpt-5.2"
+          enabled = true
+
+          [[reviewers]]
+          id = "docs"
+          name = "Documentation Reviewer"
+          model = "openai/gpt-5.2"
+          enabled = true
+          EOF
+
       - name: Write CI Gemini config
-        if: steps.llm_keys.outputs.has_key == 'true'
+        if: steps.llm_keys.outputs.provider == 'gemini'
         run: |
           cat > .council.toml <<'EOF'
           [council]
@@ -675,6 +728,7 @@ jobs:
         if: steps.llm_keys.outputs.has_key == 'true'
         run: council review --ci --github-pr --branch "$BASE_REF" --output-json council-report.json
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.base_ref }}

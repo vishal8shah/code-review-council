@@ -226,8 +226,9 @@ No universal number is valid — cost and latency depend on configuration and wo
 
 Operational guidance: start with the generated defaults, review focused diffs,
 and tune `reviewer_timeout_seconds` if you see tail latency on large PRs. The
-generated GitHub workflows use Gemini with `reviewer_concurrency = 1` to avoid
-preview-model timeout and rate-limit noise.
+default generated PR workflow prefers OpenAI and falls back to Gemini; the
+Gemini fallback uses `reviewer_concurrency = 1` to avoid timeout and
+rate-limit noise.
 
 ---
 

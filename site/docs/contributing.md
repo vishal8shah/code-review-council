@@ -43,7 +43,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 !!! tip "Use cheap models for manual testing"
-    Set reviewer models to a cheaper provider/model in `.council.toml` for manual runs. The generated GitHub workflows are Gemini-pinned, but local runs can use any LiteLLM-supported provider you have budget for.
+    Set reviewer models to a cheaper provider/model in `.council.toml` for manual runs. The default generated PR workflow prefers OpenAI and falls back to Gemini, while local runs can use any LiteLLM-supported provider you have budget for.
 
 ---
 

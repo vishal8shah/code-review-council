@@ -145,6 +145,8 @@ auditable behavior:
 
 - [Getting Started](getting-started.md) for the full setup reference.
 - [Adoption Guide](adoption-guide.md) for multi-repo rollout.
+- [Benchmarks](benchmarks.md) for a seeded risky PR that demonstrates expected
+  Council findings.
 - [Agent Loop](agent-loop.md) for Codex, Claude Code, OpenClaw, and similar
   repair loops.
 - [Security](security.md) for BYOK and untrusted input rules.

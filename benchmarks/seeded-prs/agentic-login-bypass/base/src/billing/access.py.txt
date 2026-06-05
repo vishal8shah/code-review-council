@@ -1,0 +1,27 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class User:
+    """Signed-in user context used by the fixture."""
+
+    id: str
+    role: str
+
+
+@dataclass(frozen=True)
+class Invoice:
+    """Invoice ownership record used by the fixture."""
+
+    id: str
+    owner_id: str
+    amount_cents: int
+
+
+def can_view_invoice(user: User, invoice: Invoice, request_params: dict[str, str]) -> bool:
+    """Return whether the signed-in user can read an invoice."""
+    if user.role == "admin":
+        return True
+    return user.id == invoice.owner_id

@@ -1,0 +1,29 @@
+{
+  "scenario_id": "agentic-login-bypass",
+  "expected_verdict": "FAIL",
+  "expected_findings": [
+    {
+      "severity": "HIGH",
+      "category": "security",
+      "file": "src/billing/access.py",
+      "line_start": 25,
+      "line_end": 27,
+      "policy_id": "SEC-AUTHZ-001",
+      "evidence": "The risky head version reads request_params.get(\"user_id\") and returns true when that untrusted parameter matches invoice.owner_id, before checking the signed-in user.",
+      "expected_reviewer": "secops"
+    }
+  ],
+  "expected_warnings": [
+    {
+      "severity": "MEDIUM",
+      "category": "testing",
+      "file": "tests/access_test_sample.py",
+      "evidence": "The test suite keeps owner and other-member coverage but has no regression test proving attacker-controlled user_id cannot grant invoice access."
+    }
+  ],
+  "not_expected": [
+    "Do not accept findings that claim a real secret is present.",
+    "Do not accept findings about production framework configuration; this fixture is intentionally framework-free.",
+    "Do not mark a degraded or malformed model response as a clean PASS."
+  ]
+}

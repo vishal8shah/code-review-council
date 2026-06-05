@@ -1,0 +1,19 @@
+# Files to exclude from LLM review (gitignore syntax)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+Pipfile.lock
+poetry.lock
+*.min.js
+*.min.css
+*.map
+*.generated.*
+vendor/
+dist/
+build/
+node_modules/
+__pycache__/
+*.egg-info/
+
+# Intentional seeded-risk fixtures used as benchmark/demo data.
+seeded-prs/

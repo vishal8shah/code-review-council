@@ -59,6 +59,8 @@ pip install -e .
 Want the shortest team onboarding path? Use the docs
 [10 Minute Quickstart](site/docs/quickstart-10-min.md) to install Council, run a
 local review, generate an owner HTML report, and pilot the GitHub PR gate.
+Want a known risky diff to try? See the docs
+[Benchmarks](site/docs/benchmarks.md) page for a seeded authorization-bypass PR.
 
 ```bash
 # Initialise in your repo

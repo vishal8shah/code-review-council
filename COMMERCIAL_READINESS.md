@@ -30,8 +30,9 @@ merge-safe CI behavior.
   from PyPI, and release notes are not yet part of the public loop.
 - The 10-minute first-run path needs a tighter demo story with expected outputs,
   example reports, and a seeded risky PR.
-- Benchmark proof is not yet packaged: there is no repeatable seeded-risk suite
-  measuring true positives, false positives, degraded handling, cost, or latency.
+- Benchmark proof is just starting: one seeded-risk fixture exists, but there is
+  not yet a scored suite measuring true positives, false positives, degraded
+  handling, cost, or latency.
 - Domain packs are still conceptual; prompts, policy templates, test fixtures,
   and pricing boundaries are not separated by domain.
 - Reporting is artifact-based; there is no dashboard over JSON/history trends.
@@ -137,7 +138,7 @@ and reporter examples before it becomes a commercial SKU.
 | --- | --- | --- |
 | 1 | Release readiness | PyPI metadata, package publish plan, wheel/PyPI smoke, release notes template |
 | 2 | 10-minute onboarding | Demo fixture repo or seeded PR, quickstart report examples, owner HTML sample |
-| 3 | Benchmark proof | Seeded risky PR suite, scoring rubric, cost/latency capture, benchmark docs |
+| 3 | Benchmark proof | More seeded risky PRs, scoring rubric, cost/latency capture, benchmark docs |
 | 4 | Commercial packaging | Domain pack architecture, paid-pack boundaries, dashboard/SARIF design notes |
 
 ## 10. Metrics To Prove Product Value

@@ -63,9 +63,9 @@ This creates the review config, ignore file, default prompts, and workflows:
 
 ## 🔑 Set Your API Keys (BYOK)
 
-Council is bring-your-own-key. The generated GitHub workflows are pinned to
-Gemini, so `GOOGLE_API_KEY` is required for the default CI path. Set other keys
-only if your local `.council.toml` uses those providers.
+Council is bring-your-own-key. The default generated PR workflow prefers
+`OPENAI_API_KEY` when present and otherwise falls back to `GOOGLE_API_KEY`.
+Set other keys only if your local `.council.toml` uses those providers.
 
 ```bash
 export GOOGLE_API_KEY=...
@@ -253,7 +253,7 @@ Council will automatically review the next PR opened against your default branch
 | `council: command not found` | Not installed in active virtualenv | `pip install .` in the repo root |
 | Empty diff / 0 findings on all reviewers | Missing `--branch` flag in `--ci` mode | Add `--branch main` (or your base branch) |
 | Reviewer timeouts | Model API slow or rate-limited | Increase `reviewer_timeout_seconds` in `.council.toml` |
-| `GOOGLE_API_KEY not found` | Gemini-pinned workflow has no key | Add `GOOGLE_API_KEY` in `Settings → Secrets` or export it locally |
+| `OPENAI_API_KEY or GOOGLE_API_KEY not found` | Default PR workflow has no supported key | Add `OPENAI_API_KEY` or `GOOGLE_API_KEY` in `Settings → Secrets` or export it locally |
 | Fork PR review skipped | Expected — not a bug | Use `council-byok.yml` for fork contributors |
 | `integrity_error` in JSON report | A reviewer timed out, returned unparseable JSON, or emitted malformed finding objects | Run `council doctor --branch main`; inspect the per-reviewer `error` for sanitized schema field/type details and transport mode |
 

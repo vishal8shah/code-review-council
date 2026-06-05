@@ -9,9 +9,9 @@
 ### Do I need all three API keys?
 
 No. Council works with a single key when all configured models use the same
-provider. The generated GitHub workflows are pinned to Gemini, so they require
-`GOOGLE_API_KEY`. Local `.council.toml` files only need keys for the providers
-they actually reference.
+provider. The default generated PR workflow prefers `OPENAI_API_KEY` when
+present and otherwise falls back to `GOOGLE_API_KEY`. Local `.council.toml`
+files only need keys for the providers they actually reference.
 
 ### `council: command not found` — what's wrong?
 
@@ -99,9 +99,9 @@ and take longer. Gate Zero and diff preprocessing are always free.
 
 It depends on model choice, diff size, retries, and reviewer concurrency. With
 parallel reviewers enabled, wall-clock time is roughly the slowest single
-reviewer plus Chair synthesis. Generated Gemini CI runs sequential reviewers
-with larger timeouts to avoid model timeout noise, so it may take a few
-minutes on larger diffs.
+reviewer plus Chair synthesis. The generated Gemini fallback runs sequential
+reviewers with larger timeouts to avoid model timeout noise, so it may take a
+few minutes on larger diffs.
 
 ### How do I reduce cost without losing quality?
 

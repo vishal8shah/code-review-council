@@ -72,6 +72,7 @@ def test_quality_workflow_runs_required_deterministic_gates():
     test_runs = {step["run"] for step in workflow["jobs"]["test"]["steps"] if "run" in step}
     quality_runs = {step["run"] for step in workflow["jobs"]["quality"]["steps"] if "run" in step}
 
+    assert "python -m pip install . pytest pytest-asyncio PyYAML" in test_runs
     assert "python -m pytest -q" in test_runs
     assert "python -m ruff check ." in quality_runs
     assert "python -m mkdocs build -f site/mkdocs.yml --strict" in quality_runs

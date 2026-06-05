@@ -10,7 +10,7 @@ Code Review Council is a **bring-your-own-key** system. There are no shared API 
 
 When you run Council:
 
-- Your code diff is sent **directly from your CI runner to your chosen LLM provider** (Google/Gemini in the generated workflows, or whichever provider your local config selects)
+- Your code diff is sent **directly from your CI runner to your chosen LLM provider** (OpenAI or Google/Gemini in the default generated PR workflow, or whichever provider your local config selects)
 - Council itself never sees, stores, or forwards your keys or your code
 - Your API keys live in **GitHub Actions secrets** on your own repository — not in this project
 - If you fork this repo, your keys stay in your fork's secret store
@@ -19,9 +19,10 @@ When you run Council:
     Your code never leaves your CI runner except to go directly to the LLM provider you configured. Council is the orchestration layer, not a data handler.
 
 !!! info "Generated workflow default"
-    The generated GitHub workflows are pinned to Gemini and require
-    `GOOGLE_API_KEY`. Local `.council.toml` files can still use OpenAI,
-    Anthropic, Google, or another LiteLLM-supported provider.
+    The default generated PR workflow prefers `OPENAI_API_KEY` when present
+    and otherwise falls back to `GOOGLE_API_KEY`. Local `.council.toml` files
+    can still use OpenAI, Anthropic, Google, or another LiteLLM-supported
+    provider.
 
 !!! info "Required OpenAI gate"
     `council-openai-gate.yml` is intended for repos that should enforce Council
@@ -60,7 +61,7 @@ Council mitigates this with:
 - **`--ci` + `--branch` safety warning** — emitted if `--ci` is passed without an explicit branch (empty diff risk)
 
 !!! danger "Fork PRs and secrets"
-    Fork PRs do not have access to repository secrets by design (GitHub's security model). The PR workflow detects the missing `GOOGLE_API_KEY` and skips the LLM review step cleanly, uploading a `council-report.json` that explains the skip. **Do not work around this.** Use the BYOK workflow with a fork-local `GOOGLE_API_KEY` for fork contributor reviews instead.
+    Fork PRs do not have access to repository secrets by design (GitHub's security model). The PR workflow detects missing LLM provider keys and skips the LLM review step cleanly, uploading a `council-report.json` that explains the skip. **Do not work around this.** Use the BYOK workflow with a fork-local `GOOGLE_API_KEY` for fork contributor reviews instead.
 
 ---
 

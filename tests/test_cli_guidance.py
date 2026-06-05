@@ -71,6 +71,7 @@ def test_init_command_prints_onboarding_next_steps(tmp_path):
 
     assert result.exit_code == 0
     assert "Recommended next steps" in result.output
+    assert "OPENAI_API_KEY" in result.output
     assert "GOOGLE_API_KEY" in result.output
     assert "council doctor --branch main" in result.output
     assert "council review --branch main" in result.output
@@ -80,6 +81,6 @@ def test_init_command_output_is_legacy_windows_console_safe(tmp_path):
     result = CliRunner().invoke(app, ["init", "--repo", str(tmp_path)])
 
     assert result.exit_code == 0
-    assert "-> Add GOOGLE_API_KEY" in result.output
+    assert "-> Add OPENAI_API_KEY or GOOGLE_API_KEY" in result.output
     assert "-> Add OPENAI_API_KEY" in result.output
     result.output.encode("cp1252")

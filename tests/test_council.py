@@ -13,6 +13,7 @@ from urllib.error import HTTPError
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import yaml
 
 from council.schemas import (
     ChangedSymbol,
@@ -2076,18 +2077,67 @@ class TestWorkflowScaffold:
     def test_workflow_skips_when_no_llm_keys(self):
         """Generated workflow should skip council run when fork PRs have no secrets."""
         from council.cli import _DEFAULT_WORKFLOW
-        assert "Check Gemini credentials availability" in _DEFAULT_WORKFLOW
+
+        assert "Select Council provider" in _DEFAULT_WORKFLOW
         assert "id: llm_keys" in _DEFAULT_WORKFLOW
         assert "env:" in _DEFAULT_WORKFLOW
-        assert 'if [ -n "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW
+        assert "OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}" in _DEFAULT_WORKFLOW
+        assert 'if [ -n "$OPENAI_API_KEY" ]; then' in _DEFAULT_WORKFLOW
+        assert 'elif [ -n "$GOOGLE_API_KEY" ]; then' in _DEFAULT_WORKFLOW
+        assert "provider=openai" in _DEFAULT_WORKFLOW
+        assert "provider=gemini" in _DEFAULT_WORKFLOW
         assert "if: steps.llm_keys.outputs.has_key == 'true'" in _DEFAULT_WORKFLOW
-        assert "No GOOGLE_API_KEY available. This workflow is pinned to Gemini" in _DEFAULT_WORKFLOW
-        assert '"skipped":"no_google_api_key"' in _DEFAULT_WORKFLOW
+        assert "No OPENAI_API_KEY or GOOGLE_API_KEY available" in _DEFAULT_WORKFLOW
+        assert '"skipped":"no_llm_api_key"' in _DEFAULT_WORKFLOW
+        assert "Write CI OpenAI config" in _DEFAULT_WORKFLOW
+        assert "if: steps.llm_keys.outputs.provider == 'openai'" in _DEFAULT_WORKFLOW
+        assert 'chair_model = "openai/gpt-5.5"' in _DEFAULT_WORKFLOW
+        assert 'chair_reasoning_effort = "medium"' in _DEFAULT_WORKFLOW
+        assert "reviewer_concurrency = 2" in _DEFAULT_WORKFLOW
         assert "Write CI Gemini config" in _DEFAULT_WORKFLOW
+        assert "if: steps.llm_keys.outputs.provider == 'gemini'" in _DEFAULT_WORKFLOW
         assert 'chair_model = "gemini/gemini-2.5-flash"' in _DEFAULT_WORKFLOW
         assert "timeout_seconds = 360" in _DEFAULT_WORKFLOW
         assert "reviewer_timeout_seconds = 360" in _DEFAULT_WORKFLOW
         assert "reviewer_concurrency = 1" in _DEFAULT_WORKFLOW
+
+    def test_checked_in_pr_workflow_matches_provider_selection_scaffold(self):
+        """Repo workflow should keep the generated provider selection behavior."""
+        from council.cli import _DEFAULT_WORKFLOW
+
+        repo_root = Path(__file__).resolve().parents[1]
+        checked_in_workflow = (repo_root / ".github/workflows/council-review.yml").read_text(
+            encoding="utf-8"
+        )
+        checked_in_yaml = yaml.load(checked_in_workflow, Loader=yaml.BaseLoader)
+        checked_in_steps = checked_in_yaml["jobs"]["council-review"]["steps"]
+        checked_in_step_names = [step.get("name") for step in checked_in_steps]
+
+        for expected in [
+            "Select Council provider",
+            "OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}",
+            'if [ -n "$OPENAI_API_KEY" ]; then',
+            'elif [ -n "$GOOGLE_API_KEY" ]; then',
+            "Write CI OpenAI config",
+            "Write CI Gemini config",
+            "BASE_REF: ${{ github.base_ref }}",
+        ]:
+            assert expected in _DEFAULT_WORKFLOW
+            assert expected in checked_in_workflow
+
+        assert "Select Council provider" in checked_in_step_names
+        assert "Write CI OpenAI config" in checked_in_step_names
+        assert "Write CI Gemini config" in checked_in_step_names
+
+        provider_step = next(step for step in checked_in_steps if step.get("name") == "Select Council provider")
+        assert provider_step["id"] == "llm_keys"
+        assert provider_step["env"]["OPENAI_API_KEY"] == "${{ secrets.OPENAI_API_KEY }}"
+        assert provider_step["env"]["GOOGLE_API_KEY"] == "${{ secrets.GOOGLE_API_KEY }}"
+
+        openai_step = next(step for step in checked_in_steps if step.get("name") == "Write CI OpenAI config")
+        gemini_step = next(step for step in checked_in_steps if step.get("name") == "Write CI Gemini config")
+        assert openai_step["if"] == "steps.llm_keys.outputs.provider == 'openai'"
+        assert gemini_step["if"] == "steps.llm_keys.outputs.provider == 'gemini'"
 
     def test_workflow_passes_branch(self):
         """Generated workflow must pass --branch to avoid empty-diff reviews."""

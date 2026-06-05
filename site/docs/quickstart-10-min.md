@@ -55,10 +55,12 @@ review.
 
 ## Minute 4-5: Add A Key And Run Doctor
 
-The default generated GitHub workflows use Gemini, so start with
-`GOOGLE_API_KEY` unless you changed `.council.toml`.
+The default generated PR workflow prefers OpenAI and falls back to Gemini, so
+start with `OPENAI_API_KEY` or `GOOGLE_API_KEY` unless you changed
+`.council.toml`.
 
 ```bash
+export OPENAI_API_KEY=...
 export GOOGLE_API_KEY=...
 council doctor --branch main
 ```

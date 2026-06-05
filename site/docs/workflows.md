@@ -67,7 +67,7 @@ docs, and package still build and test as expected. Neither replaces the other.
 | | `council-review.yml` | `council-byok.yml` |
 |---|---|---|
 | **Trigger** | `pull_request` (automatic) | `workflow_dispatch` (manual) |
-| **Secrets access** | Repository `GOOGLE_API_KEY` secret | Fork/repo `GOOGLE_API_KEY` secret that you supply |
+| **Secrets access** | Repository `OPENAI_API_KEY` or `GOOGLE_API_KEY` secret | Fork/repo `GOOGLE_API_KEY` secret that you supply |
 | **Fork PRs** | ⚠️ Skips LLM step (no secrets) | ✅ Full review (you trigger it) |
 | **Inputs** | None — runs on the PR branch | `base_ref`, `upstream_repo`, `audience` |
 | **Input validation** | N/A | ✅ Branch ref + repo format validated |
@@ -92,11 +92,12 @@ This is the always-on review gate. It fires automatically when a PR is opened or
 ### What it does
 
 1. Checks out the PR branch
-2. Checks whether `GOOGLE_API_KEY` is available
-3. If the key is available: writes a temporary Gemini config and runs the full 5-stage pipeline, including Gate Zero
-4. If the Gemini secret is unavailable (fork PR or missing repo secret): skips LLM, uploads a report explaining the skip
-5. Posts a PR summary with deterministic next steps and accepted-finding guidance
-6. Uploads `council-report.json` as a workflow artifact
+2. Checks whether `OPENAI_API_KEY` or `GOOGLE_API_KEY` is available
+3. If `OPENAI_API_KEY` is available: writes a temporary OpenAI config and runs the full 5-stage pipeline, including Gate Zero
+4. Otherwise, if `GOOGLE_API_KEY` is available: writes a temporary Gemini config and runs the same pipeline
+5. If neither secret is available (fork PR or missing repo secret): skips LLM, uploads a report explaining the skip
+6. Posts a PR summary with deterministic next steps and accepted-finding guidance
+7. Uploads `council-report.json` as a workflow artifact
 
 ### Where to find the artifact
 
@@ -105,7 +106,7 @@ Actions tab → [workflow run] → Artifacts → council-report
 ```
 
 !!! danger "Fork PRs"
-    Fork PRs cannot access repository secrets — this is GitHub's security model, not a Council bug. The PR workflow detects missing `GOOGLE_API_KEY`, skips the LLM step, and uploads a `council-report.json` explaining the skip. **Do not work around this.** Use `council-byok.yml` with a fork-local `GOOGLE_API_KEY` to review fork contributor PRs.
+    Fork PRs cannot access repository secrets — this is GitHub's security model, not a Council bug. The PR workflow detects missing LLM provider keys, skips the LLM step, and uploads a `council-report.json` explaining the skip. **Do not work around this.** Use `council-byok.yml` with a fork-local `GOOGLE_API_KEY` to review fork contributor PRs.
 
 ---
 

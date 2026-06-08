@@ -429,6 +429,49 @@ def benchmarks_validate(
     console.print("  [green]OK[/] Benchmark fixture metadata is valid.")
 
 
+@benchmarks_app.command("score")
+def benchmarks_score(
+    fixture: str = typer.Option(
+        "benchmarks/seeded-prs/agentic-login-bypass",
+        "--fixture",
+        help="Seeded PR fixture directory, relative to --repo unless absolute.",
+    ),
+    report: str = typer.Option(
+        "council-report.json",
+        "--report",
+        help="Council JSON report to score, relative to --repo unless absolute.",
+    ),
+    repo_root: str = typer.Option(None, "--repo", help="Path to the Council repository root"),
+) -> None:
+    """Score a Council JSON report against one seeded benchmark fixture."""
+    from .benchmarks import (
+        BenchmarkScoreError,
+        BenchmarkValidationError,
+        format_benchmark_score,
+        score_benchmark_report,
+    )
+
+    root = Path(repo_root) if repo_root else Path.cwd()
+    fixture_path = Path(fixture)
+    if not fixture_path.is_absolute():
+        fixture_path = root / fixture_path
+    report_path = Path(report)
+    if not report_path.is_absolute():
+        report_path = root / report_path
+
+    try:
+        result = score_benchmark_report(fixture_path, report_path)
+    except (BenchmarkScoreError, BenchmarkValidationError) as exc:
+        console.print(f"Benchmark scoring failed: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print("\n[bold]Council Benchmark Score[/]")
+    for line in format_benchmark_score(result):
+        console.print(f"  {line}")
+    if not result.passed:
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def init(
     repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),

@@ -67,6 +67,20 @@ council review --branch main \
   --output-md council-review.md
 ```
 
+Score the JSON report against the fixture expectations:
+
+```bash
+council benchmarks score \
+  --fixture ../code-review-council/benchmarks/seeded-prs/agentic-login-bypass \
+  --report council-report.json
+```
+
+The score command is deterministic and does not call a model. It checks the
+report verdict and verifies that expected blockers and warnings are present in
+the correct JSON report buckets. Matching always uses file, category, and
+severity, and also requires policy ID and line range when the fixture declares
+those fields.
+
 For stakeholder review, also generate owner HTML:
 
 ```bash

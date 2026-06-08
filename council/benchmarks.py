@@ -18,6 +18,10 @@ class BenchmarkValidationError(ValueError):
     """Raised when a seeded benchmark fixture is invalid."""
 
 
+class BenchmarkScoreError(ValueError):
+    """Raised when a benchmark report cannot be scored."""
+
+
 @dataclass(frozen=True)
 class BenchmarkScenarioSummary:
     """Validated metadata for one seeded PR fixture."""
@@ -35,6 +39,23 @@ class BenchmarkValidationResult:
 
     fixtures_root: Path
     scenarios: tuple[BenchmarkScenarioSummary, ...]
+
+
+@dataclass(frozen=True)
+class BenchmarkScoreResult:
+    """Score for one Council JSON report against one seeded fixture."""
+
+    scenario_id: str
+    passed: bool
+    expected_verdict: str
+    report_verdict: str
+    expected_findings: int
+    matched_findings: int
+    expected_warnings: int
+    matched_warnings: int
+    missed: tuple[str, ...]
+    degraded: bool
+    degraded_reasons: tuple[str, ...]
 
 
 def validate_seeded_pr_fixtures(
@@ -62,6 +83,63 @@ def validate_seeded_pr_fixtures(
     return BenchmarkValidationResult(fixtures_root=root, scenarios=summaries)
 
 
+def score_benchmark_report(fixture_dir: Path, report_path: Path) -> BenchmarkScoreResult:
+    """Score a Council JSON report against one validated seeded PR fixture.
+
+    The score passes only when the report verdict equals the fixture's expected
+    verdict and every expected blocker/warning has a one-to-one match in the
+    correct report bucket. Matching always requires file, category, and
+    severity; it also requires policy id and exact line range when the fixture
+    expectation declares those fields. Raises BenchmarkValidationError for
+    invalid fixture metadata and BenchmarkScoreError for missing, malformed, or
+    structurally invalid report JSON.
+    """
+    _validate_scenario(fixture_dir)
+    expected = _load_expected_findings(fixture_dir / "expected-findings.json", fixture_dir.name)
+    report = _load_report(report_path)
+
+    report_verdict = _report_verdict(report, report_path)
+    accepted_blockers = _report_issue_list(report, "accepted_blockers", report_path)
+    warnings = _report_issue_list(report, "warnings", report_path)
+
+    missed: list[str] = []
+    expected_verdict = expected["expected_verdict"]
+    if report_verdict != expected_verdict:
+        missed.append(f"expected verdict {expected_verdict}, got {report_verdict}")
+
+    matched_findings = _count_matches(
+        expected["expected_findings"],
+        accepted_blockers,
+        missed=missed,
+        label="expected finding",
+    )
+    matched_warnings = _count_matches(
+        expected["expected_warnings"],
+        warnings,
+        missed=missed,
+        label="expected warning",
+    )
+
+    degraded = report.get("degraded", False)
+    if not isinstance(degraded, bool):
+        raise BenchmarkScoreError(f"{report_path}: degraded must be a boolean when present")
+    degraded_reasons = _report_degraded_reasons(report, report_path)
+
+    return BenchmarkScoreResult(
+        scenario_id=expected["scenario_id"],
+        passed=not missed,
+        expected_verdict=expected_verdict,
+        report_verdict=report_verdict,
+        expected_findings=len(expected["expected_findings"]),
+        matched_findings=matched_findings,
+        expected_warnings=len(expected["expected_warnings"]),
+        matched_warnings=matched_warnings,
+        missed=tuple(missed),
+        degraded=degraded,
+        degraded_reasons=tuple(degraded_reasons),
+    )
+
+
 def format_benchmark_validation(result: BenchmarkValidationResult) -> list[str]:
     """Return stable human-readable lines for CLI output."""
     fixture_label = "fixture" if len(result.scenarios) == 1 else "fixtures"
@@ -75,6 +153,24 @@ def format_benchmark_validation(result: BenchmarkValidationResult) -> list[str]:
             f"{scenario.expected_findings} {finding_label}; "
             f"{scenario.expected_warnings} {warning_label}"
         )
+    return lines
+
+
+def format_benchmark_score(result: BenchmarkScoreResult) -> list[str]:
+    """Return stable human-readable score lines for CLI output."""
+    status = "PASS" if result.passed else "FAIL"
+    lines = [
+        f"{result.scenario_id}: {status}",
+        f"- verdict: expected {result.expected_verdict}; report {result.report_verdict}",
+        f"- findings: {result.matched_findings}/{result.expected_findings} expected blockers matched",
+        f"- warnings: {result.matched_warnings}/{result.expected_warnings} expected warnings matched",
+    ]
+    if result.degraded:
+        reason_count = len(result.degraded_reasons)
+        lines.append(f"- degraded: true ({reason_count} reasons)")
+    if result.missed:
+        lines.append("- missed expectations:")
+        lines.extend(f"  - {item}" for item in result.missed)
     return lines
 
 
@@ -134,6 +230,81 @@ def _validate_scenario(fixture_dir: Path) -> BenchmarkScenarioSummary:
         expected_findings=len(findings),
         expected_warnings=len(warnings),
     )
+
+
+def _load_report(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise BenchmarkScoreError(f"{path}: report file does not exist")
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise BenchmarkScoreError(f"{path}: report is invalid JSON") from exc
+    if not isinstance(raw, dict):
+        raise BenchmarkScoreError(f"{path}: report JSON must be an object")
+    return raw
+
+
+def _report_verdict(report: dict[str, Any], report_path: Path) -> str:
+    verdict = report.get("verdict")
+    if verdict not in VALID_VERDICTS:
+        raise BenchmarkScoreError(f"{report_path}: verdict must be one of {sorted(VALID_VERDICTS)}")
+    return verdict
+
+
+def _report_issue_list(report: dict[str, Any], key: str, report_path: Path) -> list[dict[str, Any]]:
+    raw = report.get(key)
+    if not isinstance(raw, list):
+        raise BenchmarkScoreError(f"{report_path}: {key} must be a list")
+    if not all(isinstance(item, dict) for item in raw):
+        raise BenchmarkScoreError(f"{report_path}: {key} entries must be objects")
+    return raw
+
+
+def _report_degraded_reasons(report: dict[str, Any], report_path: Path) -> list[str]:
+    raw = report.get("degraded_reasons", [])
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise BenchmarkScoreError(f"{report_path}: degraded_reasons must be a list of strings")
+    return raw
+
+
+def _count_matches(
+    expected_items: list[Any],
+    actual_items: list[dict[str, Any]],
+    *,
+    missed: list[str],
+    label: str,
+) -> int:
+    matched = 0
+    consumed: set[int] = set()
+    for expected in expected_items:
+        match_index = next(
+            (
+                index
+                for index, actual in enumerate(actual_items)
+                if index not in consumed and _issue_matches(expected, actual)
+            ),
+            None,
+        )
+        if match_index is not None:
+            consumed.add(match_index)
+            matched += 1
+        else:
+            missed.append(
+                f"{label} not matched: "
+                f"{expected['severity']} {expected['category']} in {expected['file']}"
+            )
+    return matched
+
+
+def _issue_matches(expected: dict[str, Any], actual: dict[str, Any]) -> bool:
+    required_keys = ["file", "category", "severity"]
+    if "policy_id" in expected:
+        required_keys.append("policy_id")
+    if "line_start" in expected:
+        required_keys.append("line_start")
+    if "line_end" in expected:
+        required_keys.append("line_end")
+    return all(actual.get(key) == expected[key] for key in required_keys)
 
 
 def _load_expected_findings(path: Path, scenario_id: str) -> dict[str, Any]:

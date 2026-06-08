@@ -58,6 +58,7 @@ def test_benchmark_docs_are_linked_from_nav_and_quickstart():
     assert "site/docs/benchmarks.md" in readme
     assert "one seeded-risk fixture exists" in roadmap
     assert "agentic-login-bypass" in benchmark_page
+    assert "council benchmarks validate" in benchmark_page
     assert "council init" in benchmark_page
     assert ".py.txt" in benchmark_page
     assert "expected-findings.json" in benchmark_page

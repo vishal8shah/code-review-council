@@ -29,6 +29,21 @@ The Council repository excludes `benchmarks/seeded-prs/` from its own LLM review
 scope because these fixtures intentionally contain risky sample diffs. Use the
 fixtures in a throwaway demo repository when you want Council to review them.
 
+## Validate Fixture Metadata
+
+Before using or adding seeded PRs, validate that each fixture has complete
+metadata, safe file references, and evidence paths that resolve inside the
+fixture:
+
+```bash
+council benchmarks validate
+```
+
+The command is deterministic and does not call a model. It fails non-zero if
+`expected-findings.json` is invalid, a fixture is missing required directories,
+an expected file uses path traversal, or a referenced head fixture file is
+missing.
+
 ## How To Use A Fixture
 
 Create a temporary repo from `base/`, commit it, copy `head/` over the top, then

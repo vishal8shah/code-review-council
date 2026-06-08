@@ -30,9 +30,10 @@ merge-safe CI behavior.
   from PyPI, and release notes are not yet part of the public loop.
 - The 10-minute first-run path needs a tighter demo story with expected outputs,
   example reports, and a seeded risky PR.
-- Benchmark proof is just starting: one seeded-risk fixture exists, but there is
-  not yet a scored suite measuring true positives, false positives, degraded
-  handling, cost, or latency.
+- Benchmark proof is just starting: one seeded-risk fixture exists with
+  deterministic metadata validation, but there is not yet a scored suite
+  measuring true positives, false positives, degraded handling, cost, or
+  latency.
 - Domain packs are still conceptual; prompts, policy templates, test fixtures,
   and pricing boundaries are not separated by domain.
 - Reporting is artifact-based; there is no dashboard over JSON/history trends.
@@ -52,6 +53,8 @@ merge-safe CI behavior.
   review, GitHub PR gate, JSON artifact, and owner HTML report.
 - Ship at least one demo repository or fixture PR with seeded risks and expected
   Council output.
+- Validate seeded PR fixture metadata with `council benchmarks validate` before
+  using fixtures as benchmark evidence.
 - Publish benchmark methodology with seeded findings, expected verdicts, and
   known limitations.
 - Document cost-control presets for solo, team, and strict CI usage.

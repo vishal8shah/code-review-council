@@ -61,6 +61,11 @@ Want the shortest team onboarding path? Use the docs
 local review, generate an owner HTML report, and pilot the GitHub PR gate.
 Want a known risky diff to try? See the docs
 [Benchmarks](site/docs/benchmarks.md) page for a seeded authorization-bypass PR.
+You can also check the seeded fixture metadata before running a demo:
+
+```bash
+council benchmarks validate
+```
 
 ```bash
 # Initialise in your repo

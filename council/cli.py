@@ -5,6 +5,7 @@ Usage:
     council review --ci         # CI mode (blocks on FAIL)
     council review --staged     # Review staged changes only
     council review --branch main  # Diff against a branch
+    council benchmarks validate # Validate seeded benchmark fixtures
     council init                # Initialize .council.toml in repo
     council --version           # Show the installed version
 """
@@ -29,6 +30,8 @@ app = typer.Typer(
 console = Console()
 history_app = typer.Typer(help="Inspect local Council review history.", no_args_is_help=True)
 app.add_typer(history_app, name="history")
+benchmarks_app = typer.Typer(help="Inspect seeded benchmark fixtures.", no_args_is_help=True)
+app.add_typer(benchmarks_app, name="benchmarks")
 
 
 def _version_callback(value: bool) -> None:
@@ -391,6 +394,39 @@ def history_summary(
 
     for line in format_history_summary(summary):
         console.print(line)
+
+
+@benchmarks_app.command("validate")
+def benchmarks_validate(
+    repo_root: str = typer.Option(None, "--repo", help="Path to the Council repository root"),
+    fixtures_root: str = typer.Option(
+        "benchmarks/seeded-prs",
+        "--fixtures-root",
+        help="Seeded PR fixture directory, relative to --repo unless absolute.",
+    ),
+) -> None:
+    """Validate seeded benchmark fixture metadata without calling a model."""
+    from .benchmarks import (
+        BenchmarkValidationError,
+        format_benchmark_validation,
+        validate_seeded_pr_fixtures,
+    )
+
+    root = Path(repo_root) if repo_root else Path.cwd()
+    fixture_path = Path(fixtures_root)
+    if not fixture_path.is_absolute():
+        fixture_path = root / fixture_path
+
+    try:
+        result = validate_seeded_pr_fixtures(fixture_path)
+    except BenchmarkValidationError as exc:
+        console.print(f"Benchmark validation failed: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print("\n[bold]Council Benchmark Fixtures[/]")
+    for line in format_benchmark_validation(result):
+        console.print(f"  {line}")
+    console.print("  [green]OK[/] Benchmark fixture metadata is valid.")
 
 
 @app.command()

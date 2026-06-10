@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from council.benchmarks import BenchmarkValidationError, validate_seeded_pr_fixtures
+from council.benchmarks import (
+    BenchmarkScoreError,
+    BenchmarkValidationError,
+    score_benchmark_report,
+    validate_seeded_pr_fixtures,
+)
 from council.cli import app
 
 
@@ -32,6 +37,43 @@ def _write_expected(fixture_root: Path, expected: dict) -> None:
     _expected_path(fixture_root).write_text(json.dumps(expected), encoding="utf-8")
 
 
+def _write_report(tmp_path: Path, **overrides) -> Path:
+    report = {
+        "verdict": "FAIL",
+        "confidence": 0.91,
+        "degraded": False,
+        "degraded_reasons": [],
+        "accepted_blockers": [
+            {
+                "severity": "HIGH",
+                "category": "security",
+                "file": "src/billing/access.py",
+                "line_start": 25,
+                "line_end": 27,
+                "description": "Authorization bypass through request user_id.",
+                "suggestion": "Use the authenticated user id.",
+                "policy_id": "SEC-AUTHZ-001",
+                "chair_action": "accepted",
+            }
+        ],
+        "warnings": [
+            {
+                "severity": "MEDIUM",
+                "category": "testing",
+                "file": "tests/access_test_sample.py",
+                "description": "Missing forged user_id regression test.",
+                "suggestion": "Add coverage for attacker controlled user_id.",
+                "chair_action": "accepted",
+            }
+        ],
+        "dismissed_findings": [],
+    }
+    report.update(overrides)
+    path = tmp_path / "council-report.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    return path
+
+
 def test_validate_seeded_pr_fixtures_accepts_current_fixture():
     result = validate_seeded_pr_fixtures(FIXTURE_ROOT)
 
@@ -51,6 +93,171 @@ def test_benchmarks_validate_cli_reports_current_fixture():
     assert "Validated 1 seeded PR fixture." in result.output
     assert "agentic-login-bypass: expected FAIL; 1 finding; 1 warning" in result.output
     assert "OK" in result.output
+
+
+def test_score_benchmark_report_matches_expected_fixture(tmp_path):
+    report_path = _write_report(tmp_path)
+
+    result = score_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
+
+    assert result.passed is True
+    assert result.expected_verdict == "FAIL"
+    assert result.report_verdict == "FAIL"
+    assert result.matched_findings == 1
+    assert result.matched_warnings == 1
+    assert result.missed == ()
+
+
+def test_benchmarks_score_cli_reports_pass(tmp_path):
+    report_path = _write_report(tmp_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "benchmarks",
+            "score",
+            "--fixture",
+            str(FIXTURE_ROOT / "agentic-login-bypass"),
+            "--report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Council Benchmark Score" in result.output
+    assert "agentic-login-bypass: PASS" in result.output
+    assert "findings: 1/1 expected blockers matched" in result.output
+    assert "warnings: 1/1 expected warnings matched" in result.output
+
+
+def test_benchmarks_score_cli_fails_for_missing_expected_blocker(tmp_path):
+    report_path = _write_report(tmp_path, accepted_blockers=[])
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "benchmarks",
+            "score",
+            "--fixture",
+            str(FIXTURE_ROOT / "agentic-login-bypass"),
+            "--report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "agentic-login-bypass: FAIL" in result.output
+    assert "expected finding not matched" in result.output
+
+
+def test_score_benchmark_report_fails_for_wrong_verdict(tmp_path):
+    report_path = _write_report(tmp_path, verdict="PASS", accepted_blockers=[])
+
+    result = score_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
+
+    assert result.passed is False
+    assert "expected verdict FAIL, got PASS" in result.missed
+
+
+def test_score_benchmark_report_does_not_reuse_one_actual_for_two_expected_items(tmp_path):
+    fixture_root = _copy_fixture(tmp_path)
+    expected = _load_expected(fixture_root)
+    expected["expected_findings"].append(expected["expected_findings"][0].copy())
+    _write_expected(fixture_root, expected)
+    report_path = _write_report(tmp_path)
+
+    result = score_benchmark_report(fixture_root / "agentic-login-bypass", report_path)
+
+    assert result.passed is False
+    assert result.matched_findings == 1
+    assert result.expected_findings == 2
+    assert any("expected finding not matched" in item for item in result.missed)
+
+
+def test_score_benchmark_report_requires_expected_line_identity(tmp_path):
+    report_path = _write_report(
+        tmp_path,
+        accepted_blockers=[
+            {
+                "severity": "HIGH",
+                "category": "security",
+                "file": "src/billing/access.py",
+                "line_start": 12,
+                "line_end": 13,
+                "description": "Different security issue in the same file.",
+                "policy_id": "SEC-AUTHZ-001",
+                "chair_action": "accepted",
+            }
+        ],
+    )
+
+    result = score_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
+
+    assert result.passed is False
+    assert result.matched_findings == 0
+
+
+def test_benchmarks_score_cli_surfaces_degraded_report(tmp_path):
+    report_path = _write_report(
+        tmp_path,
+        degraded=True,
+        degraded_reasons=["secops: timeout"],
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "benchmarks",
+            "score",
+            "--fixture",
+            str(FIXTURE_ROOT / "agentic-login-bypass"),
+            "--report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "degraded: true (1 reasons)" in result.output
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("{", "invalid JSON"),
+        ("[]", "report JSON must be an object"),
+    ],
+)
+def test_score_benchmark_report_rejects_malformed_report(tmp_path, content, message):
+    report_path = tmp_path / "council-report.json"
+    report_path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(BenchmarkScoreError, match=message):
+        score_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
+
+
+def test_score_benchmark_report_rejects_missing_report_file(tmp_path):
+    with pytest.raises(BenchmarkScoreError, match="report file does not exist"):
+        score_benchmark_report(
+            FIXTURE_ROOT / "agentic-login-bypass",
+            tmp_path / "missing-report.json",
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"verdict": "MAYBE"}, "verdict must be one of"),
+        ({"accepted_blockers": {}}, "accepted_blockers must be a list"),
+        ({"warnings": ["bad"]}, "warnings entries must be objects"),
+        ({"degraded": "false"}, "degraded must be a boolean"),
+        ({"degraded_reasons": ["ok", 123]}, "degraded_reasons must be a list of strings"),
+    ],
+)
+def test_score_benchmark_report_rejects_bad_report_shape(tmp_path, overrides, message):
+    report_path = _write_report(tmp_path, **overrides)
+
+    with pytest.raises(BenchmarkScoreError, match=message):
+        score_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
 
 
 def test_validate_seeded_pr_fixtures_rejects_missing_root(tmp_path):

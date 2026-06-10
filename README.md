@@ -67,6 +67,15 @@ You can also check the seeded fixture metadata before running a demo:
 council benchmarks validate
 ```
 
+After a fixture run writes `council-report.json`, score it against the expected
+benchmark signals:
+
+```bash
+council benchmarks score \
+  --fixture benchmarks/seeded-prs/agentic-login-bypass \
+  --report council-report.json
+```
+
 ```bash
 # Initialise in your repo
 cd your-project/

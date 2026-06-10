@@ -472,6 +472,47 @@ def benchmarks_score(
         raise typer.Exit(code=1)
 
 
+@benchmarks_app.command("prepare-run")
+def benchmarks_prepare_run(
+    fixture: str = typer.Option(
+        "benchmarks/seeded-prs/agentic-login-bypass",
+        "--fixture",
+        help="Seeded PR fixture directory, relative to --repo unless absolute.",
+    ),
+    output_dir: str = typer.Option(
+        ".council-benchmark-runs/agentic-login-bypass",
+        "--output-dir",
+        help="Empty output directory for the throwaway benchmark repository.",
+    ),
+    repo_root: str = typer.Option(None, "--repo", help="Path to the Council repository root"),
+) -> None:
+    """Prepare a throwaway git repository for one seeded benchmark run."""
+    from .benchmarks import (
+        BenchmarkRunError,
+        BenchmarkValidationError,
+        format_prepared_benchmark_run,
+        prepare_benchmark_run,
+    )
+
+    root = Path(repo_root) if repo_root else Path.cwd()
+    fixture_path = Path(fixture)
+    if not fixture_path.is_absolute():
+        fixture_path = root / fixture_path
+    run_path = Path(output_dir)
+    if not run_path.is_absolute():
+        run_path = root / run_path
+
+    try:
+        result = prepare_benchmark_run(fixture_path, run_path)
+    except (BenchmarkRunError, BenchmarkValidationError) as exc:
+        console.print(f"Benchmark run preparation failed: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+    console.print("\n[bold]Council Benchmark Run[/]")
+    for line in format_prepared_benchmark_run(result):
+        console.print(f"  {line}")
+
+
 @app.command()
 def init(
     repo_root: str = typer.Option(None, "--repo", help="Path to git repository root"),

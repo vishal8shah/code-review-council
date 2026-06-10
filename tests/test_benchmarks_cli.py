@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from council.benchmarks import (
+    BenchmarkRunError,
     BenchmarkScoreError,
     BenchmarkValidationError,
+    prepare_benchmark_run,
     score_benchmark_report,
     validate_seeded_pr_fixtures,
 )
@@ -128,6 +131,63 @@ def test_benchmarks_score_cli_reports_pass(tmp_path):
     assert "agentic-login-bypass: PASS" in result.output
     assert "findings: 1/1 expected blockers matched" in result.output
     assert "warnings: 1/1 expected warnings matched" in result.output
+
+
+def test_prepare_benchmark_run_materializes_throwaway_git_repo(tmp_path):
+    output_dir = tmp_path / "run"
+
+    result = prepare_benchmark_run(FIXTURE_ROOT / "agentic-login-bypass", output_dir)
+
+    assert result.scenario_id == "agentic-login-bypass"
+    assert result.base_branch == "main"
+    assert result.head_branch == "benchmark-head"
+    assert (output_dir / ".git").is_dir()
+    assert (output_dir / "src" / "billing" / "access.py").is_file()
+    assert not (output_dir / "src" / "billing" / "access.py.txt").exists()
+    assert 'request_params.get("user_id")' in (
+        output_dir / "src" / "billing" / "access.py"
+    ).read_text(encoding="utf-8")
+    branch = subprocess.check_output(
+        ["git", "branch", "--show-current"],
+        cwd=output_dir,
+        text=True,
+    ).strip()
+    status = subprocess.check_output(["git", "status", "--short"], cwd=output_dir, text=True)
+    assert branch == "benchmark-head"
+    assert "src/billing/access.py" in status
+    assert "council review" in result.review_command
+    assert "council benchmarks score" in result.score_command
+
+
+def test_prepare_benchmark_run_refuses_non_empty_output_dir(tmp_path):
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    (output_dir / "existing.txt").write_text("keep me", encoding="utf-8")
+
+    with pytest.raises(BenchmarkRunError, match="not empty"):
+        prepare_benchmark_run(FIXTURE_ROOT / "agentic-login-bypass", output_dir)
+
+
+def test_benchmarks_prepare_run_cli_reports_commands(tmp_path):
+    output_dir = tmp_path / "prepared"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "benchmarks",
+            "prepare-run",
+            "--fixture",
+            str(FIXTURE_ROOT / "agentic-login-bypass"),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Council Benchmark Run" in result.output
+    assert "agentic-login-bypass: prepared run repository" in result.output
+    assert "review command:" in result.output
+    assert "score command:" in result.output
 
 
 def test_benchmarks_score_cli_fails_for_missing_expected_blocker(tmp_path):

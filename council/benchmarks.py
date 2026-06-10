@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -20,6 +22,10 @@ class BenchmarkValidationError(ValueError):
 
 class BenchmarkScoreError(ValueError):
     """Raised when a benchmark report cannot be scored."""
+
+
+class BenchmarkRunError(ValueError):
+    """Raised when a seeded benchmark run cannot be prepared."""
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,19 @@ class BenchmarkScoreResult:
     missed: tuple[str, ...]
     degraded: bool
     degraded_reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BenchmarkPreparedRun:
+    """Prepared throwaway repository for one seeded benchmark run."""
+
+    scenario_id: str
+    run_dir: Path
+    base_branch: str
+    head_branch: str
+    report_path: Path
+    review_command: str
+    score_command: str
 
 
 def validate_seeded_pr_fixtures(
@@ -140,6 +159,54 @@ def score_benchmark_report(fixture_dir: Path, report_path: Path) -> BenchmarkSco
     )
 
 
+def prepare_benchmark_run(
+    fixture_dir: Path,
+    output_dir: Path,
+    *,
+    base_branch: str = "main",
+    head_branch: str = "benchmark-head",
+) -> BenchmarkPreparedRun:
+    """Materialize a seeded fixture into a throwaway git repository.
+
+    The prepared repository contains a committed safe base branch and a checked
+    out head branch with the risky fixture changes applied. It does not call a
+    model or run Council; callers use the returned commands to run and score a
+    real review when model credentials are available.
+    """
+    scenario = _validate_scenario(fixture_dir)
+    run_dir = output_dir.resolve()
+    if run_dir.exists() and any(run_dir.iterdir()):
+        raise BenchmarkRunError(f"{output_dir}: output directory already exists and is not empty")
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    _materialize_fixture_tree(fixture_dir / "base", run_dir)
+    _run_git(["init"], cwd=run_dir)
+    _run_git(["checkout", "-b", base_branch], cwd=run_dir)
+    _run_git(["config", "user.email", "council-benchmark@example.invalid"], cwd=run_dir)
+    _run_git(["config", "user.name", "Code Review Council Benchmark"], cwd=run_dir)
+    _run_git(["add", "."], cwd=run_dir)
+    _run_git(["commit", "-m", "seed benchmark base"], cwd=run_dir)
+    _run_git(["checkout", "-b", head_branch], cwd=run_dir)
+    _materialize_fixture_tree(fixture_dir / "head", run_dir)
+
+    report_path = run_dir / "council-report.json"
+    return BenchmarkPreparedRun(
+        scenario_id=scenario.scenario_id,
+        run_dir=run_dir,
+        base_branch=base_branch,
+        head_branch=head_branch,
+        report_path=report_path,
+        review_command=(
+            f"council review --repo \"{run_dir}\" --branch {base_branch} "
+            f"--output-json \"{report_path}\""
+        ),
+        score_command=(
+            f"council benchmarks score --fixture \"{fixture_dir.resolve()}\" "
+            f"--report \"{report_path}\""
+        ),
+    )
+
+
 def format_benchmark_validation(result: BenchmarkValidationResult) -> list[str]:
     """Return stable human-readable lines for CLI output."""
     fixture_label = "fixture" if len(result.scenarios) == 1 else "fixtures"
@@ -154,6 +221,18 @@ def format_benchmark_validation(result: BenchmarkValidationResult) -> list[str]:
             f"{scenario.expected_warnings} {warning_label}"
         )
     return lines
+
+
+def format_prepared_benchmark_run(result: BenchmarkPreparedRun) -> list[str]:
+    """Return stable human-readable lines for a prepared benchmark run."""
+    return [
+        f"{result.scenario_id}: prepared run repository",
+        f"- run directory: {result.run_dir}",
+        f"- base branch: {result.base_branch}",
+        f"- head branch: {result.head_branch}",
+        f"- review command: {result.review_command}",
+        f"- score command: {result.score_command}",
+    ]
 
 
 def format_benchmark_score(result: BenchmarkScoreResult) -> list[str]:
@@ -242,6 +321,43 @@ def _load_report(path: Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise BenchmarkScoreError(f"{path}: report JSON must be an object")
     return raw
+
+
+def _materialize_fixture_tree(source_root: Path, output_root: Path) -> None:
+    root = source_root.resolve()
+    target_root = output_root.resolve()
+    if not root.is_dir():
+        raise BenchmarkRunError(f"{source_root}: fixture tree does not exist")
+    for source in sorted(path for path in root.rglob("*") if path.is_file()):
+        relative = source.relative_to(root)
+        target = (target_root / _materialized_relative_path(relative)).resolve()
+        if not target.is_relative_to(target_root):
+            raise BenchmarkRunError(f"{source}: materialized path escapes output directory")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def _materialized_relative_path(relative: Path) -> Path:
+    if relative.suffix == ".txt":
+        return relative.with_suffix("")
+    return relative
+
+
+def _run_git(args: list[str], *, cwd: Path) -> None:
+    try:
+        subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = (getattr(exc, "stderr", "") or str(exc)).strip()
+        detail = detail.splitlines()[0] if detail else "no detail"
+        detail = detail[:300]
+        raise BenchmarkRunError(f"git {' '.join(args)} failed: {detail.strip()}") from exc
 
 
 def _report_verdict(report: dict[str, Any], report_path: Path) -> str:

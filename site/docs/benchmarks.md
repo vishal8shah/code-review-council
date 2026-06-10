@@ -46,7 +46,39 @@ missing.
 
 ## How To Use A Fixture
 
-Create a temporary repo from `base/`, commit it, copy `head/` over the top, then
+Prepare a throwaway git repository from the fixture:
+
+```bash
+council benchmarks prepare-run \
+  --fixture benchmarks/seeded-prs/agentic-login-bypass \
+  --output-dir .council-benchmark-runs/agentic-login-bypass
+```
+
+The command materializes inert `.py.txt` files into runnable `.py` files,
+commits the safe `base/` tree on `main`, checks out `benchmark-head`, applies
+the risky `head/` tree, and prints the review and score commands to run next.
+It does not call a model.
+
+Then run Council against the prepared repository:
+
+```bash
+council review \
+  --repo .council-benchmark-runs/agentic-login-bypass \
+  --branch main \
+  --output-json .council-benchmark-runs/agentic-login-bypass/council-report.json \
+  --output-md .council-benchmark-runs/agentic-login-bypass/council-review.md
+```
+
+Score the JSON report against the fixture expectations:
+
+```bash
+council benchmarks score \
+  --fixture benchmarks/seeded-prs/agentic-login-bypass \
+  --report .council-benchmark-runs/agentic-login-bypass/council-report.json
+```
+
+For reference, the manual equivalent is: copy `base/`, convert `*.py.txt`
+files, commit that safe base, copy `head/`, convert `*.py.txt` files again, then
 run Council against `main`:
 
 ```bash
@@ -65,14 +97,6 @@ find . -name '*.py.txt' -exec sh -c 'for path do mv "$path" "${path%.txt}"; done
 council review --branch main \
   --output-json council-report.json \
   --output-md council-review.md
-```
-
-Score the JSON report against the fixture expectations:
-
-```bash
-council benchmarks score \
-  --fixture ../code-review-council/benchmarks/seeded-prs/agentic-login-bypass \
-  --report council-report.json
 ```
 
 The score command is deterministic and does not call a model. It checks the

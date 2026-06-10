@@ -44,6 +44,29 @@ The command is deterministic and does not call a model. It fails non-zero if
 an expected file uses path traversal, or a referenced head fixture file is
 missing.
 
+## Inspect The Report Shape Without A Model
+
+Generate an illustrative sample report when you want to see the JSON shape that
+benchmark scoring expects before setting up model credentials:
+
+```bash
+council benchmarks sample-report \
+  --fixture benchmarks/seeded-prs/agentic-login-bypass \
+  --output council-report.sample.json
+```
+
+The sample report is generated from `expected-findings.json`, includes
+`benchmark_sample.model_run = false`, and is safe to score:
+
+```bash
+council benchmarks score \
+  --fixture benchmarks/seeded-prs/agentic-login-bypass \
+  --report council-report.sample.json
+```
+
+Do not use a sample report as model-quality evidence. It is an onboarding aid
+for understanding report fields and score output.
+
 ## How To Use A Fixture
 
 Prepare a throwaway git repository from the fixture:

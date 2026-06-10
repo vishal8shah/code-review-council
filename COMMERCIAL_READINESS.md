@@ -28,8 +28,9 @@ merge-safe CI behavior.
 
 - Installability is still source/GitHub-first; PyPI publication, install smoke
   from PyPI, and release notes are not yet part of the public loop.
-- The 10-minute first-run path needs a tighter demo story with expected outputs,
-  example reports, and a seeded risky PR.
+- The 10-minute first-run path now has a seeded risky PR and sample benchmark
+  report shape, but still needs real model-run example reports with expected
+  outputs.
 - Benchmark proof is just starting: one seeded-risk fixture exists with
   deterministic metadata validation, throwaway run preparation, and JSON report
   scoring, but there is not yet a multi-fixture suite measuring true positives,
@@ -55,6 +56,8 @@ merge-safe CI behavior.
   Council output.
 - Validate seeded PR fixture metadata with `council benchmarks validate` before
   using fixtures as benchmark evidence.
+- Generate illustrative sample reports with `council benchmarks sample-report`
+  only for onboarding users to JSON shape and score output.
 - Prepare throwaway fixture repositories with `council benchmarks prepare-run`
   so benchmark demos start from a committed safe base and visible risky diff.
 - Score fixture runs with `council benchmarks score --report council-report.json`

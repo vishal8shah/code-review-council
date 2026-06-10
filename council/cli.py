@@ -13,14 +13,21 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import os
+import shlex
 import sqlite3
+import subprocess
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
 
 from . import __version__
+
+if TYPE_CHECKING:
+    from .benchmarks import BenchmarkSampleReport
 
 app = typer.Typer(
     name="council",
@@ -470,6 +477,130 @@ def benchmarks_score(
         console.print(f"  {line}")
     if not result.passed:
         raise typer.Exit(code=1)
+
+
+def _benchmark_score_command(*, fixture_path: Path, report_path: Path) -> str:
+    """Build a shell-ready benchmark score command with absolute paths."""
+    return (
+        f"council benchmarks score --fixture {_shell_quote_path(fixture_path.resolve())} "
+        f"--report {_shell_quote_path(report_path.resolve())}"
+    )
+
+
+def _shell_quote_path(path: Path) -> str:
+    """Quote a path for the follow-up command printed by the CLI."""
+    path_text = str(path)
+    if os.name == "nt":
+        return subprocess.list2cmdline([path_text])
+    return shlex.quote(path_text)
+
+
+def _resolve_cli_path(raw_path: str, *, root: Path) -> Path:
+    """Join one CLI path argument to root unless it is already absolute."""
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = root / path
+    return path
+
+
+def _sample_report_paths(
+    *,
+    fixture: str,
+    output: str,
+    repo_root: str | None,
+) -> tuple[Path, Path, Path]:
+    """Return fixture, raw output, and output base paths for sample reports.
+
+    The fixture path resolves in the CLI layer. The output path stays raw so the
+    benchmark helper can apply one relative-path contract through ``base_dir``.
+    """
+    root = Path(repo_root) if repo_root else Path.cwd()
+    return (
+        _resolve_cli_path(fixture, root=root),
+        Path(output),
+        root,
+    )
+
+
+def _write_sample_report_or_exit(
+    *,
+    fixture_path: Path,
+    output_path: Path,
+    overwrite: bool,
+    output_base_dir: Path,
+) -> "BenchmarkSampleReport":
+    from .benchmarks import (
+        BenchmarkSampleReportError,
+        BenchmarkValidationError,
+        write_sample_benchmark_report,
+    )
+
+    try:
+        return write_sample_benchmark_report(
+            fixture_path,
+            output_path,
+            overwrite=overwrite,
+            base_dir=output_base_dir,
+        )
+    except (BenchmarkSampleReportError, BenchmarkValidationError) as exc:
+        console.print(f"Benchmark sample report failed: {exc}", style="red")
+        raise typer.Exit(code=1) from exc
+
+
+def _print_benchmark_sample_report(
+    *,
+    result: "BenchmarkSampleReport",
+    fixture_path: Path,
+) -> None:
+    from .benchmarks import format_sample_benchmark_report
+
+    console.print("\n[bold]Council Benchmark Sample Report[/]")
+    for line in format_sample_benchmark_report(result):
+        console.print(f"  {line}")
+    console.print(
+        "  - score command: "
+        f"{_benchmark_score_command(fixture_path=fixture_path, report_path=result.output_path)}"
+    )
+
+
+@benchmarks_app.command("sample-report")
+def benchmarks_sample_report(
+    fixture: str = typer.Option(
+        "benchmarks/seeded-prs/agentic-login-bypass",
+        "--fixture",
+        help="Seeded PR fixture directory, relative to --repo unless absolute.",
+    ),
+    output: str = typer.Option(
+        "council-report.sample.json",
+        "--output",
+        help="Output path for the illustrative sample report.",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Replace an existing sample report file.",
+    ),
+    repo_root: str = typer.Option(None, "--repo", help="Path to the Council repository root"),
+) -> None:
+    """Write an illustrative benchmark report without calling a model.
+
+    Relative fixture and output paths resolve under --repo, or the current
+    directory when --repo is omitted. Existing outputs are refused unless
+    --overwrite is set, symlinked output paths are rejected, and successful runs
+    print the follow-up score command.
+    """
+    fixture_path, output_path, output_base_dir = _sample_report_paths(
+        fixture=fixture,
+        output=output,
+        repo_root=repo_root,
+    )
+    result = _write_sample_report_or_exit(
+        fixture_path=fixture_path,
+        output_path=output_path,
+        overwrite=overwrite,
+        output_base_dir=output_base_dir,
+    )
+    _print_benchmark_sample_report(result=result, fixture_path=fixture_path)
 
 
 @benchmarks_app.command("prepare-run")

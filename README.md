@@ -76,6 +76,10 @@ council benchmarks sample-report \
   --output council-report.sample.json
 ```
 
+Relative sample-report outputs are written under `--repo`, or the current
+directory when `--repo` is omitted. Use an absolute path when you intentionally
+want to write elsewhere.
+
 Prepare a throwaway git repo from the fixture, then run and score Council:
 
 ```bash

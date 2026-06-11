@@ -585,9 +585,10 @@ def benchmarks_sample_report(
     """Write an illustrative benchmark report without calling a model.
 
     Relative fixture and output paths resolve under --repo, or the current
-    directory when --repo is omitted. Existing outputs are refused unless
-    --overwrite is set, symlinked output paths are rejected, and successful runs
-    print the follow-up score command.
+    directory when --repo is omitted. Relative outputs must stay under that
+    base directory. Existing outputs are refused unless --overwrite is set,
+    symlinked output paths are rejected, and successful runs print the follow-up
+    score command.
     """
     fixture_path, output_path, output_base_dir = _sample_report_paths(
         fixture=fixture,

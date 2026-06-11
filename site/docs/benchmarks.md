@@ -64,6 +64,10 @@ council benchmarks score \
   --report council-report.sample.json
 ```
 
+Relative sample-report outputs are written under `--repo`, or the current
+directory when `--repo` is omitted. Use an absolute path when you intentionally
+want to write elsewhere.
+
 Do not use a sample report as model-quality evidence. It is an onboarding aid
 for understanding report fields and score output.
 

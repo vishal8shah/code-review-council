@@ -67,6 +67,15 @@ You can also check the seeded fixture metadata before running a demo:
 council benchmarks validate
 ```
 
+Generate an illustrative sample report when you want to inspect the benchmark
+JSON shape without model credentials:
+
+```bash
+council benchmarks sample-report \
+  --fixture benchmarks/seeded-prs/agentic-login-bypass \
+  --output council-report.sample.json
+```
+
 Prepare a throwaway git repo from the fixture, then run and score Council:
 
 ```bash

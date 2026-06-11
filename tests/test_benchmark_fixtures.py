@@ -56,9 +56,10 @@ def test_benchmark_docs_are_linked_from_nav_and_quickstart():
 
     assert {"Benchmarks": "benchmarks.md"} in mkdocs["nav"]
     assert "site/docs/benchmarks.md" in readme
-    assert "one seeded-risk fixture exists" in roadmap
+    assert "seeded risky PR and sample benchmark" in roadmap
     assert "agentic-login-bypass" in benchmark_page
     assert "council benchmarks validate" in benchmark_page
+    assert "council benchmarks sample-report" in benchmark_page
     assert "council benchmarks prepare-run" in benchmark_page
     assert "council benchmarks score" in benchmark_page
     assert "council init" in benchmark_page

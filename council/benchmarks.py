@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -14,6 +16,12 @@ DEFAULT_SEEDED_PR_ROOT = Path("benchmarks/seeded-prs")
 VALID_VERDICTS = {"PASS", "PASS_WITH_WARNINGS", "FAIL"}
 VALID_SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
 VALID_CATEGORIES = {"security", "testing", "architecture", "documentation", "performance", "style"}
+SAMPLE_REPORT_CONFIDENCE = 0.98
+SAMPLE_REPORT_OUTPUT_MODE = "sample"
+SAMPLE_REPORT_SOURCE = "expected-findings.json"
+SAMPLE_REPORT_SUGGESTION = (
+    "Use this sample to understand report shape; verify fixes with a real run."
+)
 
 
 class BenchmarkValidationError(ValueError):
@@ -26,6 +34,10 @@ class BenchmarkScoreError(ValueError):
 
 class BenchmarkRunError(ValueError):
     """Raised when a seeded benchmark run cannot be prepared."""
+
+
+class BenchmarkSampleReportError(ValueError):
+    """Raised when an illustrative benchmark sample report cannot be written."""
 
 
 @dataclass(frozen=True)
@@ -75,6 +87,14 @@ class BenchmarkPreparedRun:
     report_path: Path
     review_command: str
     score_command: str
+
+
+@dataclass(frozen=True)
+class BenchmarkSampleReport:
+    """Illustrative Council JSON report generated from fixture expectations."""
+
+    scenario_id: str
+    output_path: Path
 
 
 def validate_seeded_pr_fixtures(
@@ -159,6 +179,42 @@ def score_benchmark_report(fixture_dir: Path, report_path: Path) -> BenchmarkSco
     )
 
 
+def write_sample_benchmark_report(
+    fixture_dir: Path,
+    output_path: Path,
+    *,
+    overwrite: bool = False,
+    base_dir: Path | None = None,
+) -> BenchmarkSampleReport:
+    """Write an illustrative Council JSON report from fixture expectations.
+
+    The sample report is for onboarding and score-command demos only. It is not
+    model-run benchmark evidence.
+
+    Args:
+        fixture_dir: Seeded PR fixture directory containing
+            ``expected-findings.json``.
+        output_path: JSON file to write. Relative paths resolve against
+            ``base_dir`` when supplied, otherwise the current working directory.
+        overwrite: When false, refuse to replace an existing file.
+        base_dir: Optional base directory for relative output paths.
+
+    Returns:
+        A ``BenchmarkSampleReport`` with the scenario id and resolved output
+        path.
+
+    Raises:
+        BenchmarkValidationError: If fixture metadata is invalid.
+        BenchmarkSampleReportError: If the output path is an existing directory
+            or existing file without ``overwrite=True``, if the output path uses
+            a symlink, or if the file cannot be written.
+    """
+    scenario, expected = _load_validated_sample_fixture(fixture_dir)
+    path = _resolve_sample_output_path(output_path, overwrite=overwrite, base_dir=base_dir)
+    _write_sample_report_json(path, _sample_report_from_expected(expected), overwrite=overwrite)
+    return _sample_report_result(scenario, output_path=path)
+
+
 def prepare_benchmark_run(
     fixture_dir: Path,
     output_dir: Path,
@@ -232,6 +288,15 @@ def format_prepared_benchmark_run(result: BenchmarkPreparedRun) -> list[str]:
         f"- head branch: {result.head_branch}",
         f"- review command: {result.review_command}",
         f"- score command: {result.score_command}",
+    ]
+
+
+def format_sample_benchmark_report(result: BenchmarkSampleReport) -> list[str]:
+    """Return stable human-readable lines for a sample report."""
+    return [
+        f"{result.scenario_id}: wrote illustrative sample report",
+        f"- output: {result.output_path}",
+        "- note: sample reports are not model-run benchmark evidence",
     ]
 
 
@@ -321,6 +386,155 @@ def _load_report(path: Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise BenchmarkScoreError(f"{path}: report JSON must be an object")
     return raw
+
+
+def _load_validated_sample_fixture(
+    fixture_dir: Path,
+) -> tuple[BenchmarkScenarioSummary, dict[str, Any]]:
+    """Validate one sample fixture and load its expected-findings payload."""
+    scenario = _validate_scenario(fixture_dir)
+    expected = _load_expected_findings(fixture_dir / "expected-findings.json", scenario.scenario_id)
+    return scenario, expected
+
+
+def _resolve_sample_output_path(
+    output_path: Path,
+    *,
+    overwrite: bool,
+    base_dir: Path | None,
+) -> Path:
+    """Resolve a sample output path and reject unsafe or conflicting targets."""
+    root = Path.cwd() if base_dir is None else base_dir
+    raw_path = output_path if output_path.is_absolute() else root / output_path
+    if _has_symlink_component(raw_path):
+        raise BenchmarkSampleReportError(f"{output_path}: output path must not use symlinks")
+    path = raw_path.resolve()
+    if path.exists() and path.is_dir():
+        raise BenchmarkSampleReportError(f"{output_path}: output path is a directory")
+    if path.exists() and not overwrite:
+        raise BenchmarkSampleReportError(f"{output_path}: output file already exists")
+    return path
+
+
+def _has_symlink_component(path: Path) -> bool:
+    """Return true when the path or any existing parent is a symlink."""
+    return path.is_symlink() or any(parent.exists() and parent.is_symlink() for parent in path.parents)
+
+
+def _write_sample_report_json(path: Path, report: dict[str, Any], *, overwrite: bool) -> None:
+    """Write sample JSON without following a late-created output symlink."""
+    payload = json.dumps(report, indent=2) + "\n"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if _has_symlink_component(path):
+            raise BenchmarkSampleReportError(f"{path}: output path must not use symlinks")
+        if not overwrite:
+            with path.open("x", encoding="utf-8") as file:
+                file.write(payload)
+            return
+        _replace_sample_report_json(path, payload)
+    except OSError as exc:
+        raise BenchmarkSampleReportError(f"{path}: could not write sample report") from exc
+
+
+def _replace_sample_report_json(path: Path, payload: str) -> None:
+    """Atomically replace an existing sample report target."""
+    if _has_symlink_component(path):
+        raise BenchmarkSampleReportError(f"{path}: output path must not use symlinks")
+
+    temp_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            delete=False,
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        ) as temp_file:
+            temp_file.write(payload)
+            temp_name = temp_file.name
+        if _has_symlink_component(path):
+            raise BenchmarkSampleReportError(f"{path}: output path must not use symlinks")
+        Path(temp_name).replace(path)
+    finally:
+        if temp_name is not None:
+            temp_path = Path(temp_name)
+            if temp_path.exists():
+                with suppress(OSError):
+                    temp_path.unlink()
+
+
+def _sample_report_result(
+    scenario: BenchmarkScenarioSummary,
+    *,
+    output_path: Path,
+) -> BenchmarkSampleReport:
+    return BenchmarkSampleReport(
+        scenario_id=scenario.scenario_id,
+        output_path=output_path,
+    )
+
+
+def _sample_report_from_expected(expected: dict[str, Any]) -> dict[str, Any]:
+    """Map fixture expectations into the illustrative Council JSON shape.
+
+    Expected blockers become ``accepted_blockers`` and expected warnings become
+    ``warnings`` so the normal benchmark score command can validate the sample
+    report. Required metadata is read through validation helpers so malformed
+    fixtures fail with benchmark-specific errors instead of raw ``KeyError`` or
+    ``TypeError`` exceptions.
+    """
+    scenario_id = _required_text(expected, "scenario_id", "sample report")
+    expected_verdict = _required_text(expected, "expected_verdict", scenario_id)
+    expected_findings = _required_list(expected, "expected_findings", scenario_id)
+    expected_warnings = _required_list(expected, "expected_warnings", scenario_id)
+    return {
+        "verdict": expected_verdict,
+        "confidence": SAMPLE_REPORT_CONFIDENCE,
+        "chair_output_mode": SAMPLE_REPORT_OUTPUT_MODE,
+        "degraded": False,
+        "degraded_reasons": [],
+        "summary": (
+            f"Illustrative benchmark report for {scenario_id}. "
+            "Generated from expected fixture findings, not a model run."
+        ),
+        "rationale": (
+            "This sample shows the JSON fields that benchmark scoring expects. "
+            "Run Council against the prepared fixture repo for real benchmark evidence."
+        ),
+        "accepted_blockers": [
+            _sample_issue(issue, chair_action="accepted")
+            for issue in expected_findings
+        ],
+        "warnings": [
+            _sample_issue(issue, chair_action="accepted")
+            for issue in expected_warnings
+        ],
+        "dismissed_findings": [],
+        "benchmark_sample": {
+            "scenario_id": scenario_id,
+            "source": SAMPLE_REPORT_SOURCE,
+            "model_run": False,
+        },
+    }
+
+
+def _sample_issue(issue: Any, *, chair_action: str) -> dict[str, Any]:
+    if not isinstance(issue, dict):
+        raise BenchmarkValidationError("sample issue must be an object")
+    sample = {
+        "severity": _required_text(issue, "severity", "sample issue"),
+        "category": _required_text(issue, "category", "sample issue"),
+        "file": _required_text(issue, "file", "sample issue"),
+        "description": _required_text(issue, "evidence", "sample issue"),
+        "suggestion": SAMPLE_REPORT_SUGGESTION,
+        "chair_action": chair_action,
+    }
+    for key in ("line_start", "line_end", "policy_id"):
+        if key in issue:
+            sample[key] = issue[key]
+    return sample
 
 
 def _materialize_fixture_tree(source_root: Path, output_root: Path) -> None:

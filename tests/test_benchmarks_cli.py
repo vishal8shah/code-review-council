@@ -217,6 +217,51 @@ def test_write_sample_benchmark_report_resolves_relative_output_from_base_dir(tm
     assert sample.output_path.is_file()
 
 
+def test_write_sample_benchmark_report_rejects_relative_output_outside_base_dir(tmp_path):
+    outside_path = tmp_path.parent / "sample-report-outside.json"
+
+    with pytest.raises(BenchmarkSampleReportError, match="relative output path must stay under"):
+        write_sample_benchmark_report(
+            FIXTURE_ROOT / "agentic-login-bypass",
+            Path("../sample-report-outside.json"),
+            base_dir=tmp_path,
+        )
+
+    assert not outside_path.exists()
+
+
+def test_write_sample_benchmark_report_accepts_normalized_relative_output_inside_base_dir(tmp_path):
+    report_path = Path("reports/../sample-report.json")
+
+    sample = write_sample_benchmark_report(
+        FIXTURE_ROOT / "agentic-login-bypass",
+        report_path,
+        base_dir=tmp_path,
+    )
+
+    assert sample.output_path == (tmp_path / "sample-report.json").resolve()
+    assert sample.output_path.is_file()
+
+
+def test_write_sample_benchmark_report_resolves_symlinked_base_dir(tmp_path):
+    real_base = tmp_path / "real-base"
+    real_base.mkdir()
+    linked_base = tmp_path / "linked-base"
+    try:
+        linked_base.symlink_to(real_base, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    sample = write_sample_benchmark_report(
+        FIXTURE_ROOT / "agentic-login-bypass",
+        Path("reports/sample-report.json"),
+        base_dir=linked_base,
+    )
+
+    assert sample.output_path == (real_base / "reports" / "sample-report.json").resolve()
+    assert sample.output_path.is_file()
+
+
 def test_write_sample_benchmark_report_handles_empty_pass_expectations(tmp_path):
     fixture_root = _copy_fixture(tmp_path)
     expected = _load_expected(fixture_root)
@@ -471,6 +516,32 @@ def test_benchmarks_sample_report_cli_resolves_relative_output_under_repo(tmp_pa
 
     assert result.exit_code == 0
     assert (repo_root / "reports" / "sample-report.json").is_file()
+
+
+def test_benchmarks_sample_report_cli_rejects_relative_output_outside_repo(tmp_path):
+    repo_root = tmp_path / "repo"
+    fixture_dir = repo_root / "benchmarks" / "seeded-prs" / "agentic-login-bypass"
+    shutil.copytree(FIXTURE_ROOT / "agentic-login-bypass", fixture_dir)
+    outside_path = tmp_path / "sample-report.json"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "benchmarks",
+            "sample-report",
+            "--repo",
+            str(repo_root),
+            "--fixture",
+            "benchmarks/seeded-prs/agentic-login-bypass",
+            "--output",
+            "../sample-report.json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    normalized_output = " ".join(result.output.split())
+    assert "relative output path must stay under" in normalized_output
+    assert not outside_path.exists()
 
 
 def test_prepare_benchmark_run_materializes_throwaway_git_repo(tmp_path):

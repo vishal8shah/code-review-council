@@ -404,11 +404,16 @@ def _resolve_sample_output_path(
     base_dir: Path | None,
 ) -> Path:
     """Resolve a sample output path and reject unsafe or conflicting targets."""
-    root = Path.cwd() if base_dir is None else base_dir
+    root = (Path.cwd() if base_dir is None else base_dir).resolve()
+    is_relative_output = not output_path.is_absolute()
     raw_path = output_path if output_path.is_absolute() else root / output_path
     if _has_symlink_component(raw_path):
         raise BenchmarkSampleReportError(f"{output_path}: output path must not use symlinks")
     path = raw_path.resolve()
+    if is_relative_output and not path.is_relative_to(root):
+        raise BenchmarkSampleReportError(
+            f"{output_path}: relative output path must stay under {root}"
+        )
     if path.exists() and path.is_dir():
         raise BenchmarkSampleReportError(f"{output_path}: output path is a directory")
     if path.exists() and not overwrite:

@@ -130,7 +130,9 @@ The score command is deterministic and does not call a model. It checks the
 report verdict and verifies that expected blockers and warnings are present in
 the correct JSON report buckets. Matching always uses file, category, and
 severity, and also requires policy ID and line range when the fixture declares
-those fields.
+those fields. Score output labels whether the report is an illustrative sample
+or an ordinary Council report; the scorer does not prove model provenance for
+unmarked reports.
 
 For stakeholder review, also generate owner HTML:
 

@@ -61,7 +61,13 @@ class BenchmarkValidationResult:
 
 @dataclass(frozen=True)
 class BenchmarkScoreResult:
-    """Score for one Council JSON report against one seeded fixture."""
+    """Score for one Council JSON report against one seeded fixture.
+
+    ``sample_report`` is true only for reports carrying
+    ``benchmark_sample.model_run = false``. Unmarked reports and reports marked
+    with ``model_run = true`` are scored as ordinary Council reports; the score
+    command does not prove model provenance.
+    """
 
     scenario_id: str
     passed: bool
@@ -74,6 +80,7 @@ class BenchmarkScoreResult:
     missed: tuple[str, ...]
     degraded: bool
     degraded_reasons: tuple[str, ...]
+    sample_report: bool
 
 
 @dataclass(frozen=True)
@@ -129,9 +136,14 @@ def score_benchmark_report(fixture_dir: Path, report_path: Path) -> BenchmarkSco
     verdict and every expected blocker/warning has a one-to-one match in the
     correct report bucket. Matching always requires file, category, and
     severity; it also requires policy id and exact line range when the fixture
-    expectation declares those fields. Raises BenchmarkValidationError for
-    invalid fixture metadata and BenchmarkScoreError for missing, malformed, or
-    structurally invalid report JSON.
+    expectation declares those fields.
+
+    If a report includes ``benchmark_sample`` metadata, it must be an object
+    with boolean ``model_run`` so score output can distinguish illustrative
+    sample reports from ordinary Council reports. Raises
+    BenchmarkValidationError for invalid fixture metadata and
+    BenchmarkScoreError for missing, malformed, or structurally invalid report
+    JSON.
     """
     _validate_scenario(fixture_dir)
     expected = _load_expected_findings(fixture_dir / "expected-findings.json", fixture_dir.name)
@@ -163,6 +175,7 @@ def score_benchmark_report(fixture_dir: Path, report_path: Path) -> BenchmarkSco
     if not isinstance(degraded, bool):
         raise BenchmarkScoreError(f"{report_path}: degraded must be a boolean when present")
     degraded_reasons = _report_degraded_reasons(report, report_path)
+    sample_report = _is_sample_benchmark_report(report, report_path)
 
     return BenchmarkScoreResult(
         scenario_id=expected["scenario_id"],
@@ -176,6 +189,7 @@ def score_benchmark_report(fixture_dir: Path, report_path: Path) -> BenchmarkSco
         missed=tuple(missed),
         degraded=degraded,
         degraded_reasons=tuple(degraded_reasons),
+        sample_report=sample_report,
     )
 
 
@@ -309,6 +323,10 @@ def format_benchmark_score(result: BenchmarkScoreResult) -> list[str]:
         f"- findings: {result.matched_findings}/{result.expected_findings} expected blockers matched",
         f"- warnings: {result.matched_warnings}/{result.expected_warnings} expected warnings matched",
     ]
+    if result.sample_report:
+        lines.append("- evidence: illustrative sample report; not model-run benchmark evidence")
+    else:
+        lines.append("- evidence: Council report; scorer does not verify model provenance")
     if result.degraded:
         reason_count = len(result.degraded_reasons)
         lines.append(f"- degraded: true ({reason_count} reasons)")
@@ -600,6 +618,20 @@ def _report_degraded_reasons(report: dict[str, Any], report_path: Path) -> list[
     if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
         raise BenchmarkScoreError(f"{report_path}: degraded_reasons must be a list of strings")
     return raw
+
+
+def _is_sample_benchmark_report(report: dict[str, Any], report_path: Path) -> bool:
+    metadata = report.get("benchmark_sample")
+    if metadata is None:
+        return False
+    if not isinstance(metadata, dict):
+        raise BenchmarkScoreError(f"{report_path}: benchmark_sample must be an object when present")
+    model_run = metadata.get("model_run")
+    if not isinstance(model_run, bool):
+        raise BenchmarkScoreError(
+            f"{report_path}: benchmark_sample.model_run must be a boolean when present"
+        )
+    return model_run is False
 
 
 def _count_matches(

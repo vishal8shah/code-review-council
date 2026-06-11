@@ -97,6 +97,9 @@ council benchmarks score \
   --report council-report.json
 ```
 
+Score output labels sample reports separately from ordinary Council reports so
+demo artifacts are not confused with model-run benchmark evidence.
+
 ```bash
 # Initialise in your repo
 cd your-project/

@@ -113,6 +113,7 @@ def test_score_benchmark_report_matches_expected_fixture(tmp_path):
     assert result.matched_findings == 1
     assert result.matched_warnings == 1
     assert result.missed == ()
+    assert result.sample_report is False
 
 
 def test_benchmarks_score_cli_reports_pass(tmp_path):
@@ -135,6 +136,66 @@ def test_benchmarks_score_cli_reports_pass(tmp_path):
     assert "agentic-login-bypass: PASS" in result.output
     assert "findings: 1/1 expected blockers matched" in result.output
     assert "warnings: 1/1 expected warnings matched" in result.output
+    assert "evidence: Council report; scorer does not verify model provenance" in result.output
+
+
+def test_benchmarks_score_cli_labels_sample_reports(tmp_path):
+    report_path = tmp_path / "sample-report.json"
+    write_sample_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "benchmarks",
+            "score",
+            "--fixture",
+            str(FIXTURE_ROOT / "agentic-login-bypass"),
+            "--report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "agentic-login-bypass: PASS" in result.output
+    assert "evidence: illustrative sample report; not model-run benchmark evidence" in result.output
+
+
+def test_score_benchmark_report_rejects_malformed_sample_metadata(tmp_path):
+    report_path = _write_report(
+        tmp_path,
+        benchmark_sample={"scenario_id": "agentic-login-bypass", "model_run": "false"},
+    )
+
+    with pytest.raises(BenchmarkScoreError, match="benchmark_sample.model_run"):
+        score_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
+
+
+def test_score_benchmark_report_rejects_non_object_sample_metadata(tmp_path):
+    report_path = _write_report(tmp_path, benchmark_sample="sample")
+
+    with pytest.raises(BenchmarkScoreError, match="benchmark_sample must be an object"):
+        score_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
+
+
+def test_score_benchmark_report_rejects_sample_metadata_without_model_run(tmp_path):
+    report_path = _write_report(
+        tmp_path,
+        benchmark_sample={"scenario_id": "agentic-login-bypass"},
+    )
+
+    with pytest.raises(BenchmarkScoreError, match="benchmark_sample.model_run"):
+        score_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
+
+
+def test_score_benchmark_report_treats_model_run_metadata_as_non_sample(tmp_path):
+    report_path = _write_report(
+        tmp_path,
+        benchmark_sample={"scenario_id": "agentic-login-bypass", "model_run": True},
+    )
+
+    result = score_benchmark_report(FIXTURE_ROOT / "agentic-login-bypass", report_path)
+
+    assert result.sample_report is False
 
 
 def test_shell_quote_path_handles_spaces_and_quotes():
